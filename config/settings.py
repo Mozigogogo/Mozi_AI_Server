@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import Field
 from typing import Optional
 
 
@@ -23,7 +24,7 @@ class Settings(BaseSettings):
 
     # API配置
     api_host: str = "0.0.0.0"
-    api_port: int = 8000
+    api_port: int = Field(default=8000, alias="PORT")
     api_prefix: str = "/api/v1"
 
     # 数据获取配置
