@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  crypto-analyst:
+    build: .
+    container_name: crypto-analyst-assistant
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=False
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/v1/health', timeout=2)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - crypto-network
+
+  # 可选：添加Redis缓存
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: crypto-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   command: redis-server --appendonly yes
+  #   networks:
+  #     - crypto-network
+
+  # 可选：添加Nginx反向代理
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: crypto-nginx
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./ssl:/etc/nginx/ssl:ro
+  #   depends_on:
+  #     - crypto-analyst
+  #   networks:
+  #     - crypto-network
+
+networks:
+  crypto-network:
+    driver: bridge
+
+# volumes:
+#   redis-data:
+#   nginx-logs:

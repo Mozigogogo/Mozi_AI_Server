@@ -1,0 +1,376 @@
+from typing import Dict, Any, Generator
+from langchain.tools import BaseTool
+from pydantic import BaseModel, Field
+from app.agents.tools.base import CryptoAnalystTool, SymbolAndLangInput, SymbolAndQuestionInput
+from app.services.data_service import get_kline_data, get_header_data, get_news_from_mysql, get_all_derivatives_data
+from app.services.llm_service import llm_service
+from app.utils.formatters import (
+    format_kline_data,
+    format_header_data,
+    format_news_data,
+    format_derivatives_data,
+    create_analysis_prompt
+)
+from app.utils.validators import validate_symbol, validate_language, validate_question
+
+
+class TechnicalAnalysisInput(SymbolAndQuestionInput):
+    """技术分析输入模型"""
+    lang: str = Field(
+        default="zh",
+        description="语言，zh（中文）或en（英文），默认zh"
+    )
+
+
+class TechnicalAnalysisTool(CryptoAnalystTool):
+    """技术分析工具 - 基于K线数据进行技术分析"""
+
+    name: str = "technical_analysis"
+    description: str = "基于加密货币的K线数据进行技术分析，包括趋势、支撑阻力、技术指标等。当用户询问技术面、价格走势、技术指标时使用此工具。"
+    args_schema: type = TechnicalAnalysisInput
+
+    def execute(self, symbol: str, question: str, lang: str = "zh") -> Dict[str, Any]:
+        """执行技术分析"""
+        symbol = validate_symbol(symbol)
+        question = validate_question(question)
+        lang = validate_language(lang)
+
+        # 获取数据
+        kline_data = get_kline_data(symbol)
+        header_data = get_header_data(symbol)
+
+        # 创建提示词
+        prompt = create_analysis_prompt(symbol, question, kline_data, header_data)
+
+        # 调用LLM
+        response = llm_service.call_llm(prompt, lang)
+
+        return {
+            "symbol": symbol,
+            "question": question,
+            "analysis_type": "technical_analysis",
+            "response": response,
+            "summary": f"已完成{symbol}的技术分析，基于30天K线数据和基本信息。"
+        }
+
+
+class NewsAnalysisInput(SymbolAndLangInput):
+    """新闻分析输入模型"""
+    pass
+
+
+class NewsAnalysisTool(CryptoAnalystTool):
+    """新闻分析工具 - 分析加密货币相关新闻"""
+
+    name: str = "news_analysis"
+    description: str = "分析加密货币相关的新闻数据，解读市场情绪和事件影响。当用户询问新闻解读、事件分析、市场情绪时使用此工具。"
+    args_schema: type = NewsAnalysisInput
+
+    def execute(self, symbol: str, lang: str = "zh") -> Dict[str, Any]:
+        """执行新闻分析"""
+        symbol = validate_symbol(symbol)
+        lang = validate_language(lang)
+
+        # 获取新闻数据
+        news = get_news_from_mysql(symbol, limit=20)
+        if not news:
+            return {
+                "symbol": symbol,
+                "analysis_type": "news_analysis",
+                "response": f"未找到{symbol}的相关新闻数据。",
+                "summary": f"未找到{symbol}的相关新闻数据。"
+            }
+
+        formatted_news = format_news_data(news)
+
+        # 创建新闻分析提示词
+        if lang == "en":
+            prompt = f"""
+Analyze recent news related to {symbol}.
+
+News:
+{formatted_news}
+
+Output:
+[Summary]
+[Potential Impact]
+[Risk Notice]
+"""
+        else:
+            prompt = f"""
+请分析以下与 {symbol} 相关的近期新闻：
+
+{formatted_news}
+
+输出：
+【新闻总结】
+【潜在影响】
+【风险提示】
+"""
+
+        # 调用LLM
+        response = llm_service.call_llm(prompt, lang)
+
+        return {
+            "symbol": symbol,
+            "news_count": len(news),
+            "analysis_type": "news_analysis",
+            "response": response,
+            "summary": f"已完成{symbol}的新闻分析，基于{len(news)}条相关新闻。"
+        }
+
+
+class DerivativesAnalysisInput(SymbolAndLangInput):
+    """衍生品分析输入模型"""
+    pass
+
+
+class DerivativesAnalysisTool(CryptoAnalystTool):
+    """衍生品分析工具 - 分析加密货币的衍生品市场数据"""
+
+    name: str = "derivatives_analysis"
+    description: str = "分析加密货币的衍生品市场数据，包括多空结构、资金流向、市场情绪等。当用户询问衍生品市场、多空分析、资金面时使用此工具。"
+    args_schema: type = DerivativesAnalysisInput
+
+    def execute(self, symbol: str, lang: str = "zh") -> Dict[str, Any]:
+        """执行衍生品分析"""
+        symbol = validate_symbol(symbol)
+        lang = validate_language(lang)
+
+        # 获取衍生品数据
+        derivatives_data = get_all_derivatives_data(symbol)
+        formatted_data = format_derivatives_data(derivatives_data)
+
+        # 创建衍生品分析提示词
+        if lang == "en":
+            prompt = f"""
+Analyze the derivatives market data for {symbol}:
+
+{formatted_data}
+
+Please analyze:
+1. Changes in active buying and selling power
+2. Open interest changes representing long-short game
+3. Whether trading volume shows significant changes
+4. Market sentiment reflected by funding rates
+
+Output:
+[Long-Short Structure]
+[Capital Behavior]
+[Short-term Sentiment Judgment]
+"""
+        else:
+            prompt = f"""
+以下是 {symbol} 的衍生品与资金面数据（多交易所）：
+
+{formatted_data}
+
+请分析：
+1. 主动买卖力量变化
+2. 持仓量变化代表的多空博弈
+3. 成交额是否放量
+4. 资金费率反映的市场情绪
+
+输出：
+【多空结构】
+【资金行为】
+【短期情绪判断】
+"""
+
+        # 调用LLM
+        response = llm_service.call_llm(prompt, lang)
+
+        return {
+            "symbol": symbol,
+            "analysis_type": "derivatives_analysis",
+            "response": response,
+            "summary": f"已完成{symbol}的衍生品市场分析，包括买卖比例、持仓量、交易量和资金费率。"
+        }
+
+
+class QuantitativeAnalysisInput(SymbolAndLangInput):
+    """量化分析输入模型"""
+    pass
+
+
+class QuantitativeAnalysisTool(CryptoAnalystTool):
+    """量化分析工具 - 基于六因子模型进行量化分析"""
+
+    name: str = "quantitative_analysis"
+    description: str = "基于六因子量化评分模型进行加密货币的量化分析，提供概率判断。当用户询问量化分析、概率判断、风险评估时使用此工具。"
+    args_schema: type = QuantitativeAnalysisInput
+
+    def execute(self, symbol: str, lang: str = "zh") -> Dict[str, Any]:
+        """执行量化分析"""
+        symbol = validate_symbol(symbol)
+        lang = validate_language(lang)
+
+        # 量化分析提示词（基于原F3提示词）
+        prompt = f"""
+你是一名机构级加密资产量化研究员，专注于多因子概率建模与风险评估。
+
+你必须严格基于以下【六因子评分模型】进行分析，
+禁止主观猜测、禁止编造数据、禁止脱离已给定信息。
+
+====================
+【六因子量化评分模型】
+====================
+
+请分别对以下六个因子进行量化打分：
+
+1. 趋势因子（Trend Factor）   ：-2 ~ +2
+   - 均线方向
+   - 价格结构
+   - 趋势通道状态
+
+2. 动量因子（Momentum Factor）：-2 ~ +2
+   - RSI 区间
+   - 超买/超卖状态
+   - 近期涨跌强度
+
+3. 成交量因子（Volume Factor）：-2 ~ +2
+   - 放量有效性
+   - 量价匹配度
+   - 成交延续性
+
+4. 资金因子（Capital Factor）：-2 ~ +2
+   - 主动买卖比
+   - 持仓变化
+   - 费率结构
+
+5. 波动率因子（Volatility）：-1 ~ +1
+   - 波动扩散/收敛
+   - 趋势稳定性
+
+6. 叙事因子（Narrative Factor）：-2 ~ +2
+   - 新闻情绪
+   - 监管风险
+   - 项目进展
+   - 舆论一致性
+
+====================
+【评分计算规则】
+====================
+
+Total Score = 六因子得分总和
+范围：-11 ~ +11
+
+====================
+【概率映射规则】
+====================
+
+请严格按下表映射胜率：
+
+Total Score ≥ +7      → 买入胜率 70%~80%
++4 ≤ Score ≤ +6       → 买入胜率 60%~69%
++1 ≤ Score ≤ +3       → 买入胜率 52%~59%
+-1 ≤ Score ≤ 0        → 买入胜率 48%~51%
+-4 ≤ Score ≤ -2       → 买入胜率 40%~47%
+Score ≤ -5            → 买入胜率 30%~39%
+
+卖出胜率 = 100% - 买入胜率
+
+禁止自行修改映射区间。
+
+====================
+【分析约束】
+====================
+
+1. 禁止给出买卖建议
+2. 禁止使用确定性措辞
+3. 必须说明评分依据
+4. 必须强调概率不确定性
+5. 所有结论必须可追溯到因子
+
+====================
+【请严格输出以下结构】
+====================
+
+【六因子评分表】
+- 趋势因子：X / 2
+- 动量因子：X / 2
+- 成交量因子：X / 2
+- 资金因子：X / 2
+- 波动率因子：X / 1
+- 叙事因子：X / 2
+
+【综合得分】
+Total Score = X / 11
+
+【胜率映射结果】
+买入胜率：XX%
+卖出胜率：XX%
+
+【量化逻辑说明】
+（逐条解释每个因子为何得分）
+
+【综合倾向判断】
+（偏多 / 偏空 / 中性，保持克制）
+
+【风险偏好适配说明】
+（仅描述适合人群，不给操作建议）
+"""
+
+        # 调用LLM
+        response = llm_service.call_llm(prompt, lang)
+
+        return {
+            "symbol": symbol,
+            "analysis_type": "quantitative_analysis",
+            "response": response,
+            "summary": f"已完成{symbol}的量化分析，基于六因子评分模型。"
+        }
+
+
+class SummaryAnalysisInput(SymbolAndLangInput):
+    """总结分析输入模型"""
+    pass
+
+
+class SummaryAnalysisTool(CryptoAnalystTool):
+    """总结分析工具 - 综合所有分析给出最终总结"""
+
+    name: str = "summary_analysis"
+    description: str = "综合技术分析、新闻分析、衍生品分析和量化分析，给出加密货币的最终总结。当用户询问综合判断、整体评估、最终结论时使用此工具。"
+    args_schema: type = SummaryAnalysisInput
+
+    def execute(self, symbol: str, lang: str = "zh") -> Dict[str, Any]:
+        """执行总结分析"""
+        symbol = validate_symbol(symbol)
+        lang = validate_language(lang)
+
+        # 总结分析提示词
+        if lang == "en":
+            prompt = f"""
+Summarize the overall outlook of {symbol} based on comprehensive analysis including:
+1. Technical analysis (price trends, support/resistance)
+2. News analysis (market sentiment, events)
+3. Derivatives analysis (long-short structure, funding)
+4. Quantitative analysis (probability assessment)
+
+Highlight key risks and uncertainties.
+"""
+        else:
+            prompt = f"""
+请对 {symbol} 做最终总结：
+
+- 综合技术分析（价格趋势、支撑阻力）
+- 新闻分析（市场情绪、事件影响）
+- 衍生品分析（多空结构、资金面）
+- 量化分析（概率判断）
+
+输出：
+【整体判断】
+【关键风险】
+【不确定性说明】
+"""
+
+        # 调用LLM
+        response = llm_service.call_llm(prompt, lang)
+
+        return {
+            "symbol": symbol,
+            "analysis_type": "summary_analysis",
+            "response": response,
+            "summary": f"已完成{symbol}的综合总结分析。"
+        }
