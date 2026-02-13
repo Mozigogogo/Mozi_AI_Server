@@ -4,15 +4,15 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # MySQL配置
-    mysql_host: str
+    mysql_host: str = "localhost"
     mysql_port: int = 3306
-    mysql_user: str
-    mysql_password: str
+    mysql_user: str = "root"
+    mysql_password: str = ""
     mysql_database: str = "exchange"
     mysql_charset: str = "utf8mb4"
 
     # DeepSeek API配置
-    deepseek_api_key: str
+    deepseek_api_key: str = ""
     deepseek_api_base: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-chat"
 
