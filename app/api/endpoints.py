@@ -1,5 +1,6 @@
 import json
 import time
+import asyncio
 from typing import Generator
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -54,10 +55,16 @@ async def analyze(request: AnalyzeRequest):
         lang = validate_language(request.lang.value)
 
         # 执行分析
-        result = crypto_agent.analyze(
-            symbol=symbol,
-            question=question,
-            lang=lang
+        # 使用 run_in_executor 在线程池中运行同步的 analyze 方法，避免阻塞事件循环
+        import asyncio
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, 
+            lambda: crypto_agent.analyze(
+                symbol=symbol,
+                question=question,
+                lang=lang
+            )
         )
 
         return AnalyzeResponse(**result)
@@ -85,6 +92,14 @@ async def analyze_stream(request: AnalyzeRequest):
             lang = validate_language(request.lang.value)
 
             # 执行流式分析
+            # 注意：crypto_agent.analyze_stream 是一个同步生成器，我们需要在迭代时让出控制权
+            # 或者将其包装为异步生成器
+            
+            # 由于 analyze_stream 是同步生成器，直接迭代会阻塞
+            # 这里我们使用简单的迭代，但在每次迭代间加入极短的 sleep 让出控制权
+            # 或者更好的方式是重构 agent 为异步，但改动较大
+            # 临时方案：在同步生成器中 yield 数据
+            
             for chunk in crypto_agent.analyze_stream(
                 symbol=symbol,
                 question=question,
@@ -94,6 +109,8 @@ async def analyze_stream(request: AnalyzeRequest):
                     "event": "message",
                     "data": json.dumps({"data": chunk, "type": "chunk"})
                 }
+                # 让出控制权，防止阻塞心跳
+                await asyncio.sleep(0.01)
 
             # 发送完成信号
             yield {
