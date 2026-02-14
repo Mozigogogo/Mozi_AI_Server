@@ -107,27 +107,17 @@ async def analyze_stream(request: AnalyzeRequest):
             print(f"DEBUG: Stream - Validation passed.")
 
             # 执行流式分析
-            # 注意：crypto_agent.analyze_stream 是一个同步生成器，我们需要在迭代时让出控制权
-            # 或者将其包装为异步生成器
-            
-            # 由于 analyze_stream 是同步生成器，直接迭代会阻塞
-            # 这里我们使用简单的迭代，但在每次迭代间加入极短的 sleep 让出控制权
-            # 或者更好的方式是重构 agent 为异步，但改动较大
-            # 临时方案：在同步生成器中 yield 数据
-            
-            print("DEBUG: Stream - Starting generator loop...")
-            for chunk in crypto_agent.analyze_stream(
+            print("DEBUG: Stream - Starting generator loop (Async)...")
+            async for chunk in crypto_agent.analyze_stream_async(
                 symbol=symbol,
                 question=question,
                 lang=lang
             ):
-                print(f"DEBUG: Stream - Got chunk: {type(chunk)} - {str(chunk)[:200]}...") 
+                # print(f"DEBUG: Stream - Got chunk: {type(chunk)} - {str(chunk)[:50]}...") 
                 yield {
                     "event": "message",
                     "data": json.dumps({"data": chunk, "type": "chunk"})
                 }
-                # 让出控制权，防止阻塞心跳
-                await asyncio.sleep(0.01)
 
             print("DEBUG: Stream - Generator loop finished.")
             # 发送完成信号
