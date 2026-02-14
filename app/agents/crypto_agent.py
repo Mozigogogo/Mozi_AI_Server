@@ -450,6 +450,62 @@ class CryptoAnalystAgent:
                 AIMessage(content=accumulated_response)
             ])
 
+    async def chat_stream_async(
+        self,
+        message: str,
+        conversation_id: Optional[str] = None,
+        lang: str = "zh"
+    ) -> AsyncGenerator[str, None]:
+        """异步流式对话 (使用 astream_events)"""
+        # 验证输入
+        message = validate_question(message)
+        lang = validate_language(lang)
+
+        # 构建消息列表
+        messages = []
+        messages.extend(self.chat_history)
+        messages.append(HumanMessage(content=message))
+
+        accumulated_response = ""
+        
+        try:
+            # 使用 astream_events 获取细粒度事件
+            async for event in self.agent.astream_events(
+                {"messages": messages},
+                version="v1"
+            ):
+                kind = event["event"]
+                
+                # 1. 捕获 LLM 生成的 token
+                if kind == "on_chat_model_stream":
+                    content = event["data"]["chunk"].content
+                    if content:
+                        accumulated_response += content
+                        yield content
+                
+                # 2. 捕获工具调用开始
+                elif kind == "on_tool_start":
+                    tool_name = event["name"]
+                    if tool_name and not tool_name.startswith("_"):
+                        yield f"\n> 正在调用工具: {tool_name}...\n"
+                        
+                # 3. 捕获工具调用结束
+                elif kind == "on_tool_end":
+                    tool_name = event["name"]
+                    if tool_name and not tool_name.startswith("_"):
+                        yield f"> 工具 {tool_name} 执行完成。\n"
+
+        except Exception as e:
+            print(f"Error in chat_stream_async: {e}")
+            yield f"\n[系统错误: 对话过程中发生异常 - {str(e)}]\n"
+
+        # 流式结束后，更新聊天历史
+        if accumulated_response:
+            self.chat_history.extend([
+                HumanMessage(content=message),
+                AIMessage(content=accumulated_response)
+            ])
+
     def get_available_tools(self) -> List[Dict[str, Any]]:
         """获取可用工具列表"""
         tools_info = []

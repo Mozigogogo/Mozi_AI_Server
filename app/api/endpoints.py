@@ -189,12 +189,18 @@ async def chat_stream(request: ChatRequest):
     """对话式交互（流式）"""
     async def event_generator():
         try:
+            # 立即发送开始信号
+            yield {
+                "event": "message",
+                "data": json.dumps({"data": "开始对话...", "type": "start"})
+            }
+
             # 验证输入
             message = validate_question(request.message)
             lang = validate_language(request.lang.value)
 
             # 执行流式对话
-            for chunk in crypto_agent.chat_stream(
+            async for chunk in crypto_agent.chat_stream_async(
                 message=message,
                 conversation_id=request.conversation_id,
                 lang=lang
