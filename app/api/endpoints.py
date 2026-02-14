@@ -102,7 +102,7 @@ async def analyze_stream(request: AnalyzeRequest):
             # 立即发送开始信号
             yield {
                 "event": "message",
-                "data": json.dumps({"data": "开始分析...", "type": "start"})
+                "data": json.dumps({"data": "", "type": "start"})
             }
 
             # 验证输入
@@ -192,7 +192,7 @@ async def chat_stream(request: ChatRequest):
             # 立即发送开始信号
             yield {
                 "event": "message",
-                "data": json.dumps({"data": "开始对话...", "type": "start"})
+                "data": json.dumps({"data": "", "type": "start"})
             }
 
             # 验证输入
