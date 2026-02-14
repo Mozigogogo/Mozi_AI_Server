@@ -270,6 +270,7 @@ class CryptoAnalystAgent:
         lang: str = "zh"
     ) -> Generator[str, None, None]:
         """流式分析"""
+        print(f"DEBUG: Agent type: {type(self.agent)}")
         # 验证输入
         symbol = validate_symbol(symbol)
         question = validate_question(question)
@@ -285,18 +286,27 @@ class CryptoAnalystAgent:
 
         # 执行流式智能体（LangChain 1.x API）
         accumulated_response = ""
+        # 打印调试信息，确认流式输出结构
+        print("DEBUG: Starting agent stream...")
+        
         for chunk in self.agent.stream({"messages": messages}):
-            # chunk可能包含消息更新，我们提取AI消息内容
-            if "messages" in chunk:
-                # 获取新增的AI消息
-                new_ai_messages = [
-                    msg for msg in chunk["messages"]
-                    if isinstance(msg, AIMessage) and msg.content
-                ]
-                for msg in new_ai_messages:
-                    if msg.content:
-                        accumulated_response = msg.content
-                        yield msg.content
+            # 兼容 LangGraph 输出格式：chunk 是 {node_name: state}
+            # 我们需要遍历所有节点（通常是 'agent' 或 'tools'）
+            for node_name, node_content in chunk.items():
+                if "messages" in node_content:
+                    # 获取新增的AI消息
+                    new_ai_messages = [
+                        msg for msg in node_content["messages"]
+                        if isinstance(msg, AIMessage) and msg.content
+                    ]
+                    for msg in new_ai_messages:
+                        if msg.content:
+                            # 只有当内容是新的或者是最后一条消息时才输出
+                            # 简单策略：输出所有非空AI消息内容
+                            # 注意：LangGraph可能返回完整的历史消息，我们需要去重
+                            # 这里简单假设最后一条是新的
+                            accumulated_response = msg.content
+                            yield msg.content
 
         # 流式结束后，更新聊天历史
         if accumulated_response:

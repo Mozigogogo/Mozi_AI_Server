@@ -48,16 +48,24 @@ async def get_tools():
 @router.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(request: AnalyzeRequest):
     """分析加密货币（非流式）"""
+    print(f"DEBUG: Entering analyze endpoint with request: {request}")
     try:
         # 验证输入
+        print("DEBUG: Validating input...")
         symbol = validate_symbol(request.symbol)
         question = validate_question(request.question)
         lang = validate_language(request.lang.value)
+        print(f"DEBUG: Validation passed. Symbol: {symbol}, Question length: {len(question)}, Lang: {lang}")
 
         # 执行分析
         # 使用 run_in_executor 在线程池中运行同步的 analyze 方法，避免阻塞事件循环
-        import asyncio
-        loop = asyncio.get_event_loop()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        print("DEBUG: Starting execution in thread pool...")
         result = await loop.run_in_executor(
             None, 
             lambda: crypto_agent.analyze(
@@ -66,15 +74,19 @@ async def analyze(request: AnalyzeRequest):
                 lang=lang
             )
         )
+        print("DEBUG: Execution finished. Result keys:", result.keys())
 
         return AnalyzeResponse(**result)
 
     except CryptoAnalystException as e:
+        print(f"CryptoAnalystException: {e.detail}")
         raise HTTPException(
             status_code=e.status_code,
             detail=e.detail
         )
     except Exception as e:
+        print(f"Internal Server Error: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"分析失败: {str(e)}"
@@ -84,12 +96,15 @@ async def analyze(request: AnalyzeRequest):
 @router.post("/analyze/stream")
 async def analyze_stream(request: AnalyzeRequest):
     """分析加密货币（流式）"""
+    print(f"DEBUG: Entering analyze_stream endpoint with request: {request}")
     async def event_generator():
         try:
             # 验证输入
+            print("DEBUG: Stream - Validating input...")
             symbol = validate_symbol(request.symbol)
             question = validate_question(request.question)
             lang = validate_language(request.lang.value)
+            print(f"DEBUG: Stream - Validation passed.")
 
             # 执行流式分析
             # 注意：crypto_agent.analyze_stream 是一个同步生成器，我们需要在迭代时让出控制权
@@ -100,11 +115,13 @@ async def analyze_stream(request: AnalyzeRequest):
             # 或者更好的方式是重构 agent 为异步，但改动较大
             # 临时方案：在同步生成器中 yield 数据
             
+            print("DEBUG: Stream - Starting generator loop...")
             for chunk in crypto_agent.analyze_stream(
                 symbol=symbol,
                 question=question,
                 lang=lang
             ):
+                print(f"DEBUG: Stream - Got chunk: {type(chunk)} - {str(chunk)[:200]}...") 
                 yield {
                     "event": "message",
                     "data": json.dumps({"data": chunk, "type": "chunk"})
@@ -112,6 +129,7 @@ async def analyze_stream(request: AnalyzeRequest):
                 # 让出控制权，防止阻塞心跳
                 await asyncio.sleep(0.01)
 
+            print("DEBUG: Stream - Generator loop finished.")
             # 发送完成信号
             yield {
                 "event": "message",
@@ -119,6 +137,7 @@ async def analyze_stream(request: AnalyzeRequest):
             }
 
         except CryptoAnalystException as e:
+            print(f"DEBUG: Stream - CryptoAnalystException: {e.detail}")
             yield {
                 "event": "message",
                 "data": json.dumps({
@@ -127,6 +146,8 @@ async def analyze_stream(request: AnalyzeRequest):
                 })
             }
         except Exception as e:
+            print(f"DEBUG: Stream - Internal Error: {str(e)}")
+            traceback.print_exc()
             yield {
                 "event": "message",
                 "data": json.dumps({
