@@ -99,6 +99,12 @@ async def analyze_stream(request: AnalyzeRequest):
     print(f"DEBUG: Entering analyze_stream endpoint with request: {request}")
     async def event_generator():
         try:
+            # 立即发送开始信号
+            yield {
+                "event": "message",
+                "data": json.dumps({"data": "开始分析...", "type": "start"})
+            }
+
             # 验证输入
             print("DEBUG: Stream - Validating input...")
             symbol = validate_symbol(request.symbol)
