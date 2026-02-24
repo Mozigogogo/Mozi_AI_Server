@@ -11,6 +11,13 @@ from app.utils.formatters import (
     format_derivatives_data,
     create_analysis_prompt
 )
+from app.utils.formatters import (
+    format_kline_data,
+    format_header_data,
+    format_news_data,
+    format_derivatives_data,
+    create_analysis_prompt
+)
 from app.utils.validators import validate_symbol, validate_language, validate_question
 
 
@@ -220,48 +227,82 @@ class QuantitativeAnalysisTool(CryptoAnalystTool):
         symbol = validate_symbol(symbol)
         lang = validate_language(lang)
 
-        # 量化分析提示词（基于原F3提示词）
+        # 获取实际数据（这是修复的关键步骤）
+        kline_data = get_kline_data(symbol)
+        header_data = get_header_data(symbol)
+        derivatives_data = get_all_derivatives_data(symbol)
+        news = get_news_from_mysql(symbol, limit=30)  # 获取更多新闻用于叙事因子分析
+
+        # 格式化数据（使用量化分析专用的格式化方式）
+        formatted_kline = format_kline_data(kline_data, for_quantitative=True)
+        formatted_header = format_header_data(header_data, for_llm=True)
+        formatted_derivatives = format_derivatives_data(derivatives_data, for_quantitative=True)
+        formatted_news = format_news_data(news)
+
+        # 量化分析提示词（基于原F3提示词，现在包含实际数据）
         prompt = f"""
 你是一名机构级加密资产量化研究员，专注于多因子概率建模与风险评估。
 
-你必须严格基于以下【六因子评分模型】进行分析，
+你必须严格基于以下提供的【实际市场数据】和【六因子评分模型】进行分析，
 禁止主观猜测、禁止编造数据、禁止脱离已给定信息。
+
+====================
+【{symbol} 实际市场数据】
+====================
+
+## 1. 基础信息
+{formatted_header}
+
+## 2. K线数据（最近30天）
+{formatted_kline}
+
+## 3. 衍生品数据
+{formatted_derivatives}
+
+## 4. 新闻数据（最近30条）
+{formatted_news}
 
 ====================
 【六因子量化评分模型】
 ====================
 
-请分别对以下六个因子进行量化打分：
+请分别对以下六个因子进行量化打分，每个评分必须基于上述实际数据：
 
 1. 趋势因子（Trend Factor）   ：-2 ~ +2
-   - 均线方向
-   - 价格结构
-   - 趋势通道状态
+   - 基于K线数据分析均线方向（MA7、MA30）
+   - 基于K线数据分析价格结构
+   - 基于K线数据分析趋势通道状态
+   【数据来源：K线数据】
 
 2. 动量因子（Momentum Factor）：-2 ~ +2
-   - RSI 区间
-   - 超买/超卖状态
-   - 近期涨跌强度
+   - 基于K线数据计算RSI区间
+   - 基于价格变化判断超买/超卖状态
+   - 基于K线数据计算近期涨跌强度
+   【数据来源：K线数据、基础信息价格变化】
 
 3. 成交量因子（Volume Factor）：-2 ~ +2
-   - 放量有效性
-   - 量价匹配度
-   - 成交延续性
+   - 基于K线数据评估放量有效性
+   - 基于K线数据和交易量数据评估量价匹配度
+   - 基于K线数据评估成交延续性
+   【数据来源：K线数据、基础信息交易额】
 
 4. 资金因子（Capital Factor）：-2 ~ +2
-   - 主动买卖比
-   - 持仓变化
-   - 费率结构
+   - 基于衍生品数据分析主动买卖比
+   - 基于持仓量数据分析持仓变化
+   - 基于资金费率数据分析费率结构
+   【数据来源：衍生品数据（买卖比例、持仓量、资金费率）】
 
 5. 波动率因子（Volatility）：-1 ~ +1
-   - 波动扩散/收敛
-   - 趋势稳定性
+   - 基于K线数据分析波动扩散/收敛
+   - 基于价格数据分析趋势稳定性
+   【数据来源：K线数据、基础信息】
 
 6. 叙事因子（Narrative Factor）：-2 ~ +2
-   - 新闻情绪
-   - 监管风险
-   - 项目进展
-   - 舆论一致性
+   - 基于新闻数据分析新闻情绪
+   - 基于新闻数据评估监管风险
+   - 基于新闻数据评估项目进展
+   - 基于新闻数据分析舆论一致性
+   【数据来源：新闻数据】
 
 ====================
 【评分计算规则】
@@ -269,6 +310,11 @@ class QuantitativeAnalysisTool(CryptoAnalystTool):
 
 Total Score = 六因子得分总和
 范围：-11 ~ +11
+
+注意：
+- 趋势、动量、成交量、资金、叙事因子：-2 ~ +2
+- 波动率因子：-1 ~ +1
+- 必须基于实际数据，不能凭空猜测
 
 ====================
 【概率映射规则】
@@ -293,21 +339,28 @@ Score ≤ -5            → 买入胜率 30%~39%
 
 1. 禁止给出买卖建议
 2. 禁止使用确定性措辞
-3. 必须说明评分依据
+3. 必须说明每个因子的评分依据，引用具体数据
 4. 必须强调概率不确定性
-5. 所有结论必须可追溯到因子
+5. 所有结论必须可追溯到因子和实际数据
+6. 如果某个因子的数据不足以评分，必须明确说明并给出保守评分
 
 ====================
 【请严格输出以下结构】
 ====================
 
+【数据获取情况】
+- K线数据：已获取30天数据 ✓
+- 基础信息：已获取 ✓
+- 衍生品数据：已获取（买卖比例、持仓量、资金费率）✓
+- 新闻数据：已获取{len(news)}条 ✓
+
 【六因子评分表】
-- 趋势因子：X / 2
-- 动量因子：X / 2
-- 成交量因子：X / 2
-- 资金因子：X / 2
-- 波动率因子：X / 1
-- 叙事因子：X / 2
+- 趋势因子：X / 2 （评分依据：[引用K线数据具体信息]）
+- 动量因子：X / 2 （评分依据：[引用价格变化、RSI等具体信息]）
+- 成交量因子：X / 2 （评分依据：[引用交易量、量价关系等具体信息]）
+- 资金因子：X / 2 （评分依据：[引用买卖比、持仓变化、费率等具体信息]）
+- 波动率因子：X / 1 （评分依据：[引用价格波动等具体信息]）
+- 叙事因子：X / 2 （评分依据：[引用新闻情绪等具体信息]）
 
 【综合得分】
 Total Score = X / 11
@@ -317,20 +370,23 @@ Total Score = X / 11
 卖出胜率：XX%
 
 【量化逻辑说明】
-（逐条解释每个因子为何得分）
+（逐条解释每个因子为何得分，引用具体数据支撑）
 
 【综合倾向判断】
-（偏多 / 偏空 / 中性，保持克制）
+（偏多 / 偏空 / 中性，保持克制，基于数据说话）
 
 【风险偏好适配说明】
 （仅描述适合人群，不给操作建议）
+
+【数据局限性说明】
+（说明数据时间范围、数据源限制等）
 """
 
         # 调用LLM
         response = llm_service.call_llm(prompt, lang)
 
         # 返回格式化字符串（LangChain工具期望返回字符串）
-        return f"{symbol}量化分析报告：\n\n基于六因子评分模型\n\n分析结果：\n{response}\n\n已完成{symbol}的量化分析，基于六因子评分模型。"
+        return f"{symbol}量化分析报告：\n\n基于六因子评分模型\n\n数据来源：K线数据(30天) + 基础信息 + 衍生品数据 + 新闻数据({len(news)}条)\n\n分析结果：\n{response}\n\n已完成{symbol}的量化分析，基于六因子评分模型。"
 
 
 class SummaryAnalysisInput(SymbolAndLangInput):
