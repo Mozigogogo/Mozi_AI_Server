@@ -288,3 +288,123 @@ def get_all_derivatives_data(symbol: str) -> Dict[str, Any]:
         "trading_volume": get_trading_volume(symbol),
         "funding_rate": get_funding_rate()
     }
+
+
+def calculate_technical_indicators(kline_data: Dict[str, Any]) -> Dict[str, float]:
+    """
+    计算技术指标
+
+    Args:
+        kline_data: K线数据
+
+    Returns:
+        包含技术指标的字典: ma7, ma30, rsi, volatility, price_position等
+    """
+    values = kline_data.get("values", [])
+
+    if not values or len(values) < 15:
+        return {
+            "ma7": 0,
+            "ma30": 0,
+            "rsi": 50,
+            "volatility": 0,
+            "price_position": 50,
+            "current_price": 0,
+            "previous_price": 0,
+            "price_change_pct": 0
+        }
+
+    # 提取价格数据 [开盘价, 收盘价, 最低价, 最高价]
+    closes = []
+    opens = []
+    highs = []
+    lows = []
+
+    for candle in values:
+        if len(candle) >= 4:
+            try:
+                opens.append(float(candle[0]))
+                closes.append(float(candle[1]))
+                lows.append(float(candle[2]))
+                highs.append(float(candle[3]))
+            except (ValueError, IndexError):
+                continue
+
+    if not closes:
+        return {
+            "ma7": 0,
+            "ma30": 0,
+            "rsi": 50,
+            "volatility": 0,
+            "price_position": 50,
+            "current_price": 0,
+            "previous_price": 0,
+            "price_change_pct": 0
+        }
+
+    current_price = closes[-1]
+    previous_price = closes[-2] if len(closes) > 1 else current_price
+    price_change = current_price - previous_price
+    price_change_pct = (price_change / previous_price * 100) if previous_price else 0
+
+    # 计算移动平均线
+    ma_7 = sum(closes[-7:]) / 7 if len(closes) >= 7 else sum(closes) / len(closes)
+    ma_30 = sum(closes[-30:]) / 30 if len(closes) >= 30 else sum(closes) / len(closes)
+
+    # 计算RSI（简化版，14周期）
+    rsi = calculate_rsi(closes)
+
+    # 计算波动率
+    highest = max(highs) if highs else current_price
+    lowest = min(lows) if lows else current_price
+    volatility = (highest - lowest) / ((highest + lowest) / 2 * 100) if (highest + lowest) > 0 else 0
+
+    # 计算价格位置
+    if highest != lowest:
+        price_position = ((current_price - lowest) / (highest - lowest)) * 100
+    else:
+        price_position = 50
+
+    return {
+        "ma7": round(ma_7, 2),
+        "ma30": round(ma_30, 2),
+        "rsi": round(rsi, 2),
+        "volatility": round(volatility, 2),
+        "price_position": round(price_position, 1),
+        "current_price": round(current_price, 2),
+        "previous_price": round(previous_price, 2),
+        "price_change_pct": round(price_change_pct, 2),
+        "highest": round(highest, 2),
+        "lowest": round(lowest, 2)
+    }
+
+
+def calculate_rsi(prices: List[float], period: int = 14) -> float:
+    """
+    计算RSI指标
+
+    Args:
+        prices: 价格列表
+        period: RSI周期，默认14
+
+    Returns:
+        RSI值 (0-100)
+    """
+    if len(prices) < period + 1:
+        return 50  # 数据不足，返回中性值
+
+    deltas = [prices[i] - prices[i-1] for i in range(1, len(prices))]
+
+    gains = [delta if delta > 0 else 0 for delta in deltas]
+    losses = [-delta if delta < 0 else 0 for delta in deltas]
+
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+
+    if avg_loss == 0:
+        return 100
+
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+
+    return rsi
