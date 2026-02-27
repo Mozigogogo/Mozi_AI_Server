@@ -47,18 +47,62 @@ class BuySellRatioTool(CryptoAnalystTool):
         """执行买卖比例数据获取"""
         symbol = validate_symbol(symbol)
 
-        buy_sell_ratio = get_but_sell_ratio(symbol)
+        but_sell_ratio = get_but_sell_ratio(symbol)
 
         # 格式化买卖比例数据
         formatted_ratio = f"{symbol}买卖比例数据：\n"
-        for exchange, data in buy_sell_ratio.items():
+        for exchange, data in but_sell_ratio.items():
             formatted_ratio += f"\n{exchange}:\n"
-            # 简单格式化数据
-            if isinstance(data, dict):
-                for key, value in data.items():
-                    formatted_ratio += f"  {key}: {value}\n"
+
+            if isinstance(data, dict) and data.get("code") == 0:
+                actual_data = data.get("data", {})
+
+                if isinstance(actual_data, dict) and actual_data:
+                    # 提取数据数组
+                    short_data = actual_data.get("shortData", [])
+                    long_data = actual_data.get("longData", [])
+                    long_short_data = actual_data.get("longShortData", [])
+
+                    if short_data and long_data and long_short_data:
+                        # 计算平均值
+                        avg_short = sum(short_data) / len(short_data) if short_data else 0
+                        avg_long = sum(long_data) / len(long_data) if long_data else 0
+                        avg_long_short = sum(long_short_data) / len(long_short_data) if long_short_data else 0
+
+                        # 获取最新值
+                        latest_short = short_data[-1] if short_data else 0
+                        latest_long = long_data[-1] if long_data else 0
+                        latest_long_short = long_short_data[-1] if long_short_data else 0
+
+                        formatted_ratio += f"  空头比例: {len(short_data)}个数据点\n"
+                        formatted_ratio += f"    最新值: {latest_short:.3f}\n"
+                        formatted_ratio += f"    平均值: {avg_short:.3f}\n"
+
+                        formatted_ratio += f"  多头比例: {len(long_data)}个数据点\n"
+                        formatted_ratio += f"    最新值: {latest_long:.3f}\n"
+                        formatted_ratio += f"    平均值: {avg_long:.3f}\n"
+
+                        formatted_ratio += f"  多空比: {len(long_short_data)}个数据点\n"
+                        formatted_ratio += f"    最新值: {latest_long_short:.3f}\n"
+                        formatted_ratio += f"    平均值: {avg_long_short:.3f}\n"
+
+                        # 市场情绪分析
+                        if latest_long_short > 1.2:
+                            sentiment = "强烈看多"
+                        elif latest_long_short > 1.0:
+                            sentiment = "温和看多"
+                        elif latest_long_short > 0.8:
+                            sentiment = "温和看空"
+                        else:
+                            sentiment = "强烈看空"
+
+                        formatted_ratio += f"  市场情绪: {sentiment} (多空比 {latest_long_short:.3f})\n"
+                    else:
+                        formatted_ratio += f"  数据不完整: 缺少必要的数组数据\n"
+                else:
+                    formatted_ratio += f"  数据为空\n"
             else:
-                formatted_ratio += f"  {data}\n"
+                formatted_ratio += f"  API返回错误: {data}\n"
 
         # 返回格式化字符串（LangChain工具期望返回字符串）
         return f"{formatted_ratio}\n已获取{symbol}的买卖比例数据，包含多个交易所的数据。"
@@ -131,15 +175,22 @@ class FundingRateTool(CryptoAnalystTool):
         """执行资金费率数据获取"""
         symbol = validate_symbol(symbol)
 
-        funding_rate = get_funding_rate()
+        funding_rate = get_funding_rate(symbol)
 
         # 格式化资金费率数据
         formatted_rate = f"{symbol}资金费率数据：\n"
-        if isinstance(funding_rate, dict):
+        if isinstance(funding_rate, list) and funding_rate:
+            exchanges = ["Binance", "Bybit", "Coinbase", "HTX", "Kraken", "KuCoin", "OKX"]
+            for i, rate in enumerate(funding_rate):
+                if i < len(exchanges):
+                    formatted_rate += f"{exchanges[i]}: {rate}\n"
+                else:
+                    formatted_rate += f"交易所{i+1}: {rate}\n"
+        elif isinstance(funding_rate, dict):
             for key, value in funding_rate.items():
                 formatted_rate += f"{key}: {value}\n"
         else:
-            formatted_rate += f"{funding_rate}\n"
+            formatted_rate += "暂无资金费率数据\n"
 
         # 返回格式化字符串（LangChain工具期望返回字符串）
         return f"{formatted_rate}\n已获取{symbol}的资金费率数据，反映永续合约市场的多空平衡。"

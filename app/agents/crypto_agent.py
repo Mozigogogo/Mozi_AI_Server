@@ -1,11 +1,11 @@
-from typing import List, Dict, Any, Optional, Generator, AsyncGenerator
+from typing import List, Dict, Any, Optional, Generator
 from langchain.agents import create_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 # ConversationBufferMemory is not available in LangChain 1.x, using alternative approach
 # from langchain.memory import ConversationBufferMemory
 from langchain_core.tools import Tool
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 from app.core.config import get_settings
 from app.agents.tools.market_data import (
@@ -270,7 +270,6 @@ class CryptoAnalystAgent:
         lang: str = "zh"
     ) -> Generator[str, None, None]:
         """流式分析"""
-        print(f"DEBUG: Agent type: {type(self.agent)}")
         # 验证输入
         symbol = validate_symbol(symbol)
         question = validate_question(question)
@@ -286,91 +285,18 @@ class CryptoAnalystAgent:
 
         # 执行流式智能体（LangChain 1.x API）
         accumulated_response = ""
-        # 打印调试信息，确认流式输出结构
-        print("DEBUG: Starting agent stream...")
-        
         for chunk in self.agent.stream({"messages": messages}):
-            # 兼容 LangGraph 输出格式：chunk 是 {node_name: state}
-            # 我们需要遍历所有节点（通常是 'agent' 或 'tools'）
-            for node_name, node_content in chunk.items():
-                if "messages" in node_content:
-                    # 获取新增的AI消息
-                    new_ai_messages = [
-                        msg for msg in node_content["messages"]
-                        if isinstance(msg, AIMessage) and msg.content
-                    ]
-                    for msg in new_ai_messages:
-                        if msg.content:
-                            # 只有当内容是新的或者是最后一条消息时才输出
-                            # 简单策略：输出所有非空AI消息内容
-                            # 注意：LangGraph可能返回完整的历史消息，我们需要去重
-                            # 这里简单假设最后一条是新的
-                            accumulated_response = msg.content
-                            yield msg.content
-
-        # 流式结束后，更新聊天历史
-        if accumulated_response:
-            self.chat_history.extend([
-                HumanMessage(content=user_input),
-                AIMessage(content=accumulated_response)
-            ])
-
-    async def analyze_stream_async(
-        self,
-        symbol: str,
-        question: str,
-        lang: str = "zh"
-    ) -> AsyncGenerator[str, None]:
-        """异步流式分析 (使用 astream_events 获取 token 级输出)"""
-        print(f"DEBUG: Async Agent type: {type(self.agent)}")
-        
-        # 验证输入
-        symbol = validate_symbol(symbol)
-        question = validate_question(question)
-        lang = validate_language(lang)
-
-        # 构建用户输入
-        user_input = f"请分析{symbol}：{question}（使用语言：{lang}）"
-
-        # 构建消息列表
-        messages = []
-        messages.extend(self.chat_history)
-        messages.append(HumanMessage(content=user_input))
-
-        accumulated_response = ""
-        print("DEBUG: Starting async agent stream (astream_events)...")
-
-        try:
-            # 使用 astream_events 获取细粒度事件（包括 token 生成）
-            async for event in self.agent.astream_events(
-                {"messages": messages},
-                version="v1"
-            ):
-                kind = event["event"]
-                
-                # 1. 捕获 LLM 生成的 token
-                if kind == "on_chat_model_stream":
-                    content = event["data"]["chunk"].content
-                    if content:
-                        accumulated_response += content
-                        yield content
-                
-                # 2. 捕获工具调用开始（可选，增加用户反馈）
-                elif kind == "on_tool_start":
-                    tool_name = event["name"]
-                    # 过滤掉一些内部工具或不重要的工具显示
-                    if tool_name and not tool_name.startswith("_"):
-                        yield f"\n> 正在调用工具: {tool_name}...\n"
-                        
-                # 3. 捕获工具调用结束
-                elif kind == "on_tool_end":
-                    tool_name = event["name"]
-                    if tool_name and not tool_name.startswith("_"):
-                        yield f"> 工具 {tool_name} 执行完成。\n"
-
-        except Exception as e:
-            print(f"Error in analyze_stream_async: {e}")
-            yield f"\n[系统错误: 分析过程中发生异常 - {str(e)}]\n"
+            # chunk可能包含消息更新，我们提取AI消息内容
+            if "messages" in chunk:
+                # 获取新增的AI消息
+                new_ai_messages = [
+                    msg for msg in chunk["messages"]
+                    if isinstance(msg, AIMessage) and msg.content
+                ]
+                for msg in new_ai_messages:
+                    if msg.content:
+                        accumulated_response = msg.content
+                        yield msg.content
 
         # 流式结束后，更新聊天历史
         if accumulated_response:
@@ -442,62 +368,6 @@ class CryptoAnalystAgent:
                     if msg.content:
                         accumulated_response = msg.content
                         yield msg.content
-
-        # 流式结束后，更新聊天历史
-        if accumulated_response:
-            self.chat_history.extend([
-                HumanMessage(content=message),
-                AIMessage(content=accumulated_response)
-            ])
-
-    async def chat_stream_async(
-        self,
-        message: str,
-        conversation_id: Optional[str] = None,
-        lang: str = "zh"
-    ) -> AsyncGenerator[str, None]:
-        """异步流式对话 (使用 astream_events)"""
-        # 验证输入
-        message = validate_question(message)
-        lang = validate_language(lang)
-
-        # 构建消息列表
-        messages = []
-        messages.extend(self.chat_history)
-        messages.append(HumanMessage(content=message))
-
-        accumulated_response = ""
-        
-        try:
-            # 使用 astream_events 获取细粒度事件
-            async for event in self.agent.astream_events(
-                {"messages": messages},
-                version="v1"
-            ):
-                kind = event["event"]
-                
-                # 1. 捕获 LLM 生成的 token
-                if kind == "on_chat_model_stream":
-                    content = event["data"]["chunk"].content
-                    if content:
-                        accumulated_response += content
-                        yield content
-                
-                # 2. 捕获工具调用开始
-                elif kind == "on_tool_start":
-                    tool_name = event["name"]
-                    if tool_name and not tool_name.startswith("_"):
-                        yield f"\n> 正在调用工具: {tool_name}...\n"
-                        
-                # 3. 捕获工具调用结束
-                elif kind == "on_tool_end":
-                    tool_name = event["name"]
-                    if tool_name and not tool_name.startswith("_"):
-                        yield f"> 工具 {tool_name} 执行完成。\n"
-
-        except Exception as e:
-            print(f"Error in chat_stream_async: {e}")
-            yield f"\n[系统错误: 对话过程中发生异常 - {str(e)}]\n"
 
         # 流式结束后，更新聊天历史
         if accumulated_response:
