@@ -6,7 +6,7 @@ from app.services.data_service import (
     get_derivatives_agg,
     get_trading_value,
     get_funding_rate,
-    get_all_derivatives_data
+    get_all_derivatives_data,
 )
 from app.utils.formatters import format_derivatives_data
 from app.utils.validators import validate_symbol
@@ -33,6 +33,55 @@ class DerivativesDataTool(CryptoAnalystTool):
 
         # 返回格式化字符串（LangChain工具期望返回字符串）
         return f"{symbol}衍生品市场数据：\n\n{formatted_data}\n\n已获取{symbol}的衍生品市场数据，包括持仓量、交易量和资金费率。"
+
+
+class BuySellRatioTool(CryptoAnalystTool):
+    """买卖比例工具 - 获取加密货币的买卖比例数据
+
+    说明：
+    - 旧版本使用独立的买卖比例接口（get_but_sell_ratio）
+    - 目前后端已改为统一的衍生品聚合接口（get_derivatives_agg / get_all_derivatives_data）
+    - 这里尝试从聚合数据中提取买卖比例相关字段，如果不存在则给出友好提示
+    """
+
+    name: str = "get_buy_sell_ratio"
+    description: str = "获取加密货币的买卖比例数据，反映市场多空力量对比。当用户询问市场情绪、多空力量时使用此工具。"
+    args_schema: type = DerivativesDataInput
+
+    def execute(self, symbol: str) -> str:
+        symbol = validate_symbol(symbol)
+
+        # 优先从聚合数据中读取
+        agg_data = get_derivatives_agg(symbol)
+
+        if not agg_data:
+            return f"{symbol}暂无买卖比例数据"
+
+        # 兼容不同字段命名（历史上可能为 but_sell_ratio / buy_sell_ratio）
+        ratio_data = (
+            agg_data.get("but_sell_ratio")
+            or agg_data.get("buy_sell_ratio")
+            or agg_data.get("buySellRatio")
+        )
+
+        if not ratio_data:
+            return f"{symbol}的衍生品聚合数据中暂无买卖比例字段"
+
+        lines = [f"{symbol}买卖比例数据："]
+
+        # 尝试识别常见结构：按交易所拆分
+        if isinstance(ratio_data, dict):
+            if ratio_data:
+                lines.append("  按交易所拆分的买卖比例：")
+                for ex, value in ratio_data.items():
+                    lines.append(f"    {ex}: {value}")
+        else:
+            # 兜底：直接展示原始数据
+            lines.append(f"  原始数据: {ratio_data}")
+
+        lines.append("  说明：数值越高通常代表主动买盘相对更强，但需结合其他指标综合判断。")
+
+        return "\n".join(lines)
 
 
 class OpenInterestTool(CryptoAnalystTool):
