@@ -12,11 +12,18 @@ def validate_symbol(symbol: str) -> str:
     if not re.match(r'^[A-Z0-9]{1,10}$', symbol):
         raise ValidationException(f"无效的币种符号: {symbol}")
 
-    # 常见币种验证（可选）
-    common_symbols = ["BTC", "ETH", "BNB", "XRP", "SOL", "ADA", "AVAX", "DOT", "DOGE", "MATIC"]
-    if symbol not in common_symbols:
-        # 可以记录日志，但不抛出异常
-        pass
+    # 验证币种是否存在（异步方式，验证失败时不抛出异常，避免阻塞）
+    # 仅在非调试模式下进行验证
+    from app.core.config import get_settings
+    if not get_settings().debug:
+        from app.services.data_service import validate_coin_exists
+        import threading
+        # 在后台线程中验证，不阻塞主流程
+        threading.Thread(
+            target=validate_coin_exists,
+            args=(symbol,),
+            daemon=True
+        ).start()
 
     return symbol
 

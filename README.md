@@ -7,6 +7,7 @@
 - 🚀 **智能路由**: 基于LangChain的智能体动态选择分析工具
 - 📊 **多维度分析**: 市场数据、新闻、衍生品、技术分析等
 - 🔄 **流式响应**: 支持SSE流式输出，实时展示分析过程
+- 👥 **会话隔离**: 支持多用户独立会话，记忆持久化到MySQL
 - 🛠️ **模块化工具**: 独立的功能模块，易于扩展和维护
 - 🔧 **配置管理**: 基于环境变量的配置系统
 - 🌐 **RESTful API**: 标准HTTP接口，便于前端集成
@@ -98,12 +99,71 @@ python -m app.main
 ```json
 {
   "message": "BTC最近表现如何？",
-  "conversation_id": "optional-conversation-id",
+  "conversation_id": "user-session-id",
   "lang": "zh"
 }
 ```
 
+**说明**：
+- `conversation_id`: 可选参数，用于标识用户会话
+- 提供后：AI会记住该会话的历史对话（最多50轮）
+- 不提供：无状态模式，每次对话独立
+
 响应：SSE流式输出
+
+### 清除会话记忆
+
+**POST** `/api/v1/clear?conversation_id=user-session-id`
+
+**说明**：
+- 不传参数：清除所有内存缓存的会话
+- 传参数：清除指定会话的记忆
+- 数据库记录保留，需手动清理
+
+## 会话隔离功能
+
+### 特性说明
+
+- **多用户隔离**: 每个用户（conversation_id）拥有独立的对话历史
+- **内存缓存**: LRU缓存机制，最多缓存100个活跃会话
+- **数据库持久化**: 对话历史保存到MySQL，重启不丢失
+- **自动清理**: 每会话保留50轮（100条消息），超出自动清理
+- **优雅降级**: 数据库失败时自动降级为无状态模式
+
+### API使用
+
+```bash
+# 创建新会话
+curl -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "你好，我是用户A",
+    "conversation_id": "user_a_session"
+  }'
+
+# 在同一会话中继续对话
+curl -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "你还记得我刚才说了什么吗？",
+    "conversation_id": "user_a_session"
+  }'
+
+# 清除指定会话
+curl -X POST "http://localhost:8000/api/v1/clear?conversation_id=user_a_session"
+```
+
+### 数据库表
+
+会话历史存储在 `session_history` 表中：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT | 主键ID |
+| session_id | VARCHAR(100) | 会话ID |
+| role | VARCHAR(20) | 角色（user/assistant） |
+| content | TEXT | 消息内容 |
+| created_at | TIMESTAMP | 创建时间 |
 
 ## 工具模块
 

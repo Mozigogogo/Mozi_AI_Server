@@ -66,58 +66,57 @@ def format_news_data(news: List[str]) -> str:
 
 
 def format_derivatives_data(derivatives_data: Dict[str, Any]) -> str:
-    """格式化衍生品数据"""
+    """格式化衍生品数据（使用新接口）"""
     formatted_data = []
 
-    # 买卖比例
-    but_sell_ratio = derivatives_data.get("but_sell_ratio", {})
-    if but_sell_ratio:
-        formatted_data.append("买卖比例:")
-        for exchange, data in but_sell_ratio.items():
-            if data and isinstance(data, dict) and data.get("code") == 0:
-                actual_data = data.get("data", {})
-                if isinstance(actual_data, dict) and actual_data:
-                    short_data = actual_data.get("shortData", [])
-                    long_data = actual_data.get("longData", [])
-                    long_short_data = actual_data.get("longShortData", [])
+    # 聚合数据（持仓、成交、资金费率）
+    derivatives_agg = derivatives_data.get("derivatives_agg", {})
+    if derivatives_agg:
+        formatted_data.append("衍生品聚合数据:")
+        formatted_data.append(f"  币种: {derivatives_agg.get('coin', 'N/A')}")
+        formatted_data.append(f"  指标: {derivatives_agg.get('metric', 'N/A')}")
+        formatted_data.append(f"  单位: {derivatives_agg.get('unit', 'N/A')}")
+        formatted_data.append(f"  交易所: {', '.join(derivatives_agg.get('exchanges', []))}")
+        formatted_data.append(f"  数据点数: {len(derivatives_agg.get('dates', []))}天")
 
-                    if short_data and long_data and long_short_data:
-                        latest_short = short_data[-1] if short_data else 0
-                        latest_long = long_data[-1] if long_data else 0
-                        latest_long_short = long_short_data[-1] if long_short_data else 0
+        # 显示最新数据（按交易所）
+        data_by_exchange = derivatives_agg.get("data", {})
+        if data_by_exchange:
+            formatted_data.append(f"  最新数据:")
+            for ex, values in data_by_exchange.items():
+                if values:
+                    # 找到最后一个非空值
+                    latest_value = None
+                    for v in reversed(values):
+                        if v is not None:
+                            latest_value = v
+                            break
+                    if latest_value is not None:
+                        formatted_data.append(f"    {ex}: {latest_value}")
 
-                        formatted_data.append(f"  {exchange}:")
-                        formatted_data.append(f"    空头比例: {latest_short:.3f} (最新)")
-                        formatted_data.append(f"    多头比例: {latest_long:.3f} (最新)")
-                        formatted_data.append(f"    多空比: {latest_long_short:.3f} (最新)")
-                    else:
-                        formatted_data.append(f"  {exchange}: 数据不完整")
-                else:
-                    formatted_data.append(f"  {exchange}: 数据为空")
-            else:
-                formatted_data.append(f"  {exchange}: API错误")
+    # 成交额数据
+    trading_value = derivatives_data.get("trading_value", {})
+    if trading_value:
+        formatted_data.append("\n成交额数据:")
+        formatted_data.append(f"  币种: {trading_value.get('coin', 'N/A')}")
+        formatted_data.append(f"  指标: {trading_value.get('metric', 'N/A')}")
+        formatted_data.append(f"  单位: {trading_value.get('unit', 'N/A')}")
+        formatted_data.append(f"  交易所: {', '.join(trading_value.get('exchanges', []))}")
 
-    # 持仓量
-    open_interest = derivatives_data.get("open_interest", {})
-    if open_interest:
-        formatted_data.append("\n持仓量:")
-        for exchange, data in open_interest.items():
-            if data and isinstance(data, dict):
-                formatted_data.append(f"  {exchange}: {json.dumps(data, ensure_ascii=False)}")
-
-    # 交易量
-    trading_volume = derivatives_data.get("trading_volume", {})
-    if trading_volume:
-        formatted_data.append("\n交易量:")
-        for exchange, data in trading_volume.items():
-            if data and isinstance(data, dict):
-                formatted_data.append(f"  {exchange}: {json.dumps(data, ensure_ascii=False)}")
-
-    # 资金费率
+    # 资金费率数据
     funding_rate = derivatives_data.get("funding_rate", {})
     if funding_rate:
-        formatted_data.append("\n资金费率:")
-        formatted_data.append(json.dumps(funding_rate, ensure_ascii=False))
+        formatted_data.append("\n资金费率数据:")
+        formatted_data.append(f"  币种: {funding_rate.get('coin', 'N/A')}")
+        formatted_data.append(f"  指标: {funding_rate.get('metric', 'N/A')}")
+        exchanges_data = funding_rate.get("exchanges", {})
+        if exchanges_data:
+            formatted_data.append(f"  交易所数据: {len(exchanges_data)}个交易所")
+        else:
+            formatted_data.append(f"  交易所数据: 暂无数据")
+
+    if not formatted_data:
+        return "暂无衍生品数据"
 
     return "\n".join(formatted_data)
 

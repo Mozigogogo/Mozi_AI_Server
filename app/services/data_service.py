@@ -81,72 +81,59 @@ def get_news_from_mysql(symbol: str, limit: int = None) -> List[str]:
         raise DatabaseException(f"获取新闻数据失败: {str(e)}")
 
 
-def get_but_sell_ratio(symbol: str) -> Dict[str, Any]:
-    """获取买卖比例数据"""
-    exchanges = ["Binance", "Kraken"]
-    data = {}
-
-    for ex in exchanges:
-        url = f"{settings.derivatives_api_base}/histratio?coin={symbol}&exchange={ex}&type=but_sell_ratio"
-        api_data = fetch_json(url)
-
-        # 直接返回API数据
-        data[ex] = api_data
-
-    return data
+def validate_coin_exists(symbol: str) -> bool:
+    """验证币种是否存在"""
+    try:
+        url = f"{settings.kline_api_base}/search/iscoin?coin={symbol}"
+        response = fetch_json(url)
+        if response.get("code") == 0:
+            return response.get("data", {}).get("isCoin", False)
+        return False
+    except Exception:
+        # 验证失败时默认为存在，避免误拒
+        return True
 
 
-def get_open_interest(symbol: str) -> Dict[str, Any]:
-    """获取持仓量数据"""
-    exchanges = ["binance", "bitget"]
-    data = {}
-    for ex in exchanges:
-        url = f"{settings.derivatives_api_base}/histUsd?coin={symbol}&exchange={ex}"
-        data[ex] = fetch_json(url)
-    return data
+def get_derivatives_agg(symbol: str) -> Dict[str, Any]:
+    """获取合约持仓、成交、资金费率聚合数据"""
+    url = f"{settings.derivatives_api_base}/histUsdAgg/forllm?coin={symbol}"
+    try:
+        data = fetch_json(url)
+        if data.get("code") == 0:
+            return data.get("data", {})
+        return {}
+    except Exception:
+        return {}
 
 
-def get_trading_volume(symbol: str) -> Dict[str, Any]:
-    """获取交易量数据"""
-    exchanges = [
-        "Binance", "Bybit", "Bitget", "Okx", "Coinbase",
-        "Bitfinex", "Gate", "Kucoin", "Bitmart", "mexc"
-    ]
-    data = {}
-    for ex in exchanges:
-        url = f"{settings.derivatives_api_base}/historytradingval?coin={symbol}&exchange={ex}"
-        data[ex] = fetch_json(url)
-    return data
+def get_trading_value(symbol: str) -> Dict[str, Any]:
+    """获取成交额数据"""
+    url = f"{settings.derivatives_api_base}/histTradingVal/forllm?coin={symbol}"
+    try:
+        data = fetch_json(url)
+        if data.get("code") == 0:
+            return data.get("data", {})
+        return {}
+    except Exception:
+        return {}
 
 
-def get_funding_rate(symbol: str) -> List[Any]:
+def get_funding_rate(symbol: str) -> Dict[str, Any]:
     """获取资金费率数据"""
-    symbol_lower = symbol.lower()
-    url = f"{settings.derivatives_api_base}/foundrate"
-    response = fetch_json(url)
-
-    # 从返回的列表中提取特定币种的数据
-    if response.get("code") == 0:
-        data = response.get("data", {})
-        symbol_list = data.get("list", [])
-
-        # 查找指定币种的数据（比较时忽略大小写）
-        for item in symbol_list:
-            if item.get("symbol", "").lower() == symbol_lower:
-                return item.get("data", [])
-
-        # 如果找不到指定币种，返回空列表
-        return []
-
-    # API错误时返回空列表
-    return []
+    url = f"{settings.derivatives_api_base}/foundrate/forllm?coin={symbol}"
+    try:
+        data = fetch_json(url)
+        if data.get("code") == 0:
+            return data.get("data", {})
+        return {}
+    except Exception:
+        return {}
 
 
 def get_all_derivatives_data(symbol: str) -> Dict[str, Any]:
-    """获取所有衍生品数据"""
+    """获取所有衍生品数据（使用新接口）"""
     return {
-        "but_sell_ratio": get_but_sell_ratio(symbol),
-        "open_interest": get_open_interest(symbol),
-        "trading_volume": get_trading_volume(symbol),
+        "derivatives_agg": get_derivatives_agg(symbol),
+        "trading_value": get_trading_value(symbol),
         "funding_rate": get_funding_rate(symbol)
     }

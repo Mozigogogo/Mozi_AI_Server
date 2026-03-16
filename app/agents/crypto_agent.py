@@ -1,11 +1,11 @@
-from typing import List, Dict, Any, Optional, Generator, AsyncGenerator
+from typing import List, Dict, Any, Optional, Generator
 from langchain.agents import create_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 # ConversationBufferMemory is not available in LangChain 1.x, using alternative approach
 # from langchain.memory import ConversationBufferMemory
 from langchain_core.tools import Tool
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 from app.core.config import get_settings
 from app.agents.tools.market_data import (
@@ -20,7 +20,6 @@ from app.agents.tools.news_data import (
 )
 from app.agents.tools.derivatives_data import (
     DerivativesDataTool,
-    BuySellRatioTool,
     OpenInterestTool,
     TradingVolumeTool,
     FundingRateTool
@@ -37,6 +36,7 @@ from app.agents.tools.prompt_tools import (
     SystemPromptTool
 )
 from app.utils.validators import validate_symbol, validate_language, validate_question
+from app.services.session_service import session_service
 
 settings = get_settings()
 
@@ -48,9 +48,7 @@ class CryptoAnalystAgent:
         self.settings = settings
         self.llm = self._create_llm()
         self.tools = self._create_tools()
-        # Memory is handled differently in LangChain 1.x
-        # We'll maintain chat history as a list of messages
-        self.chat_history = []
+        # 使用session_service管理会话历史，不再使用全局chat_history
         self.agent = self._create_agent()
 
     def _create_llm(self) -> ChatOpenAI:
@@ -110,12 +108,7 @@ class CryptoAnalystAgent:
             Tool.from_function(
                 func=DerivativesDataTool()._run,
                 name="get_derivatives_data",
-                description="获取加密货币的衍生品市场数据，包括买卖比例、持仓量、交易量、资金费率等"
-            ),
-            Tool.from_function(
-                func=BuySellRatioTool()._run,
-                name="get_buy_sell_ratio",
-                description="获取加密货币的买卖比例数据，反映市场多空力量对比"
+                description="获取加密货币的衍生品市场数据，包括持仓量、交易量、资金费率等聚合数据"
             ),
             Tool.from_function(
                 func=OpenInterestTool()._run,
@@ -227,9 +220,10 @@ class CryptoAnalystAgent:
         self,
         symbol: str,
         question: str,
-        lang: str = "zh"
+        lang: str = "zh",
+        conversation_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        """执行分析"""
+        """执行分析（支持会话隔离）"""
         # 验证输入
         symbol = validate_symbol(symbol)
         question = validate_question(question)
@@ -238,10 +232,17 @@ class CryptoAnalystAgent:
         # 构建用户输入
         user_input = f"请分析{symbol}：{question}（使用语言：{lang}）"
 
+        # 获取会话历史
+        history = session_service.get_history(conversation_id, limit=50) if conversation_id else []
+
         # 构建消息列表（包含历史消息和新用户消息）
         messages = []
         # 添加历史消息
-        messages.extend(self.chat_history)
+        for h in history:
+            if h["role"] == "user":
+                messages.append(HumanMessage(content=h["content"]))
+            elif h["role"] == "assistant":
+                messages.append(AIMessage(content=h["content"]))
         # 添加新用户消息
         messages.append(HumanMessage(content=user_input))
 
@@ -252,8 +253,10 @@ class CryptoAnalystAgent:
         ai_messages = [msg for msg in result["messages"] if isinstance(msg, AIMessage)]
         response = ai_messages[-1].content if ai_messages else ""
 
-        # 更新聊天历史
-        self.chat_history.extend([HumanMessage(content=user_input), ai_messages[-1] if ai_messages else AIMessage(content="")])
+        # 保存到会话历史（如果提供了conversation_id）
+        if conversation_id:
+            session_service.add_message(conversation_id, "user", user_input)
+            session_service.add_message(conversation_id, "assistant", response)
 
         return {
             "symbol": symbol,
@@ -267,10 +270,10 @@ class CryptoAnalystAgent:
         self,
         symbol: str,
         question: str,
-        lang: str = "zh"
+        lang: str = "zh",
+        conversation_id: Optional[str] = None
     ) -> Generator[str, None, None]:
-        """流式分析"""
-        print(f"DEBUG: Agent type: {type(self.agent)}")
+        """流式分析（支持会话隔离）"""
         # 验证输入
         symbol = validate_symbol(symbol)
         question = validate_question(question)
@@ -279,105 +282,39 @@ class CryptoAnalystAgent:
         # 构建用户输入
         user_input = f"请分析{symbol}：{question}（使用语言：{lang}）"
 
+        # 获取会话历史
+        history = session_service.get_history(conversation_id, limit=50) if conversation_id else []
+
         # 构建消息列表
         messages = []
-        messages.extend(self.chat_history)
+        for h in history:
+            if h["role"] == "user":
+                messages.append(HumanMessage(content=h["content"]))
+            elif h["role"] == "assistant":
+                messages.append(AIMessage(content=h["content"]))
         messages.append(HumanMessage(content=user_input))
 
         # 执行流式智能体（LangChain 1.x API）
         accumulated_response = ""
-        # 打印调试信息，确认流式输出结构
-        print("DEBUG: Starting agent stream...")
-        
         for chunk in self.agent.stream({"messages": messages}):
-            # 兼容 LangGraph 输出格式：chunk 是 {node_name: state}
-            # 我们需要遍历所有节点（通常是 'agent' 或 'tools'）
-            for node_name, node_content in chunk.items():
-                if "messages" in node_content:
-                    # 获取新增的AI消息
-                    new_ai_messages = [
-                        msg for msg in node_content["messages"]
-                        if isinstance(msg, AIMessage) and msg.content
-                    ]
-                    for msg in new_ai_messages:
-                        if msg.content:
-                            # 只有当内容是新的或者是最后一条消息时才输出
-                            # 简单策略：输出所有非空AI消息内容
-                            # 注意：LangGraph可能返回完整的历史消息，我们需要去重
-                            # 这里简单假设最后一条是新的
-                            accumulated_response = msg.content
-                            yield msg.content
+            # LangChain 1.x agent.stream() 返回的格式是 {'model': {'messages': [...]}}
+            # 获取AI消息（来自model更新）
+            messages_chunk = chunk.get("model", {}).get("messages", [])
+            new_ai_messages = [
+                msg for msg in messages_chunk
+                if isinstance(msg, AIMessage) and msg.content
+            ]
+            for msg in new_ai_messages:
+                if msg.content:
+                    # 只在内容变化时yield（避免重复）
+                    if msg.content != accumulated_response:
+                        accumulated_response = msg.content
+                        yield msg.content
 
-        # 流式结束后，更新聊天历史
-        if accumulated_response:
-            self.chat_history.extend([
-                HumanMessage(content=user_input),
-                AIMessage(content=accumulated_response)
-            ])
-
-    async def analyze_stream_async(
-        self,
-        symbol: str,
-        question: str,
-        lang: str = "zh"
-    ) -> AsyncGenerator[str, None]:
-        """异步流式分析 (使用 astream_events 获取 token 级输出)"""
-        print(f"DEBUG: Async Agent type: {type(self.agent)}")
-        
-        # 验证输入
-        symbol = validate_symbol(symbol)
-        question = validate_question(question)
-        lang = validate_language(lang)
-
-        # 构建用户输入
-        user_input = f"请分析{symbol}：{question}（使用语言：{lang}）"
-
-        # 构建消息列表
-        messages = []
-        messages.extend(self.chat_history)
-        messages.append(HumanMessage(content=user_input))
-
-        accumulated_response = ""
-        print("DEBUG: Starting async agent stream (astream_events)...")
-
-        try:
-            # 使用 astream_events 获取细粒度事件（包括 token 生成）
-            async for event in self.agent.astream_events(
-                {"messages": messages},
-                version="v1"
-            ):
-                kind = event["event"]
-                
-                # 1. 捕获 LLM 生成的 token
-                if kind == "on_chat_model_stream":
-                    content = event["data"]["chunk"].content
-                    if content:
-                        accumulated_response += content
-                        yield content
-                
-                # 2. 捕获工具调用开始（可选，增加用户反馈）
-                elif kind == "on_tool_start":
-                    tool_name = event["name"]
-                    # 过滤掉一些内部工具或不重要的工具显示
-                    if tool_name and not tool_name.startswith("_"):
-                        yield f"\n> 正在调用工具: {tool_name}...\n"
-                        
-                # 3. 捕获工具调用结束
-                elif kind == "on_tool_end":
-                    tool_name = event["name"]
-                    if tool_name and not tool_name.startswith("_"):
-                        yield f"> 工具 {tool_name} 执行完成。\n"
-
-        except Exception as e:
-            print(f"Error in analyze_stream_async: {e}")
-            yield f"\n[系统错误: 分析过程中发生异常 - {str(e)}]\n"
-
-        # 流式结束后，更新聊天历史
-        if accumulated_response:
-            self.chat_history.extend([
-                HumanMessage(content=user_input),
-                AIMessage(content=accumulated_response)
-            ])
+        # 流式结束后，保存到会话历史（如果提供了conversation_id）
+        if accumulated_response and conversation_id:
+            session_service.add_message(conversation_id, "user", user_input)
+            session_service.add_message(conversation_id, "assistant", accumulated_response)
 
     def chat(
         self,
@@ -385,14 +322,21 @@ class CryptoAnalystAgent:
         conversation_id: Optional[str] = None,
         lang: str = "zh"
     ) -> Dict[str, Any]:
-        """对话式交互"""
+        """对话式交互（支持会话隔离）"""
         # 验证输入
         message = validate_question(message)
         lang = validate_language(lang)
 
+        # 获取会话历史
+        history = session_service.get_history(conversation_id, limit=50) if conversation_id else []
+
         # 构建消息列表
         messages = []
-        messages.extend(self.chat_history)
+        for h in history:
+            if h["role"] == "user":
+                messages.append(HumanMessage(content=h["content"]))
+            elif h["role"] == "assistant":
+                messages.append(AIMessage(content=h["content"]))
         messages.append(HumanMessage(content=message))
 
         # 执行智能体（LangChain 1.x API）
@@ -402,8 +346,10 @@ class CryptoAnalystAgent:
         ai_messages = [msg for msg in result["messages"] if isinstance(msg, AIMessage)]
         response = ai_messages[-1].content if ai_messages else ""
 
-        # 更新聊天历史
-        self.chat_history.extend([HumanMessage(content=message), ai_messages[-1] if ai_messages else AIMessage(content="")])
+        # 保存到会话历史（如果提供了conversation_id）
+        if conversation_id:
+            session_service.add_message(conversation_id, "user", message)
+            session_service.add_message(conversation_id, "assistant", response)
 
         return {
             "message": message,
@@ -418,93 +364,44 @@ class CryptoAnalystAgent:
         conversation_id: Optional[str] = None,
         lang: str = "zh"
     ) -> Generator[str, None, None]:
-        """流式对话"""
+        """流式对话（支持会话隔离）"""
         # 验证输入
         message = validate_question(message)
         lang = validate_language(lang)
 
+        # 获取会话历史
+        history = session_service.get_history(conversation_id, limit=50) if conversation_id else []
+
         # 构建消息列表
         messages = []
-        messages.extend(self.chat_history)
+        for h in history:
+            if h["role"] == "user":
+                messages.append(HumanMessage(content=h["content"]))
+            elif h["role"] == "assistant":
+                messages.append(AIMessage(content=h["content"]))
         messages.append(HumanMessage(content=message))
 
         # 执行流式智能体（LangChain 1.x API）
         accumulated_response = ""
         for chunk in self.agent.stream({"messages": messages}):
-            # chunk可能包含消息更新，我们提取AI消息内容
-            if "messages" in chunk:
-                # 获取新增的AI消息
-                new_ai_messages = [
-                    msg for msg in chunk["messages"]
-                    if isinstance(msg, AIMessage) and msg.content
-                ]
-                for msg in new_ai_messages:
-                    if msg.content:
+            # LangChain 1.x agent.stream() 返回的格式是 {'model': {'messages': [...]}}
+            # 获取AI消息（来自model更新）
+            messages_chunk = chunk.get("model", {}).get("messages", [])
+            new_ai_messages = [
+                msg for msg in messages_chunk
+                if isinstance(msg, AIMessage) and msg.content
+            ]
+            for msg in new_ai_messages:
+                if msg.content:
+                    # 只在内容变化时yield（避免重复）
+                    if msg.content != accumulated_response:
                         accumulated_response = msg.content
                         yield msg.content
 
-        # 流式结束后，更新聊天历史
-        if accumulated_response:
-            self.chat_history.extend([
-                HumanMessage(content=message),
-                AIMessage(content=accumulated_response)
-            ])
-
-    async def chat_stream_async(
-        self,
-        message: str,
-        conversation_id: Optional[str] = None,
-        lang: str = "zh"
-    ) -> AsyncGenerator[str, None]:
-        """异步流式对话 (使用 astream_events)"""
-        # 验证输入
-        message = validate_question(message)
-        lang = validate_language(lang)
-
-        # 构建消息列表
-        messages = []
-        messages.extend(self.chat_history)
-        messages.append(HumanMessage(content=message))
-
-        accumulated_response = ""
-        
-        try:
-            # 使用 astream_events 获取细粒度事件
-            async for event in self.agent.astream_events(
-                {"messages": messages},
-                version="v1"
-            ):
-                kind = event["event"]
-                
-                # 1. 捕获 LLM 生成的 token
-                if kind == "on_chat_model_stream":
-                    content = event["data"]["chunk"].content
-                    if content:
-                        accumulated_response += content
-                        yield content
-                
-                # 2. 捕获工具调用开始
-                elif kind == "on_tool_start":
-                    tool_name = event["name"]
-                    if tool_name and not tool_name.startswith("_"):
-                        yield f"\n> 正在调用工具: {tool_name}...\n"
-                        
-                # 3. 捕获工具调用结束
-                elif kind == "on_tool_end":
-                    tool_name = event["name"]
-                    if tool_name and not tool_name.startswith("_"):
-                        yield f"> 工具 {tool_name} 执行完成。\n"
-
-        except Exception as e:
-            print(f"Error in chat_stream_async: {e}")
-            yield f"\n[系统错误: 对话过程中发生异常 - {str(e)}]\n"
-
-        # 流式结束后，更新聊天历史
-        if accumulated_response:
-            self.chat_history.extend([
-                HumanMessage(content=message),
-                AIMessage(content=accumulated_response)
-            ])
+        # 流式结束后，保存到会话历史（如果提供了conversation_id）
+        if accumulated_response and conversation_id:
+            session_service.add_message(conversation_id, "user", message)
+            session_service.add_message(conversation_id, "assistant", accumulated_response)
 
     def get_available_tools(self) -> List[Dict[str, Any]]:
         """获取可用工具列表"""
@@ -517,9 +414,14 @@ class CryptoAnalystAgent:
             })
         return tools_info
 
-    def clear_memory(self):
-        """清除对话记忆"""
-        self.chat_history = []
+    def clear_memory(self, session_id: Optional[str] = None):
+        """清除对话记忆（指定会话或全部缓存）"""
+        if session_id:
+            # 清除指定会话
+            session_service.clear_session(session_id)
+        else:
+            # 清除所有缓存会话
+            session_service.clear_all()
 
 
 # 全局智能体实例
