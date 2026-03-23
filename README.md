@@ -241,30 +241,6 @@ curl -X POST "http://localhost:8000/api/v1/analyze" \
   }'
 ```
 
-## 配置说明
-
-### 环境变量
-
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
-| MYSQL_HOST | MySQL主机地址 | - |
-| MYSQL_PORT | MySQL端口 | 3306 |
-| MYSQL_USER | MySQL用户名 | - |
-| MYSQL_PASSWORD | MySQL密码 | - |
-| MYSQL_DATABASE | 数据库名 | exchange |
-| DEEPSEEK_API_KEY | DeepSeek API密钥 | - |
-| DEEPSEEK_API_BASE | DeepSeek API地址 | https://api.deepseek.com/v1 |
-| API_HOST | API服务主机 | 0.0.0.0 |
-| API_PORT | API服务端口 | 8000 |
-
-### 应用配置
-
-在`config/settings.py`中可以调整：
-- 数据获取限制
-- LLM参数
-- 缓存设置
-- 超时配置
-
 ## 开发指南
 
 ### 添加新工具
