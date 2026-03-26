@@ -2,6 +2,10 @@
 
 基于LangChain的虚拟货币分析助手，提供智能化的加密货币市场分析服务。
 
+## 赛道匹配说明：User-Facing AI Agents
+
+本项目是一个面向用户的 AI Agent 产品形态：它通过 `FastAPI` 暴露可直接使用的对话/分析接口（如 `/api/v1/chat`、`/api/v1/chat/stream`、`/api/v1/analyze`、`/api/v1/analyze/stream`），由 `LangChain` 智能体根据用户输入自动选择并编排多种工具（市场数据、新闻、衍生品、技术/量化分析等）完成分析任务；同时通过 SSE 流式输出逐步呈现生成过程，并支持多轮会话记忆（会话历史持久化到 `MySQL`），从而形成可交互、可持续对话的用户侧 AI 助手。
+
 ## 功能特性
 
 - 🚀 **智能路由**: 基于LangChain的智能体动态选择分析工具
