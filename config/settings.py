@@ -37,6 +37,17 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.5
     llm_max_tokens: int = 1200
 
+    # 对话模式 LLM 配置（简洁快速）
+    chat_llm_temperature: float = 0.3
+    chat_llm_max_tokens: int = 800
+
+    # 分析模式 LLM 配置（深度全面）
+    analysis_llm_temperature: float = 0.5
+    analysis_llm_max_tokens: int = 2000
+
+    # 工具调用强制重试次数
+    tool_call_max_retries: int = 1
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

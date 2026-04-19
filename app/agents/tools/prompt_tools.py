@@ -276,14 +276,19 @@ Highlight:
 """
 
 
+class NoInput(BaseModel):
+    """无参数输入模型"""
+    pass
+
+
 class SystemPromptTool(CryptoAnalystTool):
     """系统提示词工具 - 获取系统提示词"""
 
     name: str = "get_system_prompt"
     description: str = "获取系统提示词模板，定义AI助手的角色和行为准则。"
-    args_schema: type = None  # 无输入参数
+    args_schema: type = NoInput
 
-    def execute(self) -> str:
+    def execute(self, **kwargs) -> str:
         """执行系统提示词获取"""
         zh_prompt = self._build_zh_system_prompt()
         en_prompt = self._build_en_system_prompt()

@@ -1,3 +1,6 @@
+# DEPRECATED: This module is deprecated. Use app.agents.crypto_agent_factory instead.
+# Kept for reference only. All routing now goes through AgentFactory in crypto_agent_factory.py.
+
 from typing import List, Dict, Any, Optional, Generator, AsyncGenerator
 from langchain.agents import create_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
