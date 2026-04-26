@@ -9,6 +9,7 @@ from fastapi.openapi.utils import get_openapi
 from app.core.config import get_settings
 from app.core.exceptions import CryptoAnalystException
 from app.api.endpoints import router as api_router
+from app.api.skill_endpoints import router as skill_test_router
 
 settings = get_settings()
 
@@ -31,7 +32,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="基于LangChain的虚拟货币分析助手，提供智能化的加密货币市场分析服务",
+    description="基于Skill架构的虚拟货币分析助手，提供智能化的加密货币市场分析服务",
     docs_url=None,  # 自定义文档
     redoc_url=None,
     lifespan=lifespan
@@ -85,18 +86,19 @@ def custom_openapi():
         title=settings.app_name,
         version=settings.app_version,
         description="""
-        ## 基于LangChain的虚拟货币分析助手
+        ## 基于Skill架构的虚拟货币分析助手
 
         ### 功能特性
-        - 🚀 **智能路由**: 基于LangChain的智能体动态选择分析工具
+        - 🎯 **精准意图识别**: 基于LLM理解用户问题，精准匹配需要的数据
+        - 💬 **语言跟随**: 自动检测用户语言，用相同语言回答
         - 📊 **多维度分析**: 市场数据、新闻、衍生品、技术分析等
         - 🔄 **流式响应**: 支持SSE流式输出，实时展示分析过程
-        - 🛠️ **模块化工具**: 独立的功能模块，易于扩展和维护
+        - 🚀 **双模式**: 对话模式(简洁) vs 思考模式(深度)
 
         ### 快速开始
-        1. 使用 `/analyze` 端点进行加密货币分析
-        2. 使用 `/chat` 端点进行对话式交互
-        3. 使用 `/tools` 端点查看可用工具
+        1. 使用 `/chat` 端点进行简洁对话
+        2. 使用 `/analyze` 端点进行深度分析
+        3. 使用 `/test/skill` 端点测试 Skill 系统
 
         ### 注意事项
         - 所有分析仅供参考，不构成投资建议
@@ -129,8 +131,8 @@ def custom_openapi():
             "description": "对话式交互接口"
         },
         {
-            "name": "工具",
-            "description": "工具管理和信息查询"
+            "name": "Skill System Test",
+            "description": "Skill 系统测试接口"
         },
         {
             "name": "系统",
@@ -189,6 +191,12 @@ app.include_router(
     api_router,
     prefix=f"{settings.api_prefix}",
     tags=["API"]
+)
+
+# 注册 Skill 测试路由
+app.include_router(
+    skill_test_router,
+    tags=["Skill System Test"]
 )
 
 

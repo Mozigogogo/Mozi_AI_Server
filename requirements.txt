@@ -1,12 +1,28 @@
-langchain>=1.2.0
-langchain-openai>=1.0.0
+# Core dependencies
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
-openai>=1.0.0
+
+# LLM
+anthropic>=0.40.0
+
+# Data fetching
 requests>=2.31.0
+
+# Database
 pymysql>=1.1.0
+
+# Configuration
 python-dotenv>=1.0.0
+
+# Streaming
 sse-starlette>=1.6.5
 python-multipart>=0.0.6
+
+# Data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Async support
+aiohttp>=3.9.0

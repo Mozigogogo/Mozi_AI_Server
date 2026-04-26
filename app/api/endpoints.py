@@ -1,8 +1,8 @@
+"""API 端点 - 使用新的 Skill 系统"""
 import json
 import time
 import traceback
-import asyncio
-from typing import Generator, Optional
+from typing import Optional
 from fastapi import APIRouter, HTTPException, status, Query
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
@@ -13,11 +13,9 @@ from app.api.schemas import (
     ChatRequest,
     ChatResponse,
     HealthResponse,
-    ToolsResponse,
     ErrorResponse,
-    StreamChunk
 )
-from app.agents.crypto_agent_factory import chat_agent, analysis_agent
+from app.skills.agent import crypto_agent
 from app.core.config import get_settings
 from app.core.exceptions import CryptoAnalystException
 from app.utils.validators import validate_symbol, validate_question, validate_language
@@ -36,48 +34,29 @@ async def health_check():
     )
 
 
-@router.get("/tools", response_model=ToolsResponse)
-async def get_tools():
-    """获取可用工具列表"""
-    tools_info = chat_agent.get_available_tools()
-    return ToolsResponse(
-        tools=tools_info,
-        count=len(tools_info)
-    )
-
-
 @router.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(request: AnalyzeRequest):
     """分析加密货币（非流式）"""
     print(f"DEBUG: Entering analyze endpoint with request: {request}")
     try:
-        # 验证输入
-        print("DEBUG: Validating input...")
-        symbol = validate_symbol(request.symbol)
-        question = validate_question(request.question)
-        lang = validate_language(request.lang.value)
-        print(f"DEBUG: Validation passed. Symbol: {symbol}, Question length: {len(question)}, Lang: {lang}")
+        # 构建问题
+        question = f"请分析{request.symbol}：{request.question}"
+        if request.lang.value == "en":
+            question = f"Analyze {request.symbol}: {request.question}"
 
-        # 执行分析
-        # 使用 run_in_executor 在线程池中运行同步的 analyze 方法，避免阻塞事件循环
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-        print("DEBUG: Starting execution in thread pool...")
-        result = await loop.run_in_executor(
-            None,
-            lambda: analysis_agent.analyze(
-                symbol=symbol,
-                question=question,
-                lang=lang
-            )
+        # 收集流式输出
+        response_parts = []
+        async for chunk in crypto_agent.answer(question, mode="think"):
+            response_parts.append(chunk)
+
+        response = "".join(response_parts)
+
+        return AnalyzeResponse(
+            symbol=request.symbol,
+            question=request.question,
+            response=response,
+            lang=request.lang.value
         )
-        print("DEBUG: Execution finished. Result keys:", result.keys())
-
-        return AnalyzeResponse(**result)
 
     except CryptoAnalystException as e:
         print(f"CryptoAnalystException: {e.detail}")
@@ -106,21 +85,13 @@ async def analyze_stream(request: AnalyzeRequest):
                 "data": json.dumps({"data": "", "type": "start"})
             }
 
-            # 验证输入
-            print("DEBUG: Stream - Validating input...")
-            symbol = validate_symbol(request.symbol)
-            question = validate_question(request.question)
-            lang = validate_language(request.lang.value)
-            print(f"DEBUG: Stream - Validation passed.")
+            # 构建问题
+            question = f"请分析{request.symbol}：{request.question}"
+            if request.lang.value == "en":
+                question = f"Analyze {request.symbol}: {request.question}"
 
-            # 执行流式分析
-            print("DEBUG: Stream - Starting generator loop (Async)...")
-            async for chunk in analysis_agent.analyze_stream_async(
-                symbol=symbol,
-                question=question,
-                lang=lang
-            ):
-                # print(f"DEBUG: Stream - Got chunk: {type(chunk)} - {str(chunk)[:50]}...") 
+            # 流式执行
+            async for chunk in crypto_agent.answer(question, mode="think"):
                 yield {
                     "event": "message",
                     "data": json.dumps({"data": chunk, "type": "chunk"})
@@ -160,18 +131,19 @@ async def analyze_stream(request: AnalyzeRequest):
 async def chat(request: ChatRequest):
     """对话式交互（非流式）"""
     try:
-        # 验证输入
-        message = validate_question(request.message)
-        lang = validate_language(request.lang.value)
+        # 收集流式输出
+        response_parts = []
+        async for chunk in crypto_agent.answer(request.message, mode="chat"):
+            response_parts.append(chunk)
 
-        # 执行对话
-        result = chat_agent.chat(
-            message=message,
+        response = "".join(response_parts)
+
+        return ChatResponse(
+            message=request.message,
+            response=response,
             conversation_id=request.conversation_id,
-            lang=lang
+            lang=request.lang.value
         )
-
-        return ChatResponse(**result)
 
     except CryptoAnalystException as e:
         raise HTTPException(
@@ -196,16 +168,8 @@ async def chat_stream(request: ChatRequest):
                 "data": json.dumps({"data": "", "type": "start"})
             }
 
-            # 验证输入
-            message = validate_question(request.message)
-            lang = validate_language(request.lang.value)
-
-            # 执行流式对话
-            async for chunk in chat_agent.chat_stream_async(
-                message=message,
-                conversation_id=request.conversation_id,
-                lang=lang
-            ):
+            # 流式执行
+            async for chunk in crypto_agent.answer(request.message, mode="chat"):
                 yield {
                     "event": "message",
                     "data": json.dumps({"data": chunk, "type": "chunk"})
@@ -240,20 +204,8 @@ async def chat_stream(request: ChatRequest):
 @router.post("/clear")
 async def clear_memory(mode: Optional[str] = Query(None, description="清除指定模式的记忆: chat/analysis，不传则清除全部")):
     """清除对话记忆"""
-    try:
-        if mode == "chat":
-            chat_agent.clear_memory()
-        elif mode == "analysis":
-            analysis_agent.clear_memory()
-        else:
-            chat_agent.clear_memory()
-            analysis_agent.clear_memory()
-        return {"message": "对话记忆已清除"}
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"清除记忆失败: {str(e)}"
-        )
+    # 新的 Skill 系统没有记忆功能，返回成功即可
+    return {"message": "Skill 系统不需要清除记忆"}
 
 
 @router.get("/symbols")
