@@ -1,0 +1,120 @@
+from typing import Dict, Any
+from langchain.tools import BaseTool
+from pydantic import BaseModel, Field
+from app.agents.tools.base import CryptoAnalystTool, SymbolInput
+from app.services.data_service import (
+    get_but_sell_ratio,
+    get_open_interest,
+    get_trading_volume,
+    get_funding_rate,
+    get_all_derivatives_data
+)
+from app.utils.formatters import format_derivatives_data
+from app.utils.validators import validate_symbol
+
+
+class DerivativesDataInput(SymbolInput):
+    """衍生品数据输入模型"""
+    pass
+
+
+class DerivativesDataTool(CryptoAnalystTool):
+    """衍生品数据工具 - 获取加密货币的衍生品市场数据"""
+
+    name: str = "get_derivatives_data"
+    description: str = "获取加密货币的衍生品市场数据，包括买卖比例、持仓量、交易量、资金费率等。当用户询问衍生品市场、多空结构、资金流向时使用此工具。"
+    args_schema: type = DerivativesDataInput
+
+    def execute(self, symbol: str) -> Dict[str, Any]:
+        """执行衍生品数据获取"""
+        symbol = validate_symbol(symbol)
+
+        derivatives_data = get_all_derivatives_data(symbol)
+        formatted_data = format_derivatives_data(derivatives_data)
+
+        return {
+            "symbol": symbol,
+            "formatted_data": formatted_data,
+            "raw_data": derivatives_data,
+            "summary": f"已获取{symbol}的衍生品市场数据，包括买卖比例、持仓量、交易量和资金费率。"
+        }
+
+
+class BuySellRatioTool(CryptoAnalystTool):
+    """买卖比例工具 - 获取加密货币的买卖比例数据"""
+
+    name: str = "get_buy_sell_ratio"
+    description: str = "获取加密货币的买卖比例数据，反映市场多空力量对比。当用户询问市场情绪、多空力量时使用此工具。"
+    args_schema: type = DerivativesDataInput
+
+    def execute(self, symbol: str) -> Dict[str, Any]:
+        """执行买卖比例数据获取"""
+        symbol = validate_symbol(symbol)
+
+        buy_sell_ratio = get_but_sell_ratio(symbol)
+
+        return {
+            "symbol": symbol,
+            "buy_sell_ratio": buy_sell_ratio,
+            "summary": f"已获取{symbol}的买卖比例数据，包含多个交易所的数据。"
+        }
+
+
+class OpenInterestTool(CryptoAnalystTool):
+    """持仓量工具 - 获取加密货币的持仓量数据"""
+
+    name: str = "get_open_interest"
+    description: str = "获取加密货币的持仓量数据，反映市场参与度和多空博弈强度。当用户询问市场深度、持仓变化时使用此工具。"
+    args_schema: type = DerivativesDataInput
+
+    def execute(self, symbol: str) -> Dict[str, Any]:
+        """执行持仓量数据获取"""
+        symbol = validate_symbol(symbol)
+
+        open_interest = get_open_interest(symbol)
+
+        return {
+            "symbol": symbol,
+            "open_interest": open_interest,
+            "summary": f"已获取{symbol}的持仓量数据，包含多个交易所的数据。"
+        }
+
+
+class TradingVolumeTool(CryptoAnalystTool):
+    """交易量工具 - 获取加密货币的交易量数据"""
+
+    name: str = "get_trading_volume"
+    description: str = "获取加密货币的交易量数据，反映市场活跃度和流动性。当用户询问交易活跃度、流动性时使用此工具。"
+    args_schema: type = DerivativesDataInput
+
+    def execute(self, symbol: str) -> Dict[str, Any]:
+        """执行交易量数据获取"""
+        symbol = validate_symbol(symbol)
+
+        trading_volume = get_trading_volume(symbol)
+
+        return {
+            "symbol": symbol,
+            "trading_volume": trading_volume,
+            "summary": f"已获取{symbol}的交易量数据，包含多个交易所的数据。"
+        }
+
+
+class FundingRateTool(CryptoAnalystTool):
+    """资金费率工具 - 获取加密货币的资金费率数据"""
+
+    name: str = "get_funding_rate"
+    description: str = "获取加密货币的资金费率数据，反映永续合约市场的多空平衡。当用户询问资金费率、市场情绪时使用此工具。"
+    args_schema: type = DerivativesDataInput
+
+    def execute(self, symbol: str) -> Dict[str, Any]:
+        """执行资金费率数据获取"""
+        symbol = validate_symbol(symbol)
+
+        funding_rate = get_funding_rate()
+
+        return {
+            "symbol": symbol,
+            "funding_rate": funding_rate,
+            "summary": f"已获取{symbol}的资金费率数据，反映永续合约市场的多空平衡。"
+        }
