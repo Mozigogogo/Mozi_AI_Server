@@ -116,5 +116,9 @@ class TechnicalAnalysisSkill(BaseSkill):
         if not kline_data:
             return "无数据"
 
-        count = len(kline_data)
+        # kline_data 可能是字典格式
+        if isinstance(kline_data, dict) and "values" in kline_data:
+            count = len(kline_data["values"])
+        else:
+            count = len(kline_data)
         return f"{count} 天的 K 线数据"

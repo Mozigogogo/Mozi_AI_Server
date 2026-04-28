@@ -96,20 +96,22 @@ class ComprehensiveAnalysisSkill(BaseSkill):
             header_data = data["get_header_data"]
             if header_data:
                 analysis["basic_info"] = {
-                    "price": header_data.get("price"),
-                    "market_cap": header_data.get("market_cap"),
-                    "rank": header_data.get("rank")
+                    "price": header_data.get("currentPrice"),
+                    "market_cap": header_data.get("marketCap"),
+                    "rank": header_data.get("marketCapRank")
                 }
 
         # 趋势分析
         if "get_kline_data" in data:
             kline_data = data["get_kline_data"]
-            if kline_data and len(kline_data) > 1:
-                latest = kline_data[-1]
-                earliest = kline_data[0]
-
-                close_latest = latest.get("close", 0)
-                close_earliest = earliest.get("close", close_latest)
+            if kline_data and isinstance(kline_data, dict) and "values" in kline_data:
+                values = kline_data["values"]
+                if values and len(values) > 1:
+                    latest = values[-1]
+                    earliest = values[0]
+                    # values 格式: [open, close, low, high]
+                    close_latest = float(latest[1]) if len(latest) > 1 else 0
+                    close_earliest = float(earliest[1]) if len(earliest) > 1 else close_latest
 
                 if close_earliest > 0:
                     change_percent = ((close_latest - close_earliest) / close_earliest) * 100
@@ -134,13 +136,31 @@ class ComprehensiveAnalysisSkill(BaseSkill):
                 analysis["sentiment"]["buy_sell_ratio"] = buy_ratio
 
         if "get_funding_rate" in data:
-            funding_rate = data["get_funding_rate"]
-            if funding_rate > 0:
-                bullish_signals += 1
-                analysis["sentiment"]["funding_rate"] = "positive"
-            elif funding_rate < 0:
-                bearish_signals += 1
-                analysis["sentiment"]["funding_rate"] = "negative"
+            funding_rate_data = data["get_funding_rate"]
+            # funding_rate 是字典，包含 exchanges 键
+            if isinstance(funding_rate_data, dict) and "exchanges" in funding_rate_data:
+                exchanges = funding_rate_data["exchanges"]
+                # 计算平均资金费率
+                if exchanges:
+                    rates = []
+                    for exchange, rate_str in exchanges.items():
+                        # 解析费率字符串，如 "-0.0002%"
+                        try:
+                            rate = float(rate_str.replace("%", ""))
+                            rates.append(rate)
+                        except (ValueError, AttributeError):
+                            continue
+
+                    if rates:
+                        avg_rate = sum(rates) / len(rates)
+                        if avg_rate > 0:
+                            bullish_signals += 1
+                            analysis["sentiment"]["funding_rate"] = "positive"
+                        elif avg_rate < 0:
+                            bearish_signals += 1
+                            analysis["sentiment"]["funding_rate"] = "negative"
+                        else:
+                            analysis["sentiment"]["funding_rate"] = "neutral"
 
         if "get_open_interest" in data:
             analysis["sentiment"]["open_interest"] = data["get_open_interest"]

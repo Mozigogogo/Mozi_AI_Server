@@ -2,7 +2,7 @@
 import asyncio
 from typing import AsyncGenerator
 
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 
 from app.skills.base import IntentInfo
 from app.skills.intent_analyzer import IntentAnalyzer
@@ -17,8 +17,8 @@ class CryptoAnalystAgent:
     """加密货币分析 Agent - 基于 Skill 架构"""
 
     def __init__(self):
-        # 初始化 LLM 客户端
-        self.client = AsyncAnthropic(
+        # 初始化 LLM 客户端（使用 OpenAI 兼容模式）
+        self.client = AsyncOpenAI(
             api_key=settings.deepseek_api_key,
             base_url=settings.deepseek_api_base
         )

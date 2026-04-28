@@ -1,7 +1,7 @@
 """回答生成器 - 语言跟随用户"""
 from typing import Dict, Any
 
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 
 from app.skills.base import SkillResult, IntentInfo
 from app.core.config import get_settings
@@ -12,8 +12,8 @@ settings = get_settings()
 class ResponseGenerator:
     """回答生成器 - 使用用户语言生成回答"""
 
-    def __init__(self, anthropic_client: AsyncAnthropic = None):
-        self.client = anthropic_client or AsyncAnthropic(
+    def __init__(self, openai_client: AsyncOpenAI = None):
+        self.client = openai_client or AsyncOpenAI(
             api_key=settings.deepseek_api_key,
             base_url=settings.deepseek_api_base
         )
@@ -23,7 +23,7 @@ class ResponseGenerator:
         """获取不同语言的 Prompt 模板"""
         return {
             "zh": {
-                "chat": """你是一个加密货币分析助手。请用简洁的中文回答用户的问题。
+                "chat": """你是一个友好的加密货币分析助手。请用简洁、友好的中文回答用户的问题。
 
 用户问题：{question}
 数据时间：{timestamp}
@@ -33,9 +33,10 @@ class ResponseGenerator:
 回答要求：
 {answer_requirements}
 
-请直接回答，不超过 150 字。""",
+请直接回答，不超过 150 字。
+在回答末尾，请简要说明：以上分析仅供参考，不构成投资建议。""",
 
-                "think": """你是一个专业的加密货币分析师。请用中文进行深度分析。
+                "think": """你是一个专业且友好的加密货币分析师。请用中文进行深度分析。
 
 用户问题：{question}
 数据时间：{timestamp}
@@ -45,10 +46,16 @@ class ResponseGenerator:
 分析要求：
 {answer_requirements}
 
-请提供结构化的深度分析（500-800字）。"""
+请提供结构化的深度分析（500-800字）。
+
+重要提示：
+1. 请在分析末尾添加"风险提示"部分，说明加密货币投资的高风险特性
+2. 明确声明"以上分析仅供参考，不构成任何形式的投资建议"
+3. 提醒用户请根据自身情况独立判断并谨慎决策
+4. 表达方式请避免过于绝对的判断语气"""
             },
             "en": {
-                "chat": """You are a cryptocurrency analysis assistant. Please answer the user's question concisely in English.
+                "chat": """You are a friendly cryptocurrency analysis assistant. Please answer the user's question concisely and friendly in English.
 
 Question: {question}
 Data timestamp: {timestamp}
@@ -58,7 +65,9 @@ Retrieved data:
 Answer requirements:
 {answer_requirements}
 
-Answer directly, within 150 words.""",
+Answer directly, within 150 words.
+
+At the end, please briefly mention: The above analysis is for reference only and does not constitute investment advice.""",
 
                 "think": """You are a professional cryptocurrency analyst. Please provide deep analysis in English.
 
@@ -70,7 +79,9 @@ Retrieved data:
 Analysis requirements:
 {answer_requirements}
 
-Provide structured deep analysis (500-800 words)."""
+Provide structured analysis (500-800 words).
+
+Important: At the end, add a "Risk Warning" section stating that this is for reference only and does not constitute investment advice. Remind users to make independent decisions with caution."""
             }
         }
 
@@ -112,9 +123,13 @@ Provide structured deep analysis (500-800 words)."""
             )
 
             # 调用 LLM 生成回答
-            max_tokens = 800 if mode == "think" else 300
+            # 使用配置中的 token 限制
+            if mode == "think":
+                max_tokens = settings.analysis_llm_max_tokens  # 深度分析模式使用更多 tokens
+            else:
+                max_tokens = settings.chat_llm_max_tokens  # 简洁对话模式使用较少 tokens
 
-            message = await self.client.messages.create(
+            response = await self.client.chat.completions.create(
                 model=settings.deepseek_model,
                 max_tokens=max_tokens,
                 messages=[
@@ -122,7 +137,8 @@ Provide structured deep analysis (500-800 words)."""
                 ]
             )
 
-            response = message.content[0].text.strip()
+            response_text = response.choices[0].message.content.strip()
+            return response_text
             return response
 
         except Exception as e:

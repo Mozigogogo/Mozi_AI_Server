@@ -3,7 +3,7 @@ from typing import Dict, Any
 import json
 import re
 
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 
 from app.skills.base import IntentInfo
 from app.core.config import get_settings
@@ -14,8 +14,8 @@ settings = get_settings()
 class IntentAnalyzer:
     """意图分析器 - 使用 LLM 理解用户意图"""
 
-    def __init__(self, anthropic_client: AsyncAnthropic = None):
-        self.client = anthropic_client or AsyncAnthropic(
+    def __init__(self, openai_client: AsyncOpenAI = None):
+        self.client = openai_client or AsyncOpenAI(
             api_key=settings.deepseek_api_key,
             base_url=settings.deepseek_api_base
         )
@@ -82,7 +82,7 @@ class IntentAnalyzer:
             prompt = self.prompt_template.format(question=question)
 
             # 调用 LLM
-            message = await self.client.messages.create(
+            response = await self.client.chat.completions.create(
                 model=settings.deepseek_model,
                 max_tokens=500,
                 messages=[
@@ -91,7 +91,7 @@ class IntentAnalyzer:
             )
 
             # 提取响应
-            response_text = message.content[0].text.strip()
+            response_text = response.choices[0].message.content.strip()
 
             # 解析 JSON
             intent_data = self._parse_json_response(response_text)

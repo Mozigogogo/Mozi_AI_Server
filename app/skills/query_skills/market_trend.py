@@ -53,12 +53,42 @@ class MarketTrendSkill(BaseSkill):
                 "low": 0
             }
 
-        # 取最后一天和第一天对比
-        latest = kline_data[-1] if kline_data else {}
-        earliest = kline_data[0] if len(kline_data) > 1 else {}
+        # 处理字典格式的 kline_data
+        if isinstance(kline_data, dict) and "values" in kline_data:
+            values = kline_data["values"]
+            if not values or len(values) < 2:
+                return {
+                    "direction": "unknown",
+                    "change_percent": 0,
+                    "high": 0,
+                    "low": 0
+                }
 
-        close_latest = latest.get("close", 0)
-        close_earliest = earliest.get("close", close_latest)
+            latest = values[-1]
+            earliest = values[0]
+            # values 格式: [open, close, low, high]
+            close_latest = float(latest[1]) if len(latest) > 1 else 0
+            close_earliest = float(earliest[1]) if len(earliest) > 1 else 0
+        elif isinstance(kline_data, list):
+            if len(kline_data) < 2:
+                return {
+                    "direction": "unknown",
+                    "change_percent": 0,
+                    "high": 0,
+                    "low": 0
+                }
+
+            latest = kline_data[-1]
+            earliest = kline_data[0]
+            close_latest = float(latest.get("close", 0)) if isinstance(latest, dict) else float(latest)
+            close_earliest = float(earliest.get("close", 0)) if isinstance(earliest, dict) else float(earliest)
+        else:
+            return {
+                "direction": "unknown",
+                "change_percent": 0,
+                "high": 0,
+                "low": 0
+            }
 
         # 计算涨跌幅
         change_percent = 0
@@ -74,9 +104,17 @@ class MarketTrendSkill(BaseSkill):
             direction = "震荡"  # sideways
 
         # 计算最高最低
-        all_closes = [d.get("close", 0) for d in kline_data]
-        high = max(all_closes) if all_closes else 0
-        low = min(all_closes) if all_closes else 0
+        if isinstance(kline_data, dict) and "values" in kline_data:
+            all_closes = [float(v[1]) if len(v) > 1 else 0 for v in kline_data["values"]]
+            high = max(all_closes) if all_closes else 0
+            low = min(all_closes) if all_closes else 0
+        elif isinstance(kline_data, list):
+            all_closes = [float(d.get("close", 0)) if isinstance(d, dict) else float(d) for d in kline_data]
+            high = max(all_closes) if all_closes else 0
+            low = min(all_closes) if all_closes else 0
+        else:
+            high = 0
+            low = 0
 
         return {
             "direction": direction,
@@ -91,5 +129,9 @@ class MarketTrendSkill(BaseSkill):
         if not kline_data:
             return "无数据"
 
-        count = len(kline_data)
+        # kline_data 可能是字典格式
+        if isinstance(kline_data, dict) and "values" in kline_data:
+            count = len(kline_data["values"])
+        else:
+            count = len(kline_data)
         return f"{count} 天的 K 线数据"

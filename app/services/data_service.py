@@ -137,3 +137,47 @@ def get_all_derivatives_data(symbol: str) -> Dict[str, Any]:
         "trading_value": get_trading_value(symbol),
         "funding_rate": get_funding_rate(symbol)
     }
+
+
+def get_buy_sell_ratio(symbol: str) -> Dict[str, Any]:
+    """获取买卖比例（从衍生品聚合数据中提取）"""
+    try:
+        agg_data = get_derivatives_agg(symbol)
+        # 从聚合数据中提取买卖比例
+        return {
+            "buy_ratio": agg_data.get("buy_ratio", 0.5),
+            "sell_ratio": agg_data.get("sell_ratio", 0.5),
+            "timestamp": agg_data.get("timestamp")
+        }
+    except Exception:
+        return {"buy_ratio": 0.5, "sell_ratio": 0.5}
+
+
+def get_open_interest(symbol: str) -> Dict[str, Any]:
+    """获取持仓量（从衍生品聚合数据中提取）"""
+    try:
+        agg_data = get_derivatives_agg(symbol)
+        return {
+            "open_interest": agg_data.get("open_interest", 0),
+            "oi_change": agg_data.get("oi_change", 0),
+            "timestamp": agg_data.get("timestamp")
+        }
+    except Exception:
+        return {"open_interest": 0, "oi_change": 0}
+
+
+def get_trading_volume(symbol: str) -> Dict[str, Any]:
+    """获取成交量（从成交额数据中提取）"""
+    try:
+        trading_data = get_trading_value(symbol)
+        return {
+            "volume": trading_data.get("volume", 0),
+            "volume_change": trading_data.get("volume_change", 0),
+            "timestamp": trading_data.get("timestamp")
+        }
+    except Exception:
+        return {"volume": 0, "volume_change": 0}
+
+
+# 别名，保持向后兼容
+get_recent_news = get_news_from_mysql
