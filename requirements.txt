@@ -6,6 +6,7 @@ pydantic-settings>=2.0.0
 
 # LLM
 anthropic>=0.40.0
+openai>=1.0.0
 
 # Data fetching
 requests>=2.31.0
