@@ -11,7 +11,8 @@ from app.skills.query_skills import (
 from app.skills.analysis_skills import (
     TechnicalAnalysisSkill,
     SentimentAnalysisSkill,
-    ComprehensiveAnalysisSkill
+    ComprehensiveAnalysisSkill,
+    QuantitativeAnalysisSkill
 )
 
 
@@ -34,6 +35,7 @@ class SkillRouter:
         self.skills["technical_analysis"] = TechnicalAnalysisSkill()
         self.skills["sentiment_analysis"] = SentimentAnalysisSkill()
         self.skills["comprehensive_analysis"] = ComprehensiveAnalysisSkill()
+        self.skills["quantitative_analysis"] = QuantitativeAnalysisSkill()
 
     def route(
         self,

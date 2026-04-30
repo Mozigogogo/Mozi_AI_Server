@@ -61,26 +61,6 @@ class ToolInfo(BaseModel):
     args_schema: Optional[str] = Field(None, description="参数模式")
 
 
-class AnalyzeResponse(BaseModel):
-    """分析响应模型"""
-    symbol: str = Field(..., description="加密货币符号")
-    question: str = Field(..., description="分析问题")
-    response: str = Field(..., description="分析响应")
-    intermediate_steps: List[Dict[str, Any]] = Field(
-        default_factory=list,
-        description="中间步骤"
-    )
-    lang: str = Field(..., description="语言")
-
-
-class ChatResponse(BaseModel):
-    """聊天响应模型"""
-    message: str = Field(..., description="用户消息")
-    response: str = Field(..., description="AI响应")
-    conversation_id: Optional[str] = Field(None, description="会话ID")
-    lang: str = Field(..., description="语言")
-
-
 class HealthResponse(BaseModel):
     """健康检查响应模型"""
     status: str = Field(..., description="服务状态")
@@ -119,28 +99,6 @@ analyze_request_example = {
 
 chat_request_example = {
     "message": "BTC最近表现如何？",
-    "conversation_id": "conv_123",
-    "lang": "zh"
-}
-
-# 响应示例
-analyze_response_example = {
-    "symbol": "BTC",
-    "question": "请分析当前市场状况和技术面",
-    "response": "基于技术分析，BTC目前处于...",
-    "intermediate_steps": [
-        {
-            "tool": "get_market_data",
-            "input": {"symbol": "BTC"},
-            "output": {"summary": "已获取BTC的市场数据"}
-        }
-    ],
-    "lang": "zh"
-}
-
-chat_response_example = {
-    "message": "BTC最近表现如何？",
-    "response": "根据分析，BTC近期表现...",
     "conversation_id": "conv_123",
     "lang": "zh"
 }

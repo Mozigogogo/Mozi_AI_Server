@@ -2,9 +2,11 @@
 from .technical import TechnicalAnalysisSkill
 from .sentiment import SentimentAnalysisSkill
 from .comprehensive import ComprehensiveAnalysisSkill
+from .quantitative import QuantitativeAnalysisSkill
 
 __all__ = [
     "TechnicalAnalysisSkill",
     "SentimentAnalysisSkill",
-    "ComprehensiveAnalysisSkill"
+    "ComprehensiveAnalysisSkill",
+    "QuantitativeAnalysisSkill"
 ]

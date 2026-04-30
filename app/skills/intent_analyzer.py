@@ -40,23 +40,35 @@ class IntentAnalyzer:
 }}
 
 意图类型包括：
-- query_price: 查询价格、市值、排名等基础信息
-- query_trend: 查询趋势、走势、涨跌幅
+- query_price: 查询价格、市值、排名、涨跌幅、价格变化、24h价格变化等基础信息（包括当前价格、历史最高/最低价、换手率等）
+- query_trend: 查询趋势、走势、K线形态、技术形态分析等（主要针对历史价格走势、图表形态，不包含具体数值变化）
 - query_news: 查询新闻、热点事件
-- query_derivatives: 查询持仓、资金费率、买卖比等衍生品数据
+- query_derivatives: 查询衍生品数据（包括成交量、成交额、持仓量、多空比、资金费率、合约数据等）
+  关键词：成交量、成交额、持仓量、多空比、买卖比、资金费率、合约、衍生品、交易所数据
 - analyze_technical: 技术面分析（趋势、支撑阻力、指标）
 - analyze_sentiment: 情绪分析（市场情绪、多空结构）
 - analyze_comprehensive: 综合分析（多维度全面分析）
+  关键词：综合分析、全面分析、整体分析、详细分析
+- analyze_quantitative: 量化决策分析（六因子评分模型）
+  关键词：量化分析、买入卖出、点位判断、决策建议、操作建议、胜率分析、量化评分
 - simple_chat: 简单对话（问候、感谢等）
 
 可用的 API 列表（根据问题需求选择，不要调用不必要的 API）：
+
+基础数据 APIs (query_price):
 - get_header_data: 获取价格、市值、排名等基本信息
+
+趋势数据 APIs (query_trend):
 - get_kline_data: 获取 K 线数据（价格走势、最高最低）
+
+新闻 APIs (query_news):
 - get_recent_news: 获取最新新闻
-- get_buy_sell_ratio: 获取买卖比例
-- get_open_interest: 获取持仓量
-- get_trading_volume: 获取交易量
-- get_funding_rate: 获取资金费率
+
+衍生品数据 APIs (query_derivatives - 当用户问到以下任何内容时使用):
+- get_buy_sell_ratio: 获取买卖比例（多空比） - 关键词：多空比、买卖比
+- get_open_interest: 获取持仓量 - 关键词：持仓量、持仓、OI
+- get_trading_volume: 获取交易量/成交额 - 关键词：成交量、成交额、交易量
+- get_funding_rate: 获取资金费率 - 关键词：资金费率、费率
 
 注意事项：
 1. 严格按照用户使用的语言回答（中文问题用 zh，英文问题用 en）
@@ -64,6 +76,33 @@ class IntentAnalyzer:
 3. 如果用户没有提到币种，coin_symbol 设为 null
 4. 确保输出的 JSON 是有效的
 5. 输出只包含 JSON，不要包含其他内容
+
+意图判断规则（重要）：
+- **涨跌幅/价格变化查询 → query_price**：当用户问及以下关键词时，必须设置为 query_price：
+  * "涨跌幅"、"价格变化"、"24h价格变化"、"24h涨跌幅"、"涨了还是跌了"、"涨了/跌了多少"、"今天涨/跌"
+  * "市值"、"排名"、"当前价格"、"价格是多少"、"现在的价格"等基础信息查询
+  * 此类查询使用 get_header_data API（包含涨跌幅数据、价格变化百分比等）
+
+- **趋势查询 → query_trend**：当用户问及以下关键词时，设置为 query_trend：
+  * "趋势"、"走势"、"K线"、"技术形态"、"支撑阻力"、"趋势方向"、"上涨趋势"、"下跌趋势"、"震荡趋势"
+  * 此类查询侧重图表形态分析，使用 get_kline_data API
+
+- **衍生品查询 → query_derivatives**：当用户问及以下关键词时，设置为 query_derivatives：
+  * 成交量、成交额、交易量
+  * 多空比、买卖比、多头空头
+  * 持仓量、持仓、OI
+  * 资金费率、费率
+  * 合约、衍生品、期货
+  * 交易所数据
+- 示例："BTC 的涨跌幅是多少？" → intent_type: "query_price", required_apis: ["get_header_data"]
+- 示例："ETH 各交易所的成交量是多少？" → intent_type: "query_derivatives", required_apis: ["get_trading_volume"]
+- 示例："BTC 的多空比是多少？" → intent_type: "query_derivatives", required_apis: ["get_buy_sell_ratio"]
+- 示例："ETH 的资金费率怎么样？" → intent_type: "query_derivatives", required_apis: ["get_funding_rate"]
+- 示例："ETH的量化分析" → intent_type: "analyze_quantitative", required_apis: ["get_header_data", "get_kline_data", "get_trading_volume"]
+- 示例："BTC买入卖出点位判断" → intent_type: "analyze_quantitative", required_apis: ["get_header_data", "get_kline_data", "get_trading_volume"]
+
+- **避免误判**：涨跌幅查询是关于具体数值变化，不是趋势分析
+  * 如果问题包含具体数值变化（涨跌幅、价格变化百分比），应使用 query_price，不是 query_trend
 
 请只输出 JSON："""
 
@@ -84,7 +123,8 @@ class IntentAnalyzer:
             # 调用 LLM
             response = await self.client.chat.completions.create(
                 model=settings.deepseek_model,
-                max_tokens=500,
+                max_tokens=1000,  # 增加token限制，防止JSON被截断
+                timeout=30.0,  # 添加超时设置
                 messages=[
                     {"role": "user", "content": prompt}
                 ]

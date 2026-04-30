@@ -89,10 +89,17 @@ class CryptoAnalystAgent:
 
                 # 步骤4：生成回答（使用用户语言）
                 print(f"\n[步骤4] 生成回答...")
+
+                # 根据意图类型决定模式
+                if intent.intent_type == "analyze_quantitative":
+                    response_mode = "quantitative"
+                else:
+                    response_mode = mode
+
                 response = await self.response_generator.generate_response(
                     skill_result,
                     intent,
-                    mode
+                    response_mode
                 )
                 print(f"生成的回答: {response[:100]}...")
 
@@ -107,7 +114,23 @@ class CryptoAnalystAgent:
                 import traceback
                 traceback.print_exc()
 
-                error_msg = f"\n[Error: {str(e)}]"
+                # 根据错误类型返回友好的错误消息
+                error_msg = ""
+                error_type = type(e).__name__
+                error_detail = str(e)
+
+                if "502" in error_detail or "Bad Gateway" in error_detail:
+                    error_msg = "抱歉，外部数据服务暂时不可用，请稍后再试。"
+                elif "timeout" in error_detail.lower() or "超时" in error_detail:
+                    error_msg = "抱歉，请求超时，请稍后再试。"
+                elif "Connection" in error_type or "Network" in error_type:
+                    error_msg = "抱歉，网络连接异常，请检查网络设置。"
+                elif "解析" in error_detail or "parse" in error_detail.lower():
+                    error_msg = "抱歉，数据解析失败，请稍后再试。"
+                else:
+                    error_msg = "抱歉，处理您的请求时出现了错误，请稍后再试。"
+
+                # 如果有语言信息，使用用户友好的消息
                 yield error_msg
 
     async def test_intent_analysis(self, question: str) -> IntentInfo:

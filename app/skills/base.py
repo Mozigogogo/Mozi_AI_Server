@@ -1,6 +1,6 @@
 """Skill 基类 - 定义所有 Skills 的统一接口"""
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -9,7 +9,7 @@ class IntentInfo(BaseModel):
     """意图信息 - LLM 分析结果"""
     language: str = "zh"  # zh 或 en
     intent_type: str  # 意图类型
-    coin_symbol: str | None = None  # 币种符号
+    coin_symbol: Optional[str] = None  # 币种符号
     required_apis: List[str] = []  # 需要调用的 API 列表
     answer_requirements: List[str] = []  # 回答需要包含的内容
     raw_question: str = ""  # 原始问题

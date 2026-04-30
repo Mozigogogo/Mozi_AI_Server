@@ -37,22 +37,42 @@ class DerivativesQuerySkill(BaseSkill):
         api_calls = []
         data = {}
 
-        # 根据需要的 API 调用对应函数
+        # 创建所有需要调用的任务
+        tasks = []
+
+        # 根据需要的 API 调用对应函数（并发执行）
         if "get_buy_sell_ratio" in intent.required_apis:
-            data["buy_sell_ratio"] = await asyncio.to_thread(get_buy_sell_ratio, symbol)
+            tasks.append(asyncio.to_thread(get_buy_sell_ratio, symbol))
             api_calls.append("get_buy_sell_ratio")
 
         if "get_open_interest" in intent.required_apis:
-            data["open_interest"] = await asyncio.to_thread(get_open_interest, symbol)
+            tasks.append(asyncio.to_thread(get_open_interest, symbol))
             api_calls.append("get_open_interest")
 
         if "get_trading_volume" in intent.required_apis:
-            data["trading_volume"] = await asyncio.to_thread(get_trading_volume, symbol)
+            tasks.append(asyncio.to_thread(get_trading_volume, symbol))
             api_calls.append("get_trading_volume")
 
         if "get_funding_rate" in intent.required_apis:
-            data["funding_rate"] = await asyncio.to_thread(get_funding_rate, symbol)
+            tasks.append(asyncio.to_thread(get_funding_rate, symbol))
             api_calls.append("get_funding_rate")
+
+        # 并发执行所有任务
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # 提取结果
+            if "get_buy_sell_ratio" in intent.required_apis:
+                data["buy_sell_ratio"] = results[api_calls.index("get_buy_sell_ratio")]
+
+            if "get_open_interest" in intent.required_apis:
+                data["open_interest"] = results[api_calls.index("get_open_interest")]
+
+            if "get_trading_volume" in intent.required_apis:
+                data["trading_volume"] = results[api_calls.index("get_trading_volume")]
+
+            if "get_funding_rate" in intent.required_apis:
+                data["funding_rate"] = results[api_calls.index("get_funding_rate")]
 
         return SkillResult(
             skill_name=self.name,
