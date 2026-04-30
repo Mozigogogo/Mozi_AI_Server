@@ -163,9 +163,13 @@ def get_derivatives_agg(symbol: str) -> Dict[str, Any]:
     try:
         data = fetch_json(url)
         if data.get("code") == 0:
-            return data.get("data", {})
+            api_data = data.get("data", {})
+            # 返回完整的data对象，包含所有字段
+            # 包括: coin, metric, unit, exchanges, dates, data (各交易所的数据)
+            return api_data
         return {}
-    except Exception:
+    except Exception as e:
+        print(f"获取衍生品聚合数据异常: {str(e)}")
         return {}
 
 
@@ -217,15 +221,53 @@ def get_buy_sell_ratio(symbol: str) -> Dict[str, Any]:
 
 
 def get_open_interest(symbol: str) -> Dict[str, Any]:
-    """获取持仓量（从衍生品聚合数据中提取）- 已废弃"""
+    """获取持仓量（从衍生品聚合数据中提取）"""
     try:
+        # 从聚合数据中提取持仓量相关信息
         agg_data = get_derivatives_agg(symbol)
+
+        if not agg_data:
+            return {"open_interest": 0, "oi_change": 0}
+
+        # 尝试从聚合数据中提取持仓量相关字段
+        # 根据API测试，histUsdAgg返回的数据结构中包含完整信息
+        # 数据应该在 agg_data.data 中
+        nested_data = agg_data.get("data")
+
+        if not isinstance(nested_data, dict):
+            return {"open_interest": 0, "oi_change": 0}
+
+        # 从各交易所数据中提取持仓量
+        # 数据结构可能包含: openInterest, oi, open_interest_total等
+        open_interest_values = []
+
+        for exchange, data in nested_data.items():
+            if isinstance(data, list) and data:
+                # 尝试获取持仓量值（可能是最新值或列表）
+                # 根据API测试，data可能是一个数组
+                if len(data) > 0:
+                    open_interest_values.append(data[-1])  # 取最新值
+
+        # 计算总持仓量
+        total_oi = sum(open_interest_values) if open_interest_values else 0
+
+        # 获取持仓量变化（如果有历史数据）
+        oi_change = 0
+        if len(open_interest_values) > 1:
+            # 计算变化（最新值 - 前一天值）
+            oi_change = open_interest_values[-1] - open_interest_values[-2]
+
+        # 获取时间戳
+        timestamp = agg_data.get("timestamp") or agg_data.get("dates", [])[0] if isinstance(agg_data.get("dates"), list) else None
+
         return {
-            "open_interest": agg_data.get("open_interest", 0),
-            "oi_change": agg_data.get("oi_change", 0),
-            "timestamp": agg_data.get("timestamp")
+            "open_interest": total_oi,
+            "oi_change": oi_change,
+            "timestamp": timestamp
         }
-    except Exception:
+
+    except Exception as e:
+        print(f"获取持仓量数据异常: {str(e)}")
         return {"open_interest": 0, "oi_change": 0}
 
 
@@ -254,15 +296,17 @@ def get_kraken_buy_sell_ratio(symbol: str) -> Dict[str, Any]:
 
 
 def get_trading_volume(symbol: str) -> Dict[str, Any]:
-    """获取成交量（从成交额数据中提取）"""
+    """获取成交量（从成交额数据中提取）- 直接返回各交易所数据，不做汇总"""
     try:
+        # 直接调用 get_trading_value 获取成交额API的完整返回
         trading_data = get_trading_value(symbol)
-        return {
-            "volume": trading_data.get("volume", 0),
-            "volume_change": trading_data.get("volume_change", 0),
-            "timestamp": trading_data.get("timestamp")
-        }
-    except Exception:
+
+        # 不做任何计算或汇总，直接返回原始数据
+        # 让Skill层或回答生成器处理数据展示和分析
+        return trading_data
+
+    except Exception as e:
+        print(f"获取成交量数据异常: {str(e)}")
         return {"volume": 0, "volume_change": 0}
 
 

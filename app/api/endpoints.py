@@ -97,8 +97,18 @@ async def chat_stream(request: ChatRequest):
                 "data": json.dumps({"data": "", "type": "start"})
             }
 
-            # 流式执行
+            # 流式执行 - 分阶段发送进度信息
+            step = 0
             async for chunk in crypto_agent.answer(request.message, mode="chat"):
+                # 每50个字符发送一次进度更新
+                step += 1
+                if step % 50 == 0:
+                    yield {
+                        "event": "message",
+                        "data": json.dumps({"data": "", "type": "progress"})
+                    }
+
+                # 立即发送每个chunk
                 yield {
                     "event": "message",
                     "data": json.dumps({"data": chunk, "type": "chunk"})

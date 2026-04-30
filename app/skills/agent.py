@@ -96,16 +96,18 @@ class CryptoAnalystAgent:
                 else:
                     response_mode = mode
 
-                response = await self.response_generator.generate_response(
+                # 流式生成回答
+                full_response = []
+                async for chunk in self.response_generator.generate_response_stream(
                     skill_result,
                     intent,
                     response_mode
-                )
-                print(f"生成的回答: {response[:100]}...")
+                ):
+                    full_response.append(chunk)
+                    yield chunk  # 立即发送每个chunk
 
-                # 流式输出
-                for char in response:
-                    yield char
+                response = "".join(full_response)
+                print(f"生成的回答: {response[:100]}...")
 
                 print(f"\n=== 请求完成 ===\n")
 

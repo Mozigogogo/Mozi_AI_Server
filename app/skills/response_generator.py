@@ -1,5 +1,5 @@
 """回答生成器 - 语言跟随用户"""
-from typing import Dict, Any
+from typing import Dict, Any, AsyncGenerator
 
 from openai import AsyncOpenAI
 
@@ -46,15 +46,16 @@ class ResponseGenerator:
 分析要求：
 {answer_requirements}
 
-重要约束：
-1. **只分析用户问题中提到的币种**，不要擅自添加其他币种的分析
-2. 如果获取的数据为空或无效，请基于通用技术分析框架进行分析，但**仅限于用户询问的币种**
-3. 不要虚构数据或推测其他币种的情况
-4. **对于涨跌幅/价格变化查询，必须严格使用提供的涨跌幅数据**：
+【🚨 重要约束（必须严格遵守）】
+1. **严格只分析用户问题中明确提到的币种**，绝对禁止添加任何其他币种的分析
+2. **绝对禁止进行币种对比**，即使新闻中提到其他币种，也只专注于用户询问的币种
+3. 如果获取的数据为空或无效，请基于通用技术分析框架进行分析，但**仅限于用户询问的币种**
+4. 不要虚构数据或推测其他币种的情况
+5. **对于涨跌幅/价格变化查询，必须严格使用提供的涨跌幅数据**：
    - 如果数据中包含 priceChange_24h、priceChangePercentage_24h、marketCapChange_24h 等字段，必须在回答中准确引用这些数值
    - 不要自行计算涨跌幅或基于价格范围推测百分比
    - 例如：如果 priceChangePercentage_24h 为 1.25%，回答中必须明确说明\"24小时涨幅为 1.25%\"
-5. 对于趋势查询，使用价格走势、K线数据等技术形态分析
+6. 对于趋势查询，使用价格走势、K线数据等技术形态分析
 
 请提供结构化的深度分析（500-800字）。
 
@@ -121,6 +122,8 @@ Score ≤ -5            → 买入胜率 30%~39%
 3. 必须说明评分依据
 4. 必须强调概率不确定性
 5. 所有结论必须可追溯到因子
+6. **严格只分析用户问题中明确提到的币种，绝对禁止添加任何其他币种的分析**
+7. **绝对禁止进行币种对比或提及其他币种的数据**
 ====================
 【量化分析数据】
 ====================
@@ -426,7 +429,6 @@ Six-factor scoring results:
 
             response_text = response.choices[0].message.content.strip()
             return response_text
-            return response
 
         except Exception as e:
             print(f"回答生成失败: {e}")
@@ -435,6 +437,78 @@ Six-factor scoring results:
                 return f"抱歉，生成回答时出错：{str(e)}"
             else:
                 return f"Sorry, error generating response: {str(e)}"
+
+    async def generate_response_stream(
+        self,
+        skill_result: SkillResult,
+        intent: IntentInfo,
+        mode: str = "chat"
+    ) -> AsyncGenerator[str, None]:
+        """
+        流式生成回答（使用用户语言）
+
+        Args:
+            skill_result: Skill 执行结果
+            intent: 意图信息
+            mode: 模式（chat/think/quantitative）
+
+        Yields:
+            str: 流式回答内容
+        """
+        try:
+            # 获取对应的语言模板
+            template = self.templates.get(intent.language, self.templates["zh"])[mode]
+
+            # 格式化数据
+            formatted_data = self._format_data(skill_result.data)
+
+            # 格式化回答要求
+            answer_requirements = "\n".join(
+                f"- {req}" for req in (intent.answer_requirements or ["准确回答用户问题"])
+            )
+
+            # 构建 Prompt
+            prompt = template.format(
+                question=intent.raw_question,
+                timestamp=skill_result.timestamp,
+                data=formatted_data,
+                answer_requirements=answer_requirements
+            )
+
+            # 设置 token 限制
+            if mode == "quantitative":
+                max_tokens = 1200
+                timeout_seconds = 60.0
+            elif mode == "think":
+                max_tokens = 1000
+                timeout_seconds = 45.0
+            else:
+                max_tokens = 600
+                timeout_seconds = 20.0
+
+            # 流式调用 LLM
+            stream = await self.client.chat.completions.create(
+                model=settings.deepseek_model,
+                max_tokens=max_tokens,
+                timeout=timeout_seconds,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                stream=True  # 启用流式输出
+            )
+
+            # 流式输出
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+
+        except Exception as e:
+            print(f"流式回答生成失败: {e}")
+            # 返回错误消息
+            if intent.language == "zh":
+                yield f"抱歉，生成回答时出错：{str(e)}"
+            else:
+                yield f"Sorry, error generating response: {str(e)}"
 
     def _format_data(self, data: Any) -> str:
         """格式化数据为可读文本"""
