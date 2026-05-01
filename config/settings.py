@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     kline_api_base: str = "https://moziinnovations.com"
     derivatives_api_base: str = "https://moziinnovations.com/derivatives"
 
+    # API超时和重试配置
+    api_timeout: int = 5  # API请求超时时间（秒）
+    api_max_retries: int = 2  # API最大重试次数（502/503/超时自动重试）
+    api_retry_delay: float = 0.3  # 重试延迟（秒）
+
     # 其他配置
     max_news_items: int = 100
     kline_days_limit: int = 30
