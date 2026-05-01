@@ -42,7 +42,7 @@ class QuantitativeAnalysisSkill(BaseSkill):
         tasks = [
             asyncio.to_thread(get_header_data, symbol),
             asyncio.to_thread(get_kline_data, symbol),
-            asyncio.to_thread(get_recent_news, symbol, limit=10),
+            asyncio.to_thread(get_recent_news, symbol, limit=5),
             asyncio.to_thread(get_buy_sell_ratio, symbol),
             asyncio.to_thread(get_open_interest, symbol),
             asyncio.to_thread(get_funding_rate, symbol)
@@ -69,17 +69,13 @@ class QuantitativeAnalysisSkill(BaseSkill):
                 api_calls.append(api_name)
             else:
                 print(f"  警告: {api_name} 调用失败: {str(result)}")
-                # 记录失败，但不中断处理
 
-        # 进行六因子量化分析
-        analysis = self._quantitative_analysis(symbol, data)
+        # 构建传给LLM的精简数据
+        llm_data = self._build_llm_data(symbol, data)
 
         return SkillResult(
             skill_name=self.name,
-            data={
-                "raw_data": data,
-                "analysis": analysis
-            },
+            data=llm_data,
             timestamp=self._get_timestamp(),
             api_calls=api_calls
         )
@@ -231,16 +227,27 @@ class QuantitativeAnalysisSkill(BaseSkill):
         # 4.1 主动买卖比
         if "get_buy_sell_ratio" in data:
             ratio_data = data["get_buy_sell_ratio"]
-            if ratio_data:
-                buy_ratio = ratio_data.get("buy_ratio", 0.5)
-                if buy_ratio > 0.6:
-                    capital_score += 1
-                    capital_signals.append(f"买卖比{buy_ratio:.2f}，买盘占优")
-                elif buy_ratio < 0.4:
-                    capital_score -= 1
-                    capital_signals.append(f"买卖比{buy_ratio:.2f}，卖盘占优")
+            if ratio_data and isinstance(ratio_data, dict):
+                # 解析各交易所多空比
+                exchange_ratios = []
+                for exchange, exchange_data in ratio_data.items():
+                    if isinstance(exchange_data, dict):
+                        ls = exchange_data.get("longShortData", [])
+                        if isinstance(ls, list) and ls:
+                            exchange_ratios.append(ls[-1])
+
+                if exchange_ratios:
+                    avg_ratio = sum(exchange_ratios) / len(exchange_ratios)
+                    if avg_ratio > 1.1:
+                        capital_score += 1
+                        capital_signals.append(f"多空比{avg_ratio:.2f}，买盘占优")
+                    elif avg_ratio < 0.9:
+                        capital_score -= 1
+                        capital_signals.append(f"多空比{avg_ratio:.2f}，卖盘占优")
+                    else:
+                        capital_signals.append(f"多空比{avg_ratio:.2f}，多空平衡")
                 else:
-                    capital_signals.append(f"买卖比{buy_ratio:.2f}，多空平衡")
+                    capital_signals.append("多空比数据不足")
 
         # 4.2 持仓变化
         if "get_open_interest" in data:
@@ -417,3 +424,48 @@ class QuantitativeAnalysisSkill(BaseSkill):
             "tendency": tendency,
             "symbol": symbol
         }
+
+    def _build_llm_data(self, symbol: str, data: dict) -> dict:
+        """构建传给LLM的精简数据：六因子评分 + 关键原始数据摘要"""
+        analysis = self._quantitative_analysis(symbol, data)
+        result = {"六因子评分": analysis}
+
+        # 实时价格
+        if "get_header_data" in data and data["get_header_data"]:
+            h = data["get_header_data"]
+            try:
+                price = float(h.get("currentPrice", 0))
+            except (ValueError, TypeError):
+                price = 0
+            result["实时数据"] = {
+                "当前价格": price,
+                "24h涨跌幅": h.get("priceChangePercentage_24h"),
+                "24h最高": h.get("high_24h"),
+                "24h最低": h.get("low_24h"),
+            }
+
+        # 多空比精简：每个交易所只保留最新值
+        if "get_buy_sell_ratio" in data and data["get_buy_sell_ratio"]:
+            ratio_raw = data["get_buy_sell_ratio"]
+            ratio_summary = {}
+            for exchange, exchange_data in ratio_raw.items():
+                if isinstance(exchange_data, dict):
+                    ls = exchange_data.get("longShortData", [])
+                    ratio_summary[exchange] = {
+                        "多空比": ls[-1] if ls else "N/A",
+                        "多头占比": exchange_data.get("longData", [None])[-1],
+                        "空头占比": exchange_data.get("shortData", [None])[-1],
+                    }
+            result["多空比"] = ratio_summary
+
+        # 资金费率
+        if "get_funding_rate" in data and data["get_funding_rate"]:
+            result["资金费率"] = data["get_funding_rate"]
+
+        # 新闻（只取最新3条）
+        if "get_recent_news" in data and data["get_recent_news"]:
+            news_list = data["get_recent_news"]
+            if isinstance(news_list, list):
+                result["最新新闻"] = news_list[:3]
+
+        return result

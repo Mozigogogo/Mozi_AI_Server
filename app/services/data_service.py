@@ -1,6 +1,8 @@
 import requests
 import json
 import pymysql
+import time
+import threading
 from typing import Dict, List, Any, Optional
 from app.core.config import get_settings
 from app.core.exceptions import DataFetchException, DatabaseException
@@ -10,6 +12,16 @@ settings = get_settings()
 # MySQL 连接池（全局）
 _db_pool = None
 _connections = []  # 简化的连接管理
+
+# ============================================================
+# API 响应缓存（TTL + 并发请求去重）
+# ============================================================
+_api_cache: Dict[str, tuple] = {}  # {url: (data, expire_time)}
+_cache_lock = threading.Lock()
+_inflight: Dict[str, threading.Event] = {}  # {url: Event} 去重并发请求
+_inflight_lock = threading.Lock()
+_CACHE_TTL = 30  # 默认缓存30秒
+_api_semaphore = threading.Semaphore(3)  # 限制最多3个并发API请求
 
 def get_db_pool():
     """获取 MySQL 连接（简化版本，避免连接池兼容性问题）"""
@@ -40,8 +52,64 @@ def close_db_pool():
     _connections = []
 
 
+def _get_cached(url: str):
+    """获取缓存数据，过期返回 None"""
+    with _cache_lock:
+        if url in _api_cache:
+            data, expire_at = _api_cache[url]
+            if time.time() < expire_at:
+                return data
+            del _api_cache[url]
+    return None
+
+
+def _set_cached(url: str, data: Any, ttl: int = _CACHE_TTL):
+    """写入缓存"""
+    with _cache_lock:
+        _api_cache[url] = (data, time.time() + ttl)
+
+
+def fetch_json_cached(url: str, timeout: int = None, max_retries: int = None, ttl: int = _CACHE_TTL) -> Any:
+    """带缓存和并发去重的 fetch_json。同一 URL 在缓存有效期内只请求一次。"""
+    cached = _get_cached(url)
+    if cached is not None:
+        return cached
+
+    # 并发去重：如果已有线程在请求同一 URL，等待其结果
+    my_event = None
+    with _inflight_lock:
+        if url in _inflight:
+            my_event = _inflight[url]
+        else:
+            my_event = threading.Event()
+            _inflight[url] = my_event
+
+    if my_event is not _inflight.get(url):
+        # 有其他线程在请求，等待
+        my_event.wait(timeout=30)
+        cached = _get_cached(url)
+        if cached is not None:
+            return cached
+        # 等待超时或请求失败，走正常流程
+    else:
+        # 我是第一个请求者
+        try:
+            data = fetch_json(url, timeout, max_retries)
+            _set_cached(url, data, ttl)
+            return data
+        finally:
+            with _inflight_lock:
+                _inflight.pop(url, None)
+                my_event.set()
+
+    # fallback: 正常请求
+    data = fetch_json(url, timeout, max_retries)
+    _set_cached(url, data, ttl)
+    return data
+
+
 def fetch_json(url: str, timeout: int = None, max_retries: int = None) -> Any:
-    """通用JSON数据获取函数（支持重试和动态超时）"""
+    """通用JSON数据获取函数（支持重试和动态超时，带并发限流）"""
     if timeout is None:
         timeout = settings.api_timeout
     if max_retries is None:
@@ -51,7 +119,11 @@ def fetch_json(url: str, timeout: int = None, max_retries: int = None) -> Any:
 
     for attempt in range(max_retries):
         try:
-            response = requests.get(url, timeout=timeout)
+            _api_semaphore.acquire()
+            try:
+                response = requests.get(url, timeout=timeout)
+            finally:
+                _api_semaphore.release()
             response.raise_for_status()
             return response.json()
         except requests.Timeout as e:
@@ -61,10 +133,11 @@ def fetch_json(url: str, timeout: int = None, max_retries: int = None) -> Any:
                 import time
                 time.sleep(settings.api_retry_delay)
         except requests.HTTPError as e:
-            last_exception = DataFetchException(f"API HTTP错误: {str(e)}")
-            # 502 Bad Gateway 可能是临时问题，可以重试
-            if "502" in str(e) and attempt < max_retries - 1:
-                print(f"API 502错误，{settings.api_retry_delay}秒后重试 ({attempt + 1}/{max_retries})...")
+            last_exception = DataFetchException(f"{e.response.status_code}: {str(e)}")
+            status_code = e.response.status_code if e.response else 0
+            # 502/503 通常是临时问题，可以重试
+            if status_code in (502, 503) and attempt < max_retries - 1:
+                print(f"API {status_code}错误，{settings.api_retry_delay}秒后重试 ({attempt + 1}/{max_retries})...")
                 import time
                 time.sleep(settings.api_retry_delay)
         except Exception as e:
@@ -78,7 +151,7 @@ def get_kline_data(symbol: str) -> Dict[str, Any]:
     """获取K线数据"""
     url = f"{settings.kline_api_base}/detail/kline?symbol={symbol}&type=2"
     try:
-        data = fetch_json(url)
+        data = fetch_json_cached(url)
         if data.get("code") == 0:
             return data.get("data", {})
         else:
@@ -91,7 +164,7 @@ def get_header_data(symbol: str) -> Dict[str, Any]:
     """获取币种基本信息"""
     url = f"{settings.kline_api_base}/detail/header?symbol={symbol}"
     try:
-        data = fetch_json(url)
+        data = fetch_json_cached(url)
         if data.get("code") == 0:
             return data.get("data", {})
         else:
@@ -161,12 +234,9 @@ def get_derivatives_agg(symbol: str) -> Dict[str, Any]:
     """获取合约持仓、成交、资金费率聚合数据"""
     url = f"{settings.derivatives_api_base}/histUsdAgg/forllm?coin={symbol}"
     try:
-        data = fetch_json(url)
+        data = fetch_json_cached(url, timeout=8, max_retries=2)
         if data.get("code") == 0:
-            api_data = data.get("data", {})
-            # 返回完整的data对象，包含所有字段
-            # 包括: coin, metric, unit, exchanges, dates, data (各交易所的数据)
-            return api_data
+            return data.get("data", {})
         return {}
     except Exception as e:
         print(f"获取衍生品聚合数据异常: {str(e)}")
@@ -177,7 +247,7 @@ def get_trading_value(symbol: str) -> Dict[str, Any]:
     """获取成交额数据"""
     url = f"{settings.derivatives_api_base}/histTradingVal/forllm?coin={symbol}"
     try:
-        data = fetch_json(url)
+        data = fetch_json_cached(url)
         if data.get("code") == 0:
             return data.get("data", {})
         return {}
@@ -189,7 +259,7 @@ def get_funding_rate(symbol: str) -> Dict[str, Any]:
     """获取资金费率数据"""
     url = f"{settings.derivatives_api_base}/foundrate/forllm?coin={symbol}"
     try:
-        data = fetch_json(url)
+        data = fetch_json_cached(url)
         if data.get("code") == 0:
             return data.get("data", {})
         return {}
@@ -208,74 +278,42 @@ def get_all_derivatives_data(symbol: str) -> Dict[str, Any]:
 
 # 别名，保持向后兼容（如果其他地方还在使用）
 def get_buy_sell_ratio(symbol: str) -> Dict[str, Any]:
-    """获取买卖比例（从衍生品聚合数据中提取）- 已废弃"""
-    try:
-        agg_data = get_derivatives_agg(symbol)
-        return {
-            "buy_ratio": agg_data.get("buy_ratio", 0.5),
-            "sell_ratio": agg_data.get("sell_ratio", 0.5),
-            "timestamp": agg_data.get("timestamp")
+    """获取买卖比例 - 并发调用Binance和Kraken两个交易所接口"""
+    import concurrent.futures
+    result = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {
+            executor.submit(get_binance_buy_sell_ratio, symbol): "binance",
+            executor.submit(get_kraken_buy_sell_ratio, symbol): "kraken",
         }
-    except Exception:
-        return {"buy_ratio": 0.5, "sell_ratio": 0.5}
+        for future in concurrent.futures.as_completed(futures, timeout=15):
+            exchange = futures[future]
+            try:
+                data = future.result()
+                if data:
+                    result[exchange] = data
+            except Exception:
+                pass
+    return result if result else {"binance": {}, "kraken": {}}
 
 
 def get_open_interest(symbol: str) -> Dict[str, Any]:
-    """获取持仓量（从衍生品聚合数据中提取）"""
+    """获取持仓量 - 直接返回各交易所数据，不做汇总"""
     try:
-        # 从聚合数据中提取持仓量相关信息
         agg_data = get_derivatives_agg(symbol)
-
         if not agg_data:
-            return {"open_interest": 0, "oi_change": 0}
-
-        # 尝试从聚合数据中提取持仓量相关字段
-        # 根据API测试，histUsdAgg返回的数据结构中包含完整信息
-        # 数据应该在 agg_data.data 中
-        nested_data = agg_data.get("data")
-
-        if not isinstance(nested_data, dict):
-            return {"open_interest": 0, "oi_change": 0}
-
-        # 从各交易所数据中提取持仓量
-        # 数据结构可能包含: openInterest, oi, open_interest_total等
-        open_interest_values = []
-
-        for exchange, data in nested_data.items():
-            if isinstance(data, list) and data:
-                # 尝试获取持仓量值（可能是最新值或列表）
-                # 根据API测试，data可能是一个数组
-                if len(data) > 0:
-                    open_interest_values.append(data[-1])  # 取最新值
-
-        # 计算总持仓量
-        total_oi = sum(open_interest_values) if open_interest_values else 0
-
-        # 获取持仓量变化（如果有历史数据）
-        oi_change = 0
-        if len(open_interest_values) > 1:
-            # 计算变化（最新值 - 前一天值）
-            oi_change = open_interest_values[-1] - open_interest_values[-2]
-
-        # 获取时间戳
-        timestamp = agg_data.get("timestamp") or agg_data.get("dates", [])[0] if isinstance(agg_data.get("dates"), list) else None
-
-        return {
-            "open_interest": total_oi,
-            "oi_change": oi_change,
-            "timestamp": timestamp
-        }
-
+            return {}
+        return agg_data
     except Exception as e:
         print(f"获取持仓量数据异常: {str(e)}")
-        return {"open_interest": 0, "oi_change": 0}
+        return {}
 
 
 def get_binance_buy_sell_ratio(symbol: str) -> Dict[str, Any]:
     """获取 Binance 交易所的买卖比例"""
     url = f"{settings.derivatives_api_base}/histratio?coin={symbol}&exchange=Binance&type=but_sell_ratio"
     try:
-        data = fetch_json(url)
+        data = fetch_json_cached(url)
         if data.get("code") == 0:
             return data.get("data", {})
         return {}
@@ -287,7 +325,7 @@ def get_kraken_buy_sell_ratio(symbol: str) -> Dict[str, Any]:
     """获取 Kraken 交易所的买卖比例"""
     url = f"{settings.derivatives_api_base}/histratio?coin={symbol}&exchange=Kraken&type=but_sell_ratio"
     try:
-        data = fetch_json(url)
+        data = fetch_json_cached(url)
         if data.get("code") == 0:
             return data.get("data", {})
         return {}

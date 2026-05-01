@@ -2,7 +2,7 @@
 import asyncio
 import pandas as pd
 from app.skills.base import BaseSkill, IntentInfo, SkillResult
-from app.services.data_service import get_kline_data
+from app.services.data_service import get_kline_data, get_header_data
 
 
 class TechnicalAnalysisSkill(BaseSkill):
@@ -19,25 +19,48 @@ class TechnicalAnalysisSkill(BaseSkill):
         )
 
     def get_required_apis(self) -> list:
-        """只需要调用 kline_data API"""
-        return ["get_kline_data"]
+        """需要调用 kline_data 和 header_data API"""
+        return ["get_kline_data", "get_header_data"]
 
     async def execute_async(
         self,
         symbol: str,
         intent: IntentInfo
     ) -> SkillResult:
-        """执行分析（只调用必要的 API）"""
-        # 只调用 get_kline_data
-        kline_data = await asyncio.to_thread(get_kline_data, symbol)
+        """执行分析（并发调用API）"""
+        # 并发调用 get_kline_data 和 get_header_data
+        kline_data, header_data = await asyncio.gather(
+            asyncio.to_thread(get_kline_data, symbol),
+            asyncio.to_thread(get_header_data, symbol),
+            return_exceptions=True
+        )
+
+        # 处理异常
+        if isinstance(kline_data, Exception):
+            kline_data = {}
+        if isinstance(header_data, Exception):
+            header_data = {}
 
         # 计算技术指标（本地计算）
         indicators = self._calculate_indicators(kline_data)
 
-        # 提取基本信息
-        values = kline_data.get("values", [])
+        # 提取实时价格（优先用header_data）
+        real_time_price = None
+        price_change_24h = None
+        if header_data and isinstance(header_data, dict):
+            real_time_price = header_data.get("currentPrice")
+            price_change_24h = header_data.get("priceChangePercentage_24h")
+
+        # 提取K线信息
+        values = kline_data.get("values", []) if isinstance(kline_data, dict) else []
         close_prices = [day[3] for day in values if isinstance(day, list) and len(day) >= 4]
-        current_price = close_prices[-1] if close_prices else 0
+        kline_latest = close_prices[-1] if close_prices else 0
+
+        api_calls = []
+        if kline_data:
+            api_calls.append("get_kline_data")
+        if header_data:
+            api_calls.append("get_header_data")
 
         return SkillResult(
             skill_name=self.name,
@@ -50,10 +73,13 @@ class TechnicalAnalysisSkill(BaseSkill):
                     "min": float(min(close_prices)) if close_prices else 0,
                     "max": float(max(close_prices)) if close_prices else 0
                 },
-                "latest_price": current_price
+                "latest_price": real_time_price or kline_latest,
+                "real_time_price": real_time_price,
+                "price_change_24h": price_change_24h,
+                "kline_latest_close": kline_latest
             },
             timestamp=self._get_timestamp(),
-            api_calls=["get_kline_data"]
+            api_calls=api_calls
         )
 
     def _calculate_indicators(self, kline_data: dict) -> dict:

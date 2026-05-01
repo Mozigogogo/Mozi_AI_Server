@@ -71,144 +71,103 @@ class ComprehensiveAnalysisSkill(BaseSkill):
                 print(f"  警告: {api_name} 调用失败: {str(result)}")
                 # 记录失败，但不中断处理
 
-        # 进行综合分析
-        analysis = self._comprehensive_analysis(data)
+        # 构建传给LLM的数据（包含摘要+关键原始数据）
+        llm_data = self._build_llm_data(data)
 
         return SkillResult(
             skill_name=self.name,
-            data={
-                "raw_data": data,
-                "analysis": analysis
-            },
+            data=llm_data,
             timestamp=self._get_timestamp(),
             api_calls=api_calls
         )
 
-    def _comprehensive_analysis(self, data: dict) -> dict:
-        """综合分析"""
-        analysis = {
-            "basic_info": {},
-            "trend": {},
-            "sentiment": {},
-            "news": {},
-            "overall_assessment": "neutral"
-        }
+    def _build_llm_data(self, data: dict) -> dict:
+        """构建传给LLM的数据：摘要 + 关键原始数据"""
+        result = {}
 
-        # 基本面分析（优先使用header_data的准确24小时数据）
-        if "get_header_data" in data:
-            header_data = data["get_header_data"]
-            if header_data:
-                # 提取准确的24小时数据
-                current_price = header_data.get("currentPrice")
-                price_change_24h = header_data.get("priceChange_24h")
-                price_change_percent_24h = header_data.get("priceChangePercentage_24h")
-                high_24h = header_data.get("high_24h")
-                low_24h = header_data.get("low_24h")
+        # 1. 基本面（header_data）
+        if "get_header_data" in data and data["get_header_data"]:
+            h = data["get_header_data"]
+            try:
+                price = float(h.get("currentPrice", 0))
+                change = float(h.get("priceChange_24h", 0))
+            except (ValueError, TypeError):
+                price = 0
+                change = 0
+            result["实时数据"] = {
+                "当前价格": price,
+                "24h涨跌额": change,
+                "24h涨跌幅": h.get("priceChangePercentage_24h"),
+                "24h最高": h.get("high_24h"),
+                "24h最低": h.get("low_24h"),
+                "市值": h.get("marketCap"),
+                "排名": h.get("marketCapRank"),
+            }
 
-                # 转换为数值（如果需要）
-                try:
-                    current_price = float(current_price) if current_price else 0
-                    price_change_24h = float(price_change_24h) if price_change_24h else 0
-                except (ValueError, TypeError):
-                    current_price = 0
-                    price_change_24h = 0
-
-                analysis["basic_info"] = {
-                    "price": current_price,
-                    "price_change_24h": price_change_24h,
-                    "price_change_percent_24h": price_change_percent_24h,
-                    "high_24h": high_24h,
-                    "low_24h": low_24h,
-                    "market_cap": header_data.get("marketCap"),
-                    "rank": header_data.get("marketCapRank")
-                }
-
-                # 趋势分析（使用准确的24小时数据）
-                analysis["trend"] = {
-                    "current_price": current_price,
-                    "change_24h": price_change_24h,
-                    "change_percent_24h": price_change_percent_24h,
-                    "high_24h": high_24h,
-                    "low_24h": low_24h,
-                    "direction": "up" if price_change_24h > 0 else "down"
-                }
-
-        # K线数据分析（补充长期趋势）
-        if "get_kline_data" in data:
-            kline_data = data["get_kline_data"]
-            if kline_data and isinstance(kline_data, dict) and "values" in kline_data:
-                values = kline_data["values"]
+        # 2. K线趋势（kline_data）
+        if "get_kline_data" in data and data["get_kline_data"]:
+            kd = data["get_kline_data"]
+            if isinstance(kd, dict) and "values" in kd:
+                values = kd["values"]
                 if values and len(values) > 1:
-                    latest = values[-1]
-                    earliest = values[0]
-                    # values 格式: [open, high, low, close] - 修复索引错误
-                    close_latest = float(latest[3]) if len(latest) > 3 else 0
-                    close_earliest = float(earliest[3]) if len(earliest) > 3 else close_latest
+                    try:
+                        close_latest = float(values[-1][3])
+                        close_earliest = float(values[0][3])
+                        change_pct = ((close_latest - close_earliest) / close_earliest * 100) if close_earliest else 0
+                    except (ValueError, TypeError, IndexError):
+                        close_latest = 0
+                        change_pct = 0
+                    result["30天趋势"] = {
+                        "起始价": close_earliest if values else 0,
+                        "最新收盘价": close_latest,
+                        "30天涨跌幅": round(change_pct, 2),
+                        "数据天数": len(values),
+                    }
 
-                    if close_earliest > 0:
-                        # 这是30天趋势，不是24小时趋势
-                        long_term_change_percent = ((close_latest - close_earliest) / close_earliest) * 100
-                        analysis["trend"]["long_term_change_percent"] = round(long_term_change_percent, 2)
-
-        # 情绪分析
-        bullish_signals = 0
-        bearish_signals = 0
-
-        if "get_buy_sell_ratio" in data:
-            ratio_data = data["get_buy_sell_ratio"]
-            if ratio_data:
-                buy_ratio = ratio_data.get("buy_ratio", 0.5)
-                if buy_ratio > 0.5:
-                    bullish_signals += 1
-                else:
-                    bearish_signals += 1
-                analysis["sentiment"]["buy_sell_ratio"] = buy_ratio
-
-        if "get_funding_rate" in data:
-            funding_rate_data = data["get_funding_rate"]
-            # funding_rate 是字典，包含 exchanges 键
-            if isinstance(funding_rate_data, dict) and "exchanges" in funding_rate_data:
-                exchanges = funding_rate_data["exchanges"]
-                # 计算平均资金费率
-                if exchanges:
-                    rates = []
-                    for exchange, rate_str in exchanges.items():
-                        # 解析费率字符串，如 "-0.0002%"
-                        try:
-                            rate = float(rate_str.replace("%", ""))
-                            rates.append(rate)
-                        except (ValueError, AttributeError):
-                            continue
-
-                    if rates:
-                        avg_rate = sum(rates) / len(rates)
-                        if avg_rate > 0:
-                            bullish_signals += 1
-                            analysis["sentiment"]["funding_rate"] = "positive"
-                        elif avg_rate < 0:
-                            bearish_signals += 1
-                            analysis["sentiment"]["funding_rate"] = "negative"
+        # 3. 多空比（buy_sell_ratio）- 精简：每个交易所只保留最近5天
+        if "get_buy_sell_ratio" in data and data["get_buy_sell_ratio"]:
+            ratio_raw = data["get_buy_sell_ratio"]
+            ratio_trimmed = {}
+            for exchange, exchange_data in ratio_raw.items():
+                if isinstance(exchange_data, dict):
+                    trimmed = {}
+                    for k, v in exchange_data.items():
+                        if isinstance(v, list) and len(v) > 7:
+                            trimmed[k] = v[-7:]
                         else:
-                            analysis["sentiment"]["funding_rate"] = "neutral"
+                            trimmed[k] = v
+                    ratio_trimmed[exchange] = trimmed
+                else:
+                    ratio_trimmed[exchange] = exchange_data
+            result["多空比数据"] = ratio_trimmed
 
-        if "get_open_interest" in data:
-            analysis["sentiment"]["open_interest"] = data["get_open_interest"]
+        # 4. 资金费率（funding_rate）- 直接传（数据量小）
+        if "get_funding_rate" in data and data["get_funding_rate"]:
+            result["资金费率"] = data["get_funding_rate"]
 
-        # 综合判断
-        if bullish_signals > bearish_signals:
-            analysis["overall_assessment"] = "bullish"
-        elif bearish_signals > bullish_signals:
-            analysis["overall_assessment"] = "bearish"
-        else:
-            analysis["overall_assessment"] = "neutral"
+        # 5. 持仓量（open_interest）- 精简：每个交易所只保留最近7天
+        if "get_open_interest" in data and data["get_open_interest"]:
+            oi_raw = data["get_open_interest"]
+            oi_trimmed = {}
+            for k, v in oi_raw.items():
+                if k == "data" and isinstance(v, dict):
+                    trimmed_data = {}
+                    for exchange, values in v.items():
+                        if isinstance(values, list) and len(values) > 7:
+                            trimmed_data[exchange] = values[-7:]
+                        else:
+                            trimmed_data[exchange] = values
+                    oi_trimmed[k] = trimmed_data
+                elif k == "dates" and isinstance(v, list) and len(v) > 7:
+                    oi_trimmed[k] = v[-7:]
+                else:
+                    oi_trimmed[k] = v
+            result["持仓量"] = oi_trimmed
 
-        # 新闻分析
-        if "get_recent_news" in data:
-            news_data = data["get_recent_news"]
-            if isinstance(news_data, list):
-                analysis["news"] = {
-                    "count": len(news_data),
-                    "latest": news_data[0] if news_data else None
-                }
+        # 6. 新闻
+        if "get_recent_news" in data and data["get_recent_news"]:
+            news_list = data["get_recent_news"]
+            if isinstance(news_list, list):
+                result["最新新闻"] = news_list[:5]
 
-        return analysis
+        return result
