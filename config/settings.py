@@ -14,8 +14,8 @@ class Settings(BaseSettings):
 
     # DeepSeek API配置
     deepseek_api_key: str = ""
-    deepseek_api_base: str = "https://api.deepseek.com/v1"
-    deepseek_model: str = "deepseek-chat"
+    deepseek_api_base: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-v4-pro"
 
     # 应用配置
     app_name: str = "Crypto Analyst Assistant"
