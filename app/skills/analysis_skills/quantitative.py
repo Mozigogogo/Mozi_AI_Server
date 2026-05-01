@@ -195,30 +195,38 @@ class QuantitativeAnalysisSkill(BaseSkill):
         if "get_header_data" in data:
             header_data = data["get_header_data"]
             if header_data:
-                # 使用价格变化判断量价关系
-                price_change = header_data.get("priceChange_24h")
+                # 使用百分比涨跌幅 + 成交量判断量价关系
+                price_change_pct = header_data.get("priceChangePercentage_24h")
                 volume = header_data.get("volume", "")
 
                 try:
-                    price_change_val = float(price_change) if price_change else 0
+                    pct_val = float(str(price_change_pct).replace("%", "")) if price_change_pct else 0
                 except (ValueError, TypeError):
-                    price_change_val = 0
+                    pct_val = 0
 
-                if price_change_val > 20:
+                try:
+                    volume_val = float(volume) if volume else 0
+                except (ValueError, TypeError):
+                    volume_val = 0
+
+                # 结合价格变化和成交量综合评分
+                if pct_val > 5:
                     scores["volume"] = 2
-                    explanations["volume"] = f"24小时上涨{price_change_val:.2f}，量价配合度良好"
-                elif price_change_val > 5:
+                    explanations["volume"] = f"24h涨幅{pct_val:.2f}%，量价配合度良好"
+                elif pct_val > 1:
                     scores["volume"] = 1
-                    explanations["volume"] = f"24小时上涨{price_change_val:.2f}，放量上涨"
-                elif price_change_val < -10:
+                    explanations["volume"] = f"24h涨幅{pct_val:.2f}%，温和放量上涨"
+                elif pct_val < -5:
                     scores["volume"] = -2
-                    explanations["volume"] = f"24小时下跌{price_change_val:.2f}，放量下跌"
-                elif price_change_val < -3:
+                    explanations["volume"] = f"24h跌幅{pct_val:.2f}%，放量下跌"
+                elif pct_val < -1:
                     scores["volume"] = -1
-                    explanations["volume"] = f"24小时下跌{price_change_val:.2f}，缩量下跌"
+                    explanations["volume"] = f"24h跌幅{pct_val:.2f}%，缩量下跌"
                 else:
                     scores["volume"] = 0
-                    explanations["volume"] = f"24小时变化{price_change_val:.2f}，量价关系中性"
+                    explanations["volume"] = f"24h变化{pct_val:.2f}%，量价关系中性"
+                if volume_val > 0:
+                    explanations["volume"] += f"（成交量: {volume_val:,.2f}）"
 
         # 4. 资金因子评分 (-2 ~ +2)
         capital_score = 0
@@ -249,24 +257,35 @@ class QuantitativeAnalysisSkill(BaseSkill):
                 else:
                     capital_signals.append("多空比数据不足")
 
-        # 4.2 持仓变化
+        # 4.2 持仓变化（从OI数据中计算各交易所最近两天的变化率）
         if "get_open_interest" in data:
             oi_data = data["get_open_interest"]
-            if oi_data:
-                oi_change = oi_data.get("oi_change", 0)
-                try:
-                    oi_change_val = float(oi_change) if oi_change else 0
-                except (ValueError, TypeError):
-                    oi_change_val = 0
+            if oi_data and isinstance(oi_data, dict):
+                oi_changes = []
+                raw_data = oi_data.get("data", {})
+                if isinstance(raw_data, dict):
+                    for exchange, values_list in raw_data.items():
+                        if isinstance(values_list, list) and len(values_list) >= 2:
+                            try:
+                                prev = float(values_list[-2])
+                                curr = float(values_list[-1])
+                                if prev > 0:
+                                    oi_changes.append((curr - prev) / prev * 100)
+                            except (ValueError, TypeError, ZeroDivisionError):
+                                continue
 
-                if oi_change_val > 5:
-                    capital_score += 1
-                    capital_signals.append(f"持仓增加{oi_change_val:.2f}%，资金流入")
-                elif oi_change_val < -5:
-                    capital_score -= 1
-                    capital_signals.append(f"持仓减少{oi_change_val:.2f}%，资金流出")
+                if oi_changes:
+                    avg_oi_change = sum(oi_changes) / len(oi_changes)
+                    if avg_oi_change > 5:
+                        capital_score += 1
+                        capital_signals.append(f"持仓增加{avg_oi_change:.2f}%，资金流入")
+                    elif avg_oi_change < -5:
+                        capital_score -= 1
+                        capital_signals.append(f"持仓减少{avg_oi_change:.2f}%，资金流出")
+                    else:
+                        capital_signals.append(f"持仓变化{avg_oi_change:.2f}%，资金平稳")
                 else:
-                    capital_signals.append(f"持仓变化{oi_change_val:.2f}%，资金平稳")
+                    capital_signals.append("持仓量数据不足")
 
         # 4.3 费率结构
         if "get_funding_rate" in data:
@@ -461,6 +480,28 @@ class QuantitativeAnalysisSkill(BaseSkill):
         # 资金费率
         if "get_funding_rate" in data and data["get_funding_rate"]:
             result["资金费率"] = data["get_funding_rate"]
+
+        # 持仓量精简：每个交易所只保留最新值和变化
+        if "get_open_interest" in data and data["get_open_interest"]:
+            oi_raw = data["get_open_interest"]
+            if isinstance(oi_raw, dict) and "data" in oi_raw:
+                oi_summary = {}
+                raw = oi_raw["data"]
+                dates = oi_raw.get("dates", [])
+                for exchange, values_list in raw.items():
+                    if isinstance(values_list, list) and len(values_list) >= 2:
+                        try:
+                            latest_val = float(values_list[-1])
+                            prev_val = float(values_list[-2])
+                            change_pct = (latest_val - prev_val) / prev_val * 100 if prev_val > 0 else 0
+                            oi_summary[exchange] = {
+                                "最新持仓": f"{latest_val:.2f}亿",
+                                "变化": f"{change_pct:+.2f}%"
+                            }
+                        except (ValueError, TypeError, ZeroDivisionError):
+                            pass
+                if oi_summary:
+                    result["持仓量"] = oi_summary
 
         # 新闻（只取最新3条）
         if "get_recent_news" in data and data["get_recent_news"]:

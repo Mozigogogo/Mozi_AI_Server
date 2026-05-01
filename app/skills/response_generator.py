@@ -25,6 +25,8 @@ class ResponseGenerator:
             "zh": {
                 "chat": """你是加密货币分析助手。用简洁中文回答。
 
+【最高优先级】下面的数据只包含用户所问币种的数据。禁止编造、引用、对比任何其他币种的数据。只基于下面提供的数据回答，不得使用训练知识中的旧数据。
+
 格式要求（严格遵守）：
 1. 关键数字必须**加粗**，如价格、涨跌幅、百分比
 2. 涨用📈 跌用📉 标注
@@ -38,9 +40,10 @@ class ResponseGenerator:
 要求：{answer_requirements}""",
 
                 "think": """你是专业加密货币分析师。严格约束：
-1. 只分析用户问的币种，禁止提及其他币种
-2. 必须引用实时数据中的具体价格、涨跌幅等数值
-3. 多空比字段：longShortData=多/空人数比(>1看多,<1看空)；longData=多头占比；shortData=空头占比
+1. 【最高优先级】只分析用户问的币种，绝对禁止提及其他任何币种（如BTC、SOL等）。数据中不包含其他币种信息，不要编造。
+2. 只使用下面提供的数据回答，禁止使用训练知识中的旧数据或编造数据
+3. 必须引用实时数据中的具体价格、涨跌幅等数值
+4. 多空比字段：longShortData=多/空人数比(>1看多,<1看空)；longData=多头占比；shortData=空头占比
 
 问题：{question}
 时间：{timestamp}
@@ -52,7 +55,7 @@ class ResponseGenerator:
 分3段，每段用###标题+emoji开头。关键数字**加粗**。200-300字。末尾1句风险提示。必须完整不截断。
 
 ### 💰 价格趋势
-引用实时价格、24h涨跌幅、30天趋势。涨用📈 跌用📉
+引用实时价格、24h涨跌幅、30天趋势。涨用📈 跌用📉。只分析用户问的这一个币种。
 
 ### 📊 衍生品情绪
 多空比用🟢(偏多)/🔴(偏空)/⚪(中性)标注。资金费率正负标注。各交易所数据用换行列表。
@@ -61,10 +64,11 @@ class ResponseGenerator:
 1-2句总结 + 风险提示""",
 
                 "quantitative": """你是量化研究员。严格约束：
-1. 只分析用户问的币种，禁止提及其他币种
-2. 必须引用实时价格
-3. 禁止给出买卖建议，强调不确定性
-4. 多空比：longShortData=多/空人数比(>1看多,<1看空)
+1. 【最高优先级】只分析用户问的币种，绝对禁止提及其他任何币种。数据中不包含其他币种信息，不要编造。
+2. 只使用下面提供的数据，禁止使用训练知识中的旧数据
+3. 必须引用实时价格
+4. 禁止给出买卖建议，强调不确定性
+5. 多空比：longShortData=多/空人数比(>1看多,<1看空)
 
 时间：{timestamp}
 数据：
@@ -95,6 +99,8 @@ class ResponseGenerator:
             "en": {
                 "chat": """You are a friendly cryptocurrency analysis assistant. Please answer the user's question concisely and friendly in English.
 
+[HIGHEST PRIORITY] The data below only contains information for the coin the user asked about. Do NOT mention, reference, or compare with any other coin. Only use the data provided below, never use outdated data from training knowledge.
+
 Question: {question}
 Data timestamp: {timestamp}
 Retrieved data:
@@ -108,9 +114,10 @@ Answer directly, within 150 words.
 At the end, please briefly mention: The above analysis is for reference only and does not constitute investment advice.""",
 
                 "think": """You are a professional cryptocurrency analyst. Analyze in English. Constraints:
-1. Only analyze the coin mentioned, never mention other coins
-2. Must cite specific price, change percentages from the real-time data. Never say "data missing"
-3. Ratio fields: longShortData=long/short ratio (>1 bullish, <1 bearish); longData=long %; shortData=short %. Do not confuse them
+1. [HIGHEST PRIORITY] Only analyze the coin the user asked about. Absolutely do NOT mention any other coins (e.g. BTC, SOL). The data does not contain other coins - do not fabricate.
+2. Only use the data provided below. Never use outdated data from training knowledge or fabricate numbers.
+3. Must cite specific price, change percentages from the real-time data. Never say "data missing"
+4. Ratio fields: longShortData=long/short ratio (>1 bullish, <1 bearish); longData=long %; shortData=short %. Do not confuse them
 
 Question: {question}
 Time: {timestamp}
@@ -122,10 +129,11 @@ Requirements: {answer_requirements}
 200-300 words concise analysis, 3 sections: price trend, derivatives sentiment, overall judgment. 3-4 sentences per section. End with 1 risk disclaimer sentence. Must be complete, no truncation.""",
 
                 "quantitative": """You are a quantitative researcher analyzing six-factor scoring data. Constraints:
-1. Only analyze the coin mentioned, never mention other coins
-2. Must cite specific price from real-time data
-3. Never give buy/sell recommendations, emphasize uncertainty
-4. Ratio fields: longShortData=long/short ratio (>1 bullish, <1 bearish)
+1. [HIGHEST PRIORITY] Only analyze the coin the user asked about. Absolutely do NOT mention any other coins. Do not fabricate data.
+2. Only use the data provided below. Never use outdated data from training knowledge.
+3. Must cite specific price from real-time data
+4. Never give buy/sell recommendations, emphasize uncertainty
+5. Ratio fields: longShortData=long/short ratio (>1 bullish, <1 bearish)
 
 Time: {timestamp}
 Data:
@@ -175,6 +183,11 @@ For reference only, not investment advice. Crypto is volatile."""
 
             # 格式化数据
             formatted_data = self._format_data(skill_result.data)
+
+            # 在数据头部注入币种标识，防止 LLM 幻觉其他币种
+            symbol = intent.coin_symbol or ""
+            if symbol:
+                formatted_data = f"【以下数据仅包含 {symbol} 的数据，不包含任何其他币种的数据】\n" + formatted_data
 
             # 格式化回答要求
             answer_requirements = "\n".join(
@@ -246,6 +259,11 @@ For reference only, not investment advice. Crypto is volatile."""
 
             # 格式化数据
             formatted_data = self._format_data(skill_result.data)
+
+            # 在数据头部注入币种标识，防止 LLM 幻觉其他币种
+            symbol = intent.coin_symbol or ""
+            if symbol:
+                formatted_data = f"【以下数据仅包含 {symbol} 的数据，不包含任何其他币种的数据】\n" + formatted_data
 
             # 格式化回答要求
             answer_requirements = "\n".join(

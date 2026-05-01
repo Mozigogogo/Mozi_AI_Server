@@ -2,7 +2,10 @@
 import asyncio
 import pandas as pd
 from app.skills.base import BaseSkill, IntentInfo, SkillResult
-from app.services.data_service import get_kline_data, get_header_data
+from app.services.data_service import (
+    get_kline_data, get_header_data,
+    get_buy_sell_ratio, get_funding_rate
+)
 
 
 class TechnicalAnalysisSkill(BaseSkill):
@@ -19,8 +22,8 @@ class TechnicalAnalysisSkill(BaseSkill):
         )
 
     def get_required_apis(self) -> list:
-        """需要调用 kline_data 和 header_data API"""
-        return ["get_kline_data", "get_header_data"]
+        """需要调用的 API"""
+        return ["get_kline_data", "get_header_data", "get_buy_sell_ratio", "get_funding_rate"]
 
     async def execute_async(
         self,
@@ -28,18 +31,22 @@ class TechnicalAnalysisSkill(BaseSkill):
         intent: IntentInfo
     ) -> SkillResult:
         """执行分析（并发调用API）"""
-        # 并发调用 get_kline_data 和 get_header_data
-        kline_data, header_data = await asyncio.gather(
+        kline_data, header_data, ratio_data, funding_data = await asyncio.gather(
             asyncio.to_thread(get_kline_data, symbol),
             asyncio.to_thread(get_header_data, symbol),
+            asyncio.to_thread(get_buy_sell_ratio, symbol),
+            asyncio.to_thread(get_funding_rate, symbol),
             return_exceptions=True
         )
 
-        # 处理异常
         if isinstance(kline_data, Exception):
             kline_data = {}
         if isinstance(header_data, Exception):
             header_data = {}
+        if isinstance(ratio_data, Exception):
+            ratio_data = {}
+        if isinstance(funding_data, Exception):
+            funding_data = {}
 
         # 计算技术指标（本地计算）
         indicators = self._calculate_indicators(kline_data)
@@ -56,28 +63,53 @@ class TechnicalAnalysisSkill(BaseSkill):
         close_prices = [day[3] for day in values if isinstance(day, list) and len(day) >= 4]
         kline_latest = close_prices[-1] if close_prices else 0
 
+        # 构建返回数据
+        data = {
+            "币种": symbol,
+            "技术指标": indicators,
+            "K线摘要": self._summarize_kline(kline_data),
+            "data_points": len(close_prices),
+            "price_range": {
+                "min": float(min(close_prices)) if close_prices else 0,
+                "max": float(max(close_prices)) if close_prices else 0
+            },
+            "latest_price": real_time_price or kline_latest,
+            "real_time_price": real_time_price,
+            "price_change_24h": price_change_24h,
+            "kline_latest_close": kline_latest
+        }
+
+        # 多空比精简
+        if ratio_data and isinstance(ratio_data, dict):
+            ratio_summary = {}
+            for exchange, exchange_data in ratio_data.items():
+                if isinstance(exchange_data, dict):
+                    ls = exchange_data.get("longShortData", [])
+                    ratio_summary[exchange] = {
+                        "多空比": ls[-1] if ls else "N/A",
+                        "多头占比": exchange_data.get("longData", [None])[-1],
+                        "空头占比": exchange_data.get("shortData", [None])[-1],
+                    }
+            if ratio_summary:
+                data["多空比"] = ratio_summary
+
+        # 资金费率
+        if funding_data and isinstance(funding_data, dict):
+            data["资金费率"] = funding_data
+
         api_calls = []
-        if kline_data:
+        if kline_data and not isinstance(kline_data, Exception):
             api_calls.append("get_kline_data")
-        if header_data:
+        if header_data and not isinstance(header_data, Exception):
             api_calls.append("get_header_data")
+        if ratio_data and not isinstance(ratio_data, Exception):
+            api_calls.append("get_buy_sell_ratio")
+        if funding_data and not isinstance(funding_data, Exception):
+            api_calls.append("get_funding_rate")
 
         return SkillResult(
             skill_name=self.name,
-            data={
-                "indicators": indicators,
-                "kline_summary": self._summarize_kline(kline_data),
-                "symbol": symbol,
-                "data_points": len(close_prices),
-                "price_range": {
-                    "min": float(min(close_prices)) if close_prices else 0,
-                    "max": float(max(close_prices)) if close_prices else 0
-                },
-                "latest_price": real_time_price or kline_latest,
-                "real_time_price": real_time_price,
-                "price_change_24h": price_change_24h,
-                "kline_latest_close": kline_latest
-            },
+            data=data,
             timestamp=self._get_timestamp(),
             api_calls=api_calls
         )

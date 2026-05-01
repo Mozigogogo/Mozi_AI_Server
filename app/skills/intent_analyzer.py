@@ -94,18 +94,33 @@ API：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) |
         # 尝试提取 JSON（处理可能的前后文本）
         json_match = re.search(r'\{[\s\S]*\}', response)
         if json_match:
-            response = json_match.group()
+            candidate = json_match.group()
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                # JSON 被截断，尝试补全
+                pass
 
+        # 尝试直接解析
         try:
             return json.loads(response)
-        except json.JSONDecodeError as e:
-            print(f"JSON 解析失败: {e}, 原始响应: {response}")
-            # 返回默认值
-            return {
-                "language": "zh",
-                "intent_type": "simple_chat",
-                "coin_symbol": None,
-                "required_apis": [],
-                "answer_requirements": [],
-                "confidence": 0.0
-            }
+        except json.JSONDecodeError:
+            pass
+
+        # 截断 JSON 补全：逐步补全括号
+        for suffix in [']}', ']}', '"}']:
+            try:
+                return json.loads(response + suffix)
+            except json.JSONDecodeError:
+                continue
+
+        print(f"JSON 解析失败, 原始响应: {response[:200]}")
+        # 返回默认值
+        return {
+            "language": "zh",
+            "intent_type": "simple_chat",
+            "coin_symbol": None,
+            "required_apis": [],
+            "answer_requirements": [],
+            "confidence": 0.0
+        }
