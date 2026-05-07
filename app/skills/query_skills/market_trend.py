@@ -63,6 +63,13 @@ class MarketTrendSkill(BaseSkill):
                 "市值": header_data.get("marketCap"),
             }
 
+        # K线数据标注为历史日线
+        kline_dates = kline_data.get("categoryData", []) if isinstance(kline_data, dict) else []
+        data["K线数据(历史日线)"] = {
+            "最新日期": kline_dates[-1] if kline_dates else "N/A",
+            "该日收盘价": data["趋势"].get("current_price") if data.get("趋势") else None,
+        }
+
         api_calls = []
         if kline_data and not isinstance(kline_data, Exception):
             api_calls.append("get_kline_data")

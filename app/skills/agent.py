@@ -87,6 +87,15 @@ class CryptoAnalystAgent:
                 print(f"  - 调用的 API: {skill_result.api_calls}")
                 print(f"  - 时间戳: {skill_result.timestamp}")
 
+                # 检查数据是否全空（API 可能因币种符号错误而全部失败）
+                if not skill_result.api_calls:
+                    print(f"  ⚠️ 所有 API 调用失败，币种符号可能有误: {intent.coin_symbol}")
+                    if intent.language == "zh":
+                        yield f"抱歉，无法获取 {intent.coin_symbol} 的市场数据，请检查币种符号是否正确（如 BTC、ETH、SOL）。"
+                    else:
+                        yield f"Sorry, unable to fetch market data for {intent.coin_symbol}. Please verify the symbol (e.g., BTC, ETH, SOL)."
+                    return
+
                 # 步骤4：生成回答（使用用户语言）
                 print(f"\n[步骤4] 生成回答...")
 

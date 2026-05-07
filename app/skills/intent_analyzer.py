@@ -96,21 +96,27 @@ API：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) |
         if json_match:
             candidate = json_match.group()
             try:
-                return json.loads(candidate)
+                data = json.loads(candidate)
+                data = self._normalize_intent(data)
+                return data
             except json.JSONDecodeError:
                 # JSON 被截断，尝试补全
                 pass
 
         # 尝试直接解析
         try:
-            return json.loads(response)
+            data = json.loads(response)
+            data = self._normalize_intent(data)
+            return data
         except json.JSONDecodeError:
             pass
 
         # 截断 JSON 补全：逐步补全括号
         for suffix in [']}', ']}', '"}']:
             try:
-                return json.loads(response + suffix)
+                data = json.loads(response + suffix)
+                data = self._normalize_intent(data)
+                return data
             except json.JSONDecodeError:
                 continue
 
@@ -124,3 +130,20 @@ API：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) |
             "answer_requirements": [],
             "confidence": 0.0
         }
+
+    def _normalize_intent(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """标准化意图数据，修复常见的 LLM 输出错误"""
+        # 修复 coin_symbol：去除冒号后的交易对部分 (如 "BTC:ETH" → "ETH")
+        symbol = data.get("coin_symbol")
+        if symbol and ":" in str(symbol):
+            parts = str(symbol).split(":")
+            # 取最后一个作为实际币种 (如 "BTC:ETH" → "ETH")
+            corrected = parts[-1].strip().upper()
+            print(f"  ⚠️ 修正币种符号: {symbol} → {corrected}")
+            data["coin_symbol"] = corrected
+
+        # 统一大写
+        if data.get("coin_symbol"):
+            data["coin_symbol"] = str(data["coin_symbol"]).strip().upper()
+
+        return data

@@ -65,11 +65,16 @@ class ComprehensiveAnalysisSkill(BaseSkill):
 
         for api_name, result in zip(api_names, results):
             if not isinstance(result, Exception):
-                data[api_name] = result
-                api_calls.append(api_name)
+                # 检查结果是否有效（非空字典/非空列表）
+                if result is None:
+                    print(f"  警告: {api_name} 返回 None（币种可能有误）")
+                elif isinstance(result, dict) and result.get("code") is not None and result.get("code") != 0:
+                    print(f"  警告: {api_name} 返回错误: {result.get('errorMsg')}")
+                else:
+                    data[api_name] = result
+                    api_calls.append(api_name)
             else:
                 print(f"  警告: {api_name} 调用失败: {str(result)}")
-                # 记录失败，但不中断处理
 
         # 构建传给LLM的数据（包含摘要+关键原始数据）
         llm_data = self._build_llm_data(data)
@@ -104,11 +109,12 @@ class ComprehensiveAnalysisSkill(BaseSkill):
                 "排名": h.get("marketCapRank"),
             }
 
-        # 2. K线趋势（kline_data）
+        # 2. K线趋势（kline_data）— 标注为历史日线
         if "get_kline_data" in data and data["get_kline_data"]:
             kd = data["get_kline_data"]
             if isinstance(kd, dict) and "values" in kd:
                 values = kd["values"]
+                dates = kd.get("categoryData", [])
                 if values and len(values) > 1:
                     try:
                         close_latest = float(values[-1][3])
@@ -117,19 +123,25 @@ class ComprehensiveAnalysisSkill(BaseSkill):
                     except (ValueError, TypeError, IndexError):
                         close_latest = 0
                         change_pct = 0
-                    result["30天趋势"] = {
+                    result["30天趋势(历史日线)"] = {
                         "起始价": close_earliest if values else 0,
-                        "最新收盘价": close_latest,
+                        "最新日收盘价(非实时)": close_latest,
+                        "最新日期": dates[-1] if dates else "N/A",
                         "30天涨跌幅": round(change_pct, 2),
                         "数据天数": len(values),
                     }
 
-        # 3. 多空比（buy_sell_ratio）- 精简：每个交易所只保留最近5天
+        # 3. 多空比（buy_sell_ratio）— 标注截至日期
         if "get_buy_sell_ratio" in data and data["get_buy_sell_ratio"]:
             ratio_raw = data["get_buy_sell_ratio"]
             ratio_trimmed = {}
+            ratio_last_date = None
             for exchange, exchange_data in ratio_raw.items():
                 if isinstance(exchange_data, dict):
+                    # 提取日期
+                    dates = exchange_data.get("xAxisData", [])
+                    if dates and not ratio_last_date:
+                        ratio_last_date = dates[-1]
                     trimmed = {}
                     for k, v in exchange_data.items():
                         if isinstance(v, list) and len(v) > 7:
@@ -139,7 +151,8 @@ class ComprehensiveAnalysisSkill(BaseSkill):
                     ratio_trimmed[exchange] = trimmed
                 else:
                     ratio_trimmed[exchange] = exchange_data
-            result["多空比数据"] = ratio_trimmed
+            label = f"多空比数据(截至{ratio_last_date or '昨日'})"
+            result[label] = ratio_trimmed
 
         # 4. 资金费率（funding_rate）- 直接传（数据量小）
         if "get_funding_rate" in data and data["get_funding_rate"]:
