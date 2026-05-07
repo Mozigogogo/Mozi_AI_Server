@@ -153,7 +153,7 @@ def get_kline_data(symbol: str) -> Dict[str, Any]:
     try:
         data = fetch_json_cached(url)
         if data.get("code") == 0:
-            return data.get("data", {})
+            return data.get("data") or {}
         else:
             raise DataFetchException(f"API返回错误: {data.get('errorMsg', '未知错误')}")
     except Exception as e:
@@ -166,7 +166,7 @@ def get_header_data(symbol: str) -> Dict[str, Any]:
     try:
         data = fetch_json_cached(url)
         if data.get("code") == 0:
-            return data.get("data", {})
+            return data.get("data") or {}
         else:
             raise DataFetchException(f"API返回错误: {data.get('errorMsg', '未知错误')}")
     except Exception as e:

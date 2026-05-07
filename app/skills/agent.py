@@ -9,6 +9,7 @@ from app.skills.intent_analyzer import IntentAnalyzer
 from app.skills.skill_router import SkillRouter
 from app.skills.response_generator import ResponseGenerator
 from app.core.config import get_settings
+from app.services.data_service import get_header_data
 
 settings = get_settings()
 
@@ -95,6 +96,33 @@ class CryptoAnalystAgent:
                     else:
                         yield f"Sorry, unable to fetch market data for {intent.coin_symbol}. Please verify the symbol (e.g., BTC, ETH, SOL)."
                     return
+
+                # 兜底：确保实时价格存在（header API 可能超时）
+                has_realtime_price = False
+                data = skill_result.data
+                if isinstance(data, dict):
+                    rt = data.get("实时数据") or data.get("实时价格")
+                    if isinstance(rt, dict) and rt.get("当前价格"):
+                        has_realtime_price = True
+
+                if not has_realtime_price:
+                    print(f"  ⚠️ 缺少实时价格，尝试单独获取 header 数据...")
+                    try:
+                        header = await asyncio.to_thread(get_header_data, intent.coin_symbol)
+                        if header and isinstance(header, dict) and header.get("currentPrice"):
+                            price_info = {
+                                "当前价格": header.get("currentPrice"),
+                                "24h涨跌幅": header.get("priceChangePercentage_24h"),
+                                "24h最高": header.get("high_24h"),
+                                "24h最低": header.get("low_24h"),
+                            }
+                            # 注入到 Skill 数据中
+                            skill_result.data["实时数据"] = price_info
+                            if "get_header_data" not in skill_result.api_calls:
+                                skill_result.api_calls.append("get_header_data")
+                            print(f"  ✅ 兜底获取成功: 价格 {header.get('currentPrice')}")
+                    except Exception as e:
+                        print(f"  ❌ 兜底获取也失败: {e}")
 
                 # 步骤4：生成回答（使用用户语言）
                 print(f"\n[步骤4] 生成回答...")
