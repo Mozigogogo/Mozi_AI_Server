@@ -73,6 +73,22 @@ class CryptoAnalystAgent:
                     print(f"  ⚠️ 有币种但意图为 simple_chat，修正为 analyze_comprehensive")
                     intent.intent_type = "analyze_comprehensive"
 
+                # 二次检查：LLM未识别币种但问题中可能包含币种（如 pepe、ton 等）
+                # 从问题中提取候选词，通过 API 动态验证是否为有效币种，不写死任何币种
+                if intent.intent_type == "simple_chat" and not intent.coin_symbol:
+                    import re
+                    from app.services.data_service import validate_coin_exists
+                    candidates = set(w.upper() for w in re.findall(r'[A-Za-z]{2,6}', question))
+                    for sym in candidates:
+                        try:
+                            if validate_coin_exists(sym):
+                                intent.coin_symbol = sym
+                                intent.intent_type = "analyze_comprehensive"
+                                print(f"  ⚠️ 二次验证: API确认 {sym} 为有效币种，修正意图")
+                                break
+                        except Exception:
+                            pass
+
                 # 补充 required_apis（LLM 可能返回空列表）
                 if intent.coin_symbol and not intent.required_apis:
                     intent.required_apis = ["get_header_data", "get_kline_data", "get_buy_sell_ratio", "get_funding_rate"]
