@@ -40,7 +40,7 @@ class ResponseGenerator:
 要求：{answer_requirements}""",
 
                 "think": """你是专业加密货币分析师。严格约束：
-1. 【最高优先级】只分析用户问的币种，绝对禁止提及其他任何币种（如BTC、SOL等）。数据中不包含其他币种信息，不要编造。
+1. 【最高优先级】只分析用户问的币种，绝对禁止提及其他任何币种。数据中不包含其他币种信息，不要编造。
 2. 只使用下面提供的数据回答，禁止使用训练知识中的旧数据或编造数据
 3. 价格必须引用"实时数据.当前价格"字段，K线收盘价是历史数据不是实时价
 4. 多空比等衍生品数据如标注了截至日期，说明是历史数据，需如实告知用户
@@ -55,7 +55,7 @@ class ResponseGenerator:
 分3段，每段用###标题+emoji开头。关键数字**加粗**。200-300字。末尾1句风险提示。必须完整不截断。
 
 ### 💰 价格趋势
-引用实时价格、24h涨跌幅。K线趋势仅作参考。涨用📈 跌用📉。只分析用户问的这一个币种。
+引用实时价格、24h涨跌幅。K线趋势仅作参考。涨用📈 跌用📉。
 
 ### 📊 衍生品情绪
 多空比用🟢(偏多)/🔴(偏空)/⚪(中性)标注。资金费率正负标注。各交易所数据用换行列表。
@@ -114,7 +114,7 @@ Answer directly, within 150 words.
 At the end, please briefly mention: The above analysis is for reference only and does not constitute investment advice.""",
 
                 "think": """You are a professional cryptocurrency analyst. Analyze in English. Constraints:
-1. [HIGHEST PRIORITY] Only analyze the coin the user asked about. Absolutely do NOT mention any other coins (e.g. BTC, SOL). The data does not contain other coins - do not fabricate.
+1. [HIGHEST PRIORITY] Only analyze the coin the user asked about. Absolutely do NOT mention any other coins. The data does not contain other coins - do not fabricate.
 2. Only use the data provided below. Never use outdated data from training knowledge or fabricate numbers.
 3. Must cite specific price, change percentages from the real-time data. Never say "data missing"
 4. Ratio fields: longShortData=long/short ratio (>1 bullish, <1 bearish); longData=long %; shortData=short %. Do not confuse them

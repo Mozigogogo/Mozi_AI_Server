@@ -97,7 +97,7 @@ class CryptoAnalystAgent:
                         yield f"Sorry, unable to fetch market data for {intent.coin_symbol}. Please verify the symbol (e.g., BTC, ETH, SOL)."
                     return
 
-                # 兜底：确保实时价格存在（header API 可能超时）
+                # 兜底：确保实时价格存在（header API 可能超时），最多重试3次
                 has_realtime_price = False
                 data = skill_result.data
                 if isinstance(data, dict):
@@ -106,23 +106,34 @@ class CryptoAnalystAgent:
                         has_realtime_price = True
 
                 if not has_realtime_price:
-                    print(f"  ⚠️ 缺少实时价格，尝试单独获取 header 数据...")
-                    try:
-                        header = await asyncio.to_thread(get_header_data, intent.coin_symbol)
-                        if header and isinstance(header, dict) and header.get("currentPrice"):
-                            price_info = {
-                                "当前价格": header.get("currentPrice"),
-                                "24h涨跌幅": header.get("priceChangePercentage_24h"),
-                                "24h最高": header.get("high_24h"),
-                                "24h最低": header.get("low_24h"),
-                            }
-                            # 注入到 Skill 数据中
-                            skill_result.data["实时数据"] = price_info
-                            if "get_header_data" not in skill_result.api_calls:
-                                skill_result.api_calls.append("get_header_data")
-                            print(f"  ✅ 兜底获取成功: 价格 {header.get('currentPrice')}")
-                    except Exception as e:
-                        print(f"  ❌ 兜底获取也失败: {e}")
+                    print(f"  ⚠️ 缺少实时价格，尝试单独获取 header 数据（最多重试3次）...")
+                    for retry in range(3):
+                        try:
+                            header = await asyncio.to_thread(get_header_data, intent.coin_symbol)
+                            if header and isinstance(header, dict) and header.get("currentPrice"):
+                                price_info = {
+                                    "当前价格": header.get("currentPrice"),
+                                    "24h涨跌幅": header.get("priceChangePercentage_24h"),
+                                    "24h最高": header.get("high_24h"),
+                                    "24h最低": header.get("low_24h"),
+                                }
+                                skill_result.data["实时数据"] = price_info
+                                if "get_header_data" not in skill_result.api_calls:
+                                    skill_result.api_calls.append("get_header_data")
+                                print(f"  ✅ 兜底获取成功(第{retry+1}次): 价格 {header.get('currentPrice')}")
+                                break
+                            else:
+                                print(f"  ⚠️ 第{retry+1}次 header 返回空数据，重试...")
+                        except Exception as e:
+                            print(f"  ⚠️ 第{retry+1}次 header 获取失败: {e}")
+                    else:
+                        # 3次都失败，直接报错不让 LLM 对空数据幻觉
+                        print(f"  ❌ header API 3次重试均失败，返回错误提示")
+                        if intent.language == "zh":
+                            yield f"抱歉，实时行情数据暂时不可用（API 连接超时），请稍后再试。"
+                        else:
+                            yield f"Sorry, real-time market data is temporarily unavailable (API timeout). Please try again later."
+                        return
 
                 # 步骤4：生成回答（使用用户语言）
                 print(f"\n[步骤4] 生成回答...")
