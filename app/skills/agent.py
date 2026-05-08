@@ -54,21 +54,25 @@ class CryptoAnalystAgent:
                 intent = await self.intent_analyzer.analyze(question)
 
                 # 币种识别策略（与 chat 接口一致）：
-                # 优先信任意图分析器从问题文本中识别的币种（像 chat 一样）
-                # 未检测到币种时直接返回通用回答，不用 symbol 兜底
+                # simple_chat → 直接返回通用回答（无论有没有 symbol）
+                # 非闲聊意图但没币种 → 用 symbol 兜底（analyze 端点用户选了币种）
+                if intent.intent_type == "simple_chat" and not intent.coin_symbol:
+                    print(f"  检测到简单对话/无关问题，返回通用回答")
+                    greeting = self.response_generator.get_greeting(intent.language)
+                    yield greeting
+                    return
+
                 if symbol:
                     symbol = symbol.strip().upper()
                     if ":" in symbol:
                         symbol = symbol.split(":")[-1]
 
                     if not intent.coin_symbol:
-                        # 意图分析器未检测到币种，直接返回通用回答
-                        print(f"  意图分析未检测到币种，返回通用回答")
-                        greeting = self.response_generator.get_greeting(intent.language)
-                        yield greeting
-                        return
+                        # 非闲聊意图但没检测到币种，用参数传入的 symbol 兜底
+                        intent.coin_symbol = symbol
+                        print(f"  使用参数币种兜底: {symbol}")
                     elif intent.coin_symbol != symbol:
-                        # 不一致：信任问题文本中的币种识别（用户明确提到了某个币种）
+                        # 不一致：信任问题文本中的币种识别
                         print(f"  ⚠️ 币种不一致: 意图识别={intent.coin_symbol}, 参数={symbol}, 使用意图识别结果")
 
                 # 如果有币种但意图被误判为 simple_chat，修正为综合分析
