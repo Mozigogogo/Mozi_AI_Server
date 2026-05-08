@@ -53,19 +53,33 @@ class CryptoAnalystAgent:
                 # 步骤1：意图识别（LLM）
                 intent = await self.intent_analyzer.analyze(question)
 
-                # 如果调用方已指定币种，直接覆盖（analyze 端点已知 symbol，不再依赖 LLM 识别）
+                # 币种识别策略（与 chat 接口一致）：
+                # 优先信任意图分析器从问题文本中识别的币种（像 chat 一样）
+                # 仅当意图分析器未检测到币种时，才用调用方提供的 symbol 作为兜底
                 if symbol:
                     symbol = symbol.strip().upper()
                     if ":" in symbol:
                         symbol = symbol.split(":")[-1]
-                    intent.coin_symbol = symbol
-                    # 补充 required_apis（LLM 可能返回空列表）
-                    if not intent.required_apis:
-                        intent.required_apis = ["get_header_data", "get_kline_data", "get_buy_sell_ratio", "get_funding_rate"]
+
+                    if not intent.coin_symbol:
+                        # 意图分析器未检测到币种，使用调用方提供的 symbol
+                        intent.coin_symbol = symbol
+                    elif intent.coin_symbol != symbol:
+                        # 不一致：信任问题文本中的币种识别（用户明确提到了某个币种）
+                        print(f"  ⚠️ 币种不一致: 意图识别={intent.coin_symbol}, 参数={symbol}, 使用意图识别结果")
+
+                # 如果有币种但意图被误判为 simple_chat，修正为综合分析
+                if intent.intent_type == "simple_chat" and intent.coin_symbol:
+                    print(f"  ⚠️ 有币种但意图为 simple_chat，修正为 analyze_comprehensive")
+                    intent.intent_type = "analyze_comprehensive"
+
+                # 补充 required_apis（LLM 可能返回空列表）
+                if intent.coin_symbol and not intent.required_apis:
+                    intent.required_apis = ["get_header_data", "get_kline_data", "get_buy_sell_ratio", "get_funding_rate"]
 
                 print(f"  意图: {intent.intent_type} 币种: {intent.coin_symbol} APIs: {intent.required_apis}")
 
-                # 检查是否是简单对话
+                # 检查是否是简单对话（无币种）
                 if intent.intent_type == "simple_chat":
                     print(f"\n[步骤2] 检测到简单对话")
                     greeting = self.response_generator.get_greeting(intent.language)
