@@ -463,10 +463,22 @@ For reference only, not investment advice. Crypto is volatile."""
             return value_str
 
     def get_greeting(self, language: str = "zh") -> str:
-        """获取问候语"""
+        """获取通用回答"""
         greetings = {
-            "zh": "你好！我是加密货币分析助手，请问有什么可以帮您？",
-            "en": "Hello! I'm a cryptocurrency analysis assistant. How can I help you?"
+            "zh": "你好，我是mozi，你身边的加密分析小助手！我可以帮你：\n"
+                  "- 查询币种实时价格、涨跌幅、市值\n"
+                  "- 分析技术面、走势趋势、支撑阻力位\n"
+                  "- 查看合约多空比、资金费率、持仓量\n"
+                  "- 提供量化评分和买卖参考\n"
+                  "- 查看币种相关新闻动态\n\n"
+                  "请告诉我你想了解哪个币种，例如：BTC怎么样、ETH技术面分析、SOL多空比",
+            "en": "Hello, I'm mozi, your crypto analysis assistant! I can help you with:\n"
+                  "- Real-time prices, changes, market cap\n"
+                  "- Technical analysis, trends, support & resistance\n"
+                  "- Long/short ratio, funding rates, open interest\n"
+                  "- Quantitative scoring & trade signals\n"
+                  "- Crypto news updates\n\n"
+                  "Tell me which coin you'd like to analyze, e.g.: How is BTC? ETH technical analysis, SOL long/short ratio"
         }
         return greetings.get(language, greetings["zh"])
 
