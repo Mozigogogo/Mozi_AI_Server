@@ -44,13 +44,13 @@ async def analyze_stream(request: AnalyzeRequest):
                 "data": json.dumps({"data": "", "type": "start"})
             }
 
-            # 构建问题
-            question = f"请分析{request.symbol}：{request.question}"
+            # 构建问题（仅用于 LLM 理解分析意图，币种由 symbol 参数直接传入）
+            question = request.question or "综合分析"
             if request.lang.value == "en":
-                question = f"Analyze {request.symbol}: {request.question}"
+                question = f"Analyze {request.symbol}: {question}"
 
-            # 流式执行
-            async for chunk in crypto_agent.answer(question, mode="think"):
+            # 流式执行 — 直接传入 symbol，不再让 LLM 重新识别币种
+            async for chunk in crypto_agent.answer(question, mode="think", symbol=request.symbol):
                 yield {
                     "event": "message",
                     "data": json.dumps({"data": chunk, "type": "chunk"})

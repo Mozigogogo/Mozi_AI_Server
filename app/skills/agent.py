@@ -35,7 +35,8 @@ class CryptoAnalystAgent:
     async def answer(
         self,
         question: str,
-        mode: str = "chat"
+        mode: str = "chat",
+        symbol: str = None
     ) -> AsyncGenerator[str, None]:
         """
         异步回答用户问题（流式）
@@ -43,24 +44,26 @@ class CryptoAnalystAgent:
         Args:
             question: 用户问题
             mode: 模式（chat/think）
-
-        Yields:
-            str: 流式回答内容
+            symbol: 指定币种符号（analyze 端点已知币种时直接传入，跳过 LLM 识别）
         """
         async with self.semaphore:
             try:
-                print(f"\n=== 新请求 ===")
-                print(f"问题: {question}")
-                print(f"模式: {mode}")
+                print(f"\n=== 新请求 === 问题: {question} 模式: {mode} 指定币种: {symbol}")
 
                 # 步骤1：意图识别（LLM）
-                print(f"\n[步骤1] 意图识别...")
                 intent = await self.intent_analyzer.analyze(question)
-                print(f"意图分析结果:")
-                print(f"  - 语言: {intent.language}")
-                print(f"  - 意图类型: {intent.intent_type}")
-                print(f"  - 币种: {intent.coin_symbol}")
-                print(f"  - 需要的 API: {intent.required_apis}")
+
+                # 如果调用方已指定币种，直接覆盖（analyze 端点已知 symbol，不再依赖 LLM 识别）
+                if symbol:
+                    symbol = symbol.strip().upper()
+                    if ":" in symbol:
+                        symbol = symbol.split(":")[-1]
+                    intent.coin_symbol = symbol
+                    # 补充 required_apis（LLM 可能返回空列表）
+                    if not intent.required_apis:
+                        intent.required_apis = ["get_header_data", "get_kline_data", "get_buy_sell_ratio", "get_funding_rate"]
+
+                print(f"  意图: {intent.intent_type} 币种: {intent.coin_symbol} APIs: {intent.required_apis}")
 
                 # 检查是否是简单对话
                 if intent.intent_type == "simple_chat":
