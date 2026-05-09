@@ -45,7 +45,10 @@ async def analyze_stream(request: AnalyzeRequest):
             }
 
             # 直接传用户原始问题（与 chat 接口一致），symbol 通过参数传入不做拼接
-            async for chunk in crypto_agent.answer(request.question, mode="think", symbol=request.symbol):
+            async for chunk in crypto_agent.answer(
+                request.question, mode="think", symbol=request.symbol,
+                conversation_id=request.conversation_id
+            ):
                 yield {
                     "event": "message",
                     "data": json.dumps({"data": chunk, "type": "chunk"})
@@ -94,7 +97,10 @@ async def chat_stream(request: ChatRequest):
 
             # 流式执行 - 分阶段发送进度信息
             step = 0
-            async for chunk in crypto_agent.answer(request.message, mode="chat"):
+            async for chunk in crypto_agent.answer(
+                request.message, mode="chat",
+                conversation_id=request.conversation_id
+            ):
                 # 每50个字符发送一次进度更新
                 step += 1
                 if step % 50 == 0:

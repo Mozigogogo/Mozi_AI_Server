@@ -36,11 +36,18 @@ API：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) |
 
 规则：价格变化/涨跌幅→query_price，成交量/持仓/多空比/资金费率→query_derivatives，量化/买入卖出→analyze_quantitative。只选需要的API。只输出JSON："""
 
-    async def analyze(self, question: str) -> IntentInfo:
+    async def analyze(self, question: str, history_questions: list = None) -> IntentInfo:
         """分析用户意图（含重试）"""
         for attempt in range(2):  # 最多重试1次
             try:
-                prompt = self.prompt_template.format(question=question)
+                # 拼接历史问题帮助 LLM 理解上下文
+                if history_questions:
+                    history = "\n".join(f"{i+1}. {q}" for i, q in enumerate(history_questions[-5:]))
+                    full_question = f"历史问题：\n{history}\n\n当前问题：{question}"
+                else:
+                    full_question = question
+
+                prompt = self.prompt_template.format(question=full_question)
 
                 response = await self.client.chat.completions.create(
                     model=settings.deepseek_model,

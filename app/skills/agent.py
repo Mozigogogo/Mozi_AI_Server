@@ -8,6 +8,7 @@ from app.skills.base import IntentInfo
 from app.skills.intent_analyzer import IntentAnalyzer
 from app.skills.skill_router import SkillRouter
 from app.skills.response_generator import ResponseGenerator
+from app.core.session import session_manager
 from app.core.config import get_settings
 from app.services.data_service import get_header_data
 
@@ -36,7 +37,8 @@ class CryptoAnalystAgent:
         self,
         question: str,
         mode: str = "chat",
-        symbol: str = None
+        symbol: str = None,
+        conversation_id: str = None
     ) -> AsyncGenerator[str, None]:
         """
         异步回答用户问题（流式）
@@ -44,36 +46,47 @@ class CryptoAnalystAgent:
         Args:
             question: 用户问题
             mode: 模式（chat/think）
-            symbol: 指定币种符号（analyze 端点已知币种时直接传入，跳过 LLM 识别）
+            symbol: 指定币种符号
+            conversation_id: 会话ID，用于上下文记忆和用户隔离
         """
         async with self.semaphore:
             try:
-                print(f"\n=== 新请求 === 问题: {question} 模式: {mode} 指定币种: {symbol}")
+                print(f"\n=== 新请求 === 问题: {question} 模式: {mode} 指定币种: {symbol} 会话: {conversation_id}")
 
-                # 步骤1：意图识别（LLM）
-                intent = await self.intent_analyzer.analyze(question)
+                # 加载会话上下文（用户隔离）
+                session = session_manager.get(conversation_id) if conversation_id else None
+                history_questions = session["questions"] if session else []
+                last_coin = session["coin_symbol"] if session else None
+
+                # 步骤1：意图识别（LLM），传入历史问题帮助理解上下文
+                intent = await self.intent_analyzer.analyze(question, history_questions)
 
                 # 币种识别策略（与 chat 接口一致）：
                 # simple_chat → 直接返回通用回答（无论有没有 symbol）
-                # 非闲聊意图但没币种 → 用 symbol 兜底（analyze 端点用户选了币种）
+                # 非闲聊意图但没币种 → 用会话/参数兜底
                 if intent.intent_type == "simple_chat" and not intent.coin_symbol:
                     print(f"  检测到简单对话/无关问题，返回通用回答")
+                    # 仍然保存问题到会话（用户可能在之后问到币种）
+                    if conversation_id:
+                        session_manager.update(conversation_id, question=question)
                     greeting = self.response_generator.get_greeting(intent.language)
                     yield greeting
                     return
 
-                if symbol:
-                    symbol = symbol.strip().upper()
-                    if ":" in symbol:
-                        symbol = symbol.split(":")[-1]
-
-                    if not intent.coin_symbol:
-                        # 非闲聊意图但没检测到币种，用参数传入的 symbol 兜底
+                # 币种来源优先级：问题文本 > 参数 symbol > 会话记忆
+                if not intent.coin_symbol:
+                    if symbol:
+                        symbol = symbol.strip().upper()
+                        if ":" in symbol:
+                            symbol = symbol.split(":")[-1]
                         intent.coin_symbol = symbol
                         print(f"  使用参数币种兜底: {symbol}")
-                    elif intent.coin_symbol != symbol:
-                        # 不一致：信任问题文本中的币种识别
-                        print(f"  ⚠️ 币种不一致: 意图识别={intent.coin_symbol}, 参数={symbol}, 使用意图识别结果")
+                    elif last_coin:
+                        intent.coin_symbol = last_coin
+                        print(f"  使用会话记忆币种: {last_coin}")
+
+                if symbol and intent.coin_symbol != symbol:
+                    print(f"  ⚠️ 币种不一致: 意图识别={intent.coin_symbol}, 参数={symbol}, 使用意图识别结果")
 
                 # 如果有币种但意图被误判为 simple_chat，修正为综合分析
                 if intent.intent_type == "simple_chat" and intent.coin_symbol:
@@ -190,6 +203,14 @@ class CryptoAnalystAgent:
 
                 response = "".join(full_response)
                 print(f"生成的回答: {response[:100]}...")
+
+                # 保存会话：只存问题 + 识别到的币种
+                if conversation_id:
+                    session_manager.update(
+                        conversation_id,
+                        coin_symbol=intent.coin_symbol,
+                        question=question
+                    )
 
                 print(f"\n=== 请求完成 ===\n")
 

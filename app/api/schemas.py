@@ -25,6 +25,12 @@ class AnalyzeRequest(BaseModel):
         max_length=1000,
         example="请分析当前市场状况"
     )
+    conversation_id: Optional[str] = Field(
+        default=None,
+        description="会话ID，用于保持上下文记忆",
+        max_length=100,
+        example="conv_123"
+    )
     lang: Language = Field(
         default=Language.ZH,
         description="语言，zh（中文）或en（英文）",
