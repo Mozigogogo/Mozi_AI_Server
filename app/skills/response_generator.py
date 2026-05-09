@@ -489,3 +489,90 @@ For reference only, not investment advice. Crypto is volatile."""
             "en": "Please specify a cryptocurrency, e.g., BTC, ETH, SOL, etc."
         }
         return messages.get(language, messages["zh"])
+
+    # ── 推荐问题模板 ──────────────────────────────────────────
+    _SUGGESTION_TEMPLATES = {
+        "zh": {
+            "query_price": [
+                "{coin}技术面怎么样",
+                "{coin}多空比和资金费率",
+                "{coin}综合分析",
+            ],
+            "query_trend": [
+                "{coin}当前价格是多少",
+                "{coin}多空比怎么样",
+                "{coin}量化评分",
+            ],
+            "query_derivatives": [
+                "{coin}当前价格",
+                "{coin}技术面分析",
+                "{coin}综合分析",
+            ],
+            "query_news": [
+                "{coin}当前价格",
+                "{coin}技术面怎么样",
+                "{coin}多空比",
+            ],
+            "analyze_technical": [
+                "{coin}多空比和资金费率",
+                "{coin}量化评分",
+                "{coin}最新新闻动态",
+            ],
+            "analyze_comprehensive": [
+                "{coin}技术面怎么样",
+                "{coin}多空比和资金费率",
+                "{coin}量化评分",
+            ],
+            "analyze_quantitative": [
+                "{coin}综合分析",
+                "{coin}技术面怎么样",
+                "{coin}最新新闻动态",
+            ],
+        },
+        "en": {
+            "query_price": [
+                "{coin} technical analysis",
+                "{coin} long/short ratio & funding rate",
+                "{coin} comprehensive analysis",
+            ],
+            "query_trend": [
+                "{coin} current price",
+                "{coin} long/short ratio",
+                "{coin} quantitative score",
+            ],
+            "query_derivatives": [
+                "{coin} current price",
+                "{coin} technical analysis",
+                "{coin} comprehensive analysis",
+            ],
+            "query_news": [
+                "{coin} current price",
+                "{coin} technical analysis",
+                "{coin} long/short ratio",
+            ],
+            "analyze_technical": [
+                "{coin} long/short ratio & funding rate",
+                "{coin} quantitative score",
+                "{coin} latest news",
+            ],
+            "analyze_comprehensive": [
+                "{coin} technical analysis",
+                "{coin} long/short ratio & funding rate",
+                "{coin} quantitative score",
+            ],
+            "analyze_quantitative": [
+                "{coin} comprehensive analysis",
+                "{coin} technical analysis",
+                "{coin} latest news",
+            ],
+        },
+    }
+
+    def get_suggestions(self, intent_type: str, coin_symbol: str, language: str = "zh") -> list:
+        """根据意图和币种生成推荐问题"""
+        templates = self._SUGGESTION_TEMPLATES.get(language, self._SUGGESTION_TEMPLATES["zh"])
+        suggestions = templates.get(intent_type, templates.get("analyze_comprehensive", []))
+        return [
+            {"id": str(i + 1), "suggestion": s.format(coin=coin_symbol)}
+            for i, s in enumerate(suggestions)
+        ]

@@ -49,10 +49,18 @@ async def analyze_stream(request: AnalyzeRequest):
                 request.question, mode="think", symbol=request.symbol,
                 conversation_id=request.conversation_id
             ):
-                yield {
-                    "event": "message",
-                    "data": json.dumps({"data": chunk, "type": "chunk"})
-                }
+                if isinstance(chunk, dict):
+                    # 结构化数据（推荐问题等），直接序列化
+                    yield {
+                        "event": "message",
+                        "data": json.dumps(chunk)
+                    }
+                else:
+                    # 普通文本 chunk
+                    yield {
+                        "event": "message",
+                        "data": json.dumps({"data": chunk, "type": "chunk"})
+                    }
 
             print("DEBUG: Stream - Generator loop finished.")
             # 发送完成信号
@@ -101,6 +109,14 @@ async def chat_stream(request: ChatRequest):
                 request.message, mode="chat",
                 conversation_id=request.conversation_id
             ):
+                if isinstance(chunk, dict):
+                    # 结构化数据（推荐问题等）
+                    yield {
+                        "event": "message",
+                        "data": json.dumps(chunk)
+                    }
+                    continue
+
                 # 每50个字符发送一次进度更新
                 step += 1
                 if step % 50 == 0:

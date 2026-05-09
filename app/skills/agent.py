@@ -212,6 +212,13 @@ class CryptoAnalystAgent:
                         question=question
                     )
 
+                # 生成推荐问题（dict 类型，与 str 区分）
+                if intent.coin_symbol and intent.intent_type != "simple_chat":
+                    suggestions = self.response_generator.get_suggestions(
+                        intent.intent_type, intent.coin_symbol, intent.language
+                    )
+                    yield {"type": "suggestions", "suggestions": suggestions}
+
                 print(f"\n=== 请求完成 ===\n")
 
             except Exception as e:
