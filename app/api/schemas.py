@@ -1,5 +1,5 @@
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 
 
@@ -11,13 +11,22 @@ class Language(str, Enum):
 
 class AnalyzeRequest(BaseModel):
     """分析请求模型"""
-    symbol: str = Field(
-        ...,
-        description="加密货币符号，如BTC、ETH",
-        min_length=1,
+    symbol: Optional[str] = Field(
+        default=None,
+        description="可选。币种符号（如 BTC）；不传则由问题文本或会话记忆推断",
         max_length=10,
-        example="BTC"
+        examples=["BTC"],
     )
+
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def normalize_optional_symbol(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip().upper()
+            return s if s else None
+        return v
     question: str = Field(
         ...,
         description="分析问题",
@@ -98,9 +107,8 @@ class StreamChunk(BaseModel):
 
 # 请求示例
 analyze_request_example = {
-    "symbol": "BTC",
     "question": "请分析当前市场状况和技术面",
-    "lang": "zh"
+    "lang": "zh",
 }
 
 chat_request_example = {
