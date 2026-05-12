@@ -1,0 +1,433 @@
+"""BigOrder 对话式路由 - Function Calling"""
+import json
+import time
+import asyncio
+from typing import Optional
+from fastapi import APIRouter
+from sse_starlette.sse import EventSourceResponse
+
+from app.bigorder.models import ChatRequest, SignalLevel
+import app.bigorder.deps as bigorder_deps
+from app.core.llm_client import get_llm_client
+from config.settings import settings
+
+router = APIRouter()
+
+
+SYSTEM_PROMPT = """You are the "BigOrder Detection" intelligent assistant, specializing in cryptocurrency large-trade anomaly analysis.
+
+You MUST call exactly ONE tool to get real-time data, then answer based on the result.
+
+Rules:
+1. Call exactly one tool per question — pick the most relevant one
+2. Be concise, include key numbers (scores, amounts, ratios)
+3. If data is empty, clearly inform the user
+4. Use tables when comparing multiple items
+5. Never fabricate data
+
+LANGUAGE RULE:
+- Respond in the SAME language as the user's message (Chinese -> Chinese, English -> English)
+"""
+
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "query_anomalies",
+            "description": "获取最新异动信号列表，可按交易所和最低分数过滤",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "exchange": {"type": "string", "description": "交易所: Binance/OKX/Bybit/Bitget/Gate"},
+                    "min_score": {"type": "integer", "description": "最低得分阈值"},
+                    "limit": {"type": "integer", "description": "返回条数，默认20"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_coin_signal",
+            "description": "查询指定币种的异动评分详情（四维得分、综合得分、信号等级）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "coin": {"type": "string", "description": "币种名称，如 BTC/ETH/SOL"}
+                },
+                "required": ["coin"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_order_flow",
+            "description": "查询指定币种的资金流向（买入额、卖出额、净流入、买卖比）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "coin": {"type": "string", "description": "币种名称"},
+                    "window": {"type": "integer", "description": "时间窗口（分钟），默认5"}
+                },
+                "required": ["coin"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_large_orders",
+            "description": "获取指定币种最近的大单明细（按金额排序）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "coin": {"type": "string", "description": "币种名称"},
+                    "top": {"type": "integer", "description": "取前N笔，默认10"},
+                    "exchange": {"type": "string", "description": "交易所，默认Binance"}
+                },
+                "required": ["coin"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_history",
+            "description": "查询历史异动记录，可按币种、天数、等级过滤",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "coin": {"type": "string", "description": "币种名称"},
+                    "days": {"type": "integer", "description": "最近N天，默认7"},
+                    "level": {"type": "string", "enum": ["medium", "strong"], "description": "信号等级"},
+                    "limit": {"type": "integer", "description": "返回条数，默认50"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_exchange_compare",
+            "description": "对比同一币种在不同交易所的买卖分布",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "coin": {"type": "string", "description": "币种名称"}
+                },
+                "required": ["coin"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manual_scan",
+            "description": "手动触发全量扫描",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "coins": {"type": "array", "items": {"type": "string"}, "description": "币种列表"}
+                },
+                "required": []
+            }
+        }
+    },
+]
+
+_TOOL_TIMEOUTS = {
+    "query_anomalies": 5, "query_coin_signal": 5,
+    "query_order_flow": 5, "query_large_orders": 5,
+    "query_history": 5, "query_exchange_compare": 5,
+    "manual_scan": 15,
+}
+
+
+class _Cache:
+    def __init__(self):
+        self._store: dict = {}
+
+    def get(self, key: str, ttl: float = 8.0):
+        entry = self._store.get(key)
+        if entry and time.time() - entry[0] < ttl:
+            return entry[1]
+        return None
+
+    def set(self, key: str, value):
+        self._store[key] = (time.time(), value)
+        if len(self._store) > 500:
+            now = time.time()
+            expired = [k for k, v in self._store.items() if now - v[0] > 30]
+            for k in expired:
+                del self._store[k]
+
+_cache = _Cache()
+
+
+def _get_bigorder_mysql_config():
+    """获取 bigorder 专属 MySQL 配置"""
+    return {
+        "host": settings.bigorder_mysql_host or settings.mysql_host,
+        "port": settings.bigorder_mysql_port or settings.mysql_port,
+        "user": settings.bigorder_mysql_user or settings.mysql_user,
+        "password": settings.bigorder_mysql_password or settings.mysql_password,
+        "database": settings.bigorder_mysql_database or settings.mysql_database,
+    }
+
+
+def _execute_tool(name: str, args: dict) -> dict:
+    if name == "query_anomalies":
+        cache_key = f"anomalies:{args.get('exchange')}:{args.get('min_score')}:{args.get('limit', 20)}"
+        hit = _cache.get(cache_key)
+        if hit:
+            return hit
+        signals = bigorder_deps.scorer.get_anomaly_list(
+            exchange=args.get("exchange"),
+            min_score=args.get("min_score"),
+            limit=args.get("limit", 20)
+        )
+        result = {"count": len(signals), "signals": signals}
+        _cache.set(cache_key, result)
+        return result
+
+    if name == "query_coin_signal":
+        coin = args["coin"].upper()
+        cache_key = f"coin_signal:{coin}"
+        hit = _cache.get(cache_key, ttl=5.0)
+        if hit:
+            return hit
+        cached = bigorder_deps.scorer.get_coin_signal(coin)
+        if cached:
+            _cache.set(cache_key, cached)
+            return cached
+        result = {}
+        for exchange in settings.exchanges:
+            try:
+                signal = bigorder_deps.scorer.score_exchange(exchange, coin)
+                if signal:
+                    result[exchange] = signal.model_dump()
+            except Exception:
+                continue
+        data = {"coin": coin, "exchanges": result} if result else {"coin": coin, "message": "暂无数据"}
+        _cache.set(cache_key, data)
+        return data
+
+    if name == "query_order_flow":
+        coin = args["coin"].upper()
+        window = args.get("window", 5)
+        cache_key = f"order_flow:{coin}:{window}"
+        hit = _cache.get(cache_key, ttl=5.0)
+        if hit:
+            return hit
+        cached = bigorder_deps.scorer.get_order_flow(coin, window)
+        if cached:
+            _cache.set(cache_key, cached)
+            return cached
+        all_data = bigorder_deps.consumer.fetch_all_exchanges_pipeline(coin, window * 60)
+        result = {"coin": coin, "window_minutes": window, "exchanges": {}}
+        for exchange, (buy_ticks, sell_ticks) in all_data.items():
+            buy_amount = sum(t.amount for t in buy_ticks)
+            sell_amount = sum(t.amount for t in sell_ticks)
+            total = buy_amount + sell_amount
+            result["exchanges"][exchange] = {
+                "buy_amount": round(buy_amount, 2),
+                "sell_amount": round(sell_amount, 2),
+                "net_flow": round(buy_amount - sell_amount, 2),
+                "buy_count": len(buy_ticks),
+                "sell_count": len(sell_ticks),
+                "buy_ratio": round(buy_amount / total, 4) if total > 0 else 0.5,
+            }
+        _cache.set(cache_key, result)
+        return result
+
+    if name == "query_large_orders":
+        coin = args["coin"].upper()
+        top = args.get("top", 10)
+        exchange = args.get("exchange", "Binance")
+        cache_key = f"large_orders:{coin}:{top}:{exchange}"
+        hit = _cache.get(cache_key)
+        if hit:
+            return hit
+        cached = bigorder_deps.scorer.get_large_orders(coin, top)
+        if cached:
+            data = {"coin": coin, "count": len(cached), "orders": cached}
+            _cache.set(cache_key, data)
+            return data
+        orders = bigorder_deps.consumer.get_top_orders(coin, exchange=exchange, top_n=top)
+        data = {"coin": coin, "count": len(orders), "orders": [o.model_dump() for o in orders]}
+        _cache.set(cache_key, data)
+        return data
+
+    if name == "query_history":
+        return _query_history(
+            coin=args.get("coin"), days=args.get("days", 7),
+            level=args.get("level"), limit=args.get("limit", 50)
+        )
+
+    if name == "query_exchange_compare":
+        coin = args["coin"].upper()
+        cache_key = f"exchange_compare:{coin}"
+        hit = _cache.get(cache_key, ttl=5.0)
+        if hit:
+            return hit
+        data = bigorder_deps.scorer.get_exchange_compare(coin)
+        _cache.set(cache_key, data)
+        return data
+
+    if name == "manual_scan":
+        coins = args.get("coins")
+        signals = bigorder_deps.scorer.score_all(coins)
+        result = []
+        for s in signals:
+            d = s.model_dump()
+            d.pop("top_orders", None)
+            result.append(d)
+        return {
+            "total": len(signals),
+            "strong_count": sum(1 for s in signals if s.score.level == SignalLevel.STRONG),
+            "medium_count": sum(1 for s in signals if s.score.level == SignalLevel.MEDIUM),
+            "signals": result
+        }
+
+    return {"error": f"Unknown tool: {name}"}
+
+
+def _query_history(coin: Optional[str], days: int, level: Optional[str], limit: int) -> dict:
+    import pymysql
+    try:
+        mysql_cfg = _get_bigorder_mysql_config()
+        conn = pymysql.connect(
+            host=mysql_cfg["host"], port=mysql_cfg["port"],
+            user=mysql_cfg["user"], password=mysql_cfg["password"],
+            database=mysql_cfg["database"], charset="utf8mb4",
+            connect_timeout=5, read_timeout=10
+        )
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        sql = "SELECT * FROM anomaly_history WHERE 1=1"
+        params = []
+        if coin:
+            sql += " AND coin = %s"
+            params.append(coin.upper())
+        if level:
+            sql += " AND level = %s"
+            params.append(level)
+        if days:
+            sql += " AND created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)"
+            params.append(days)
+        sql += " ORDER BY timestamp DESC LIMIT %s"
+        params.append(limit)
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return {"count": len(rows), "data": rows}
+    except Exception as e:
+        return {"count": 0, "data": [], "error": str(e)}
+
+
+@router.post("/chat")
+async def chat(request: __import__("fastapi").Request):
+    """对话式 SSE 流式接口"""
+    if not bigorder_deps.is_redis_available():
+        return JSONResponse(
+            status_code=503,
+            content={"error": "BigOrder 功能需要 Redis，请设置 REDIS_ENABLED=true"}
+        )
+
+    body = await request.json()
+    user_message = body.get("message", "")
+    coin_hint = body.get("coin")
+
+    client = get_llm_client()
+    model = settings.bigorder_deepseek_model
+
+    async def event_generator():
+        user_content = user_message
+        if coin_hint:
+            user_content = f"[当前关注币种: {coin_hint.upper()}] {user_message}"
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
+
+        yield {"event": "thinking", "data": json.dumps({"status": "Analyzing..."}, ensure_ascii=False)}
+
+        # ---- Step 1: 非流式调用，让 LLM 选 tool ----
+        try:
+            route_resp = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    tools=TOOLS,
+                    tool_choice="auto",
+                    max_tokens=500,
+                ),
+                timeout=30.0
+            )
+        except Exception as e:
+            yield {"event": "error", "data": json.dumps({"error": str(e)}, ensure_ascii=False)}
+            return
+
+        msg = route_resp.choices[0].message
+
+        # 无 tool_call -> 直接输出 LLM 回答
+        if not msg.tool_calls:
+            yield {"event": "content", "data": json.dumps({"text": msg.content or ""}, ensure_ascii=False)}
+            yield {"event": "done", "data": "{}"}
+            return
+
+        # ---- Step 2: 执行 tool ----
+        tc = msg.tool_calls[0]
+        tool_name = tc.function.name
+        try:
+            tool_args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+        except json.JSONDecodeError:
+            tool_args = {}
+
+        yield {"event": "tool_call", "data": json.dumps({"tool": tool_name, "args": tool_args}, ensure_ascii=False)}
+
+        loop = asyncio.get_event_loop()
+        timeout = _TOOL_TIMEOUTS.get(tool_name, 10)
+        try:
+            tool_result = await asyncio.wait_for(
+                loop.run_in_executor(None, _execute_tool, tool_name, tool_args),
+                timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            tool_result = {"error": "Query timed out"}
+
+        yield {"event": "tool_result", "data": json.dumps({"tool": tool_name, "result": tool_result}, ensure_ascii=False, default=str)}
+
+        # ---- Step 3: 流式输出最终回答 ----
+        assistant_msg = {"role": "assistant", "tool_calls": [tc.model_dump()]}
+        if msg.content:
+            assistant_msg["content"] = msg.content
+        if hasattr(msg, 'reasoning_content') and msg.reasoning_content:
+            assistant_msg["reasoning_content"] = msg.reasoning_content
+        messages.append(assistant_msg)
+        messages.append({
+            "role": "tool",
+            "tool_call_id": tc.id,
+            "content": json.dumps(tool_result, ensure_ascii=False, default=str),
+        })
+
+        try:
+            final_resp = await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=1000,
+                stream=True,
+            )
+            async for chunk in final_resp:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    yield {"event": "content", "data": json.dumps({"text": delta.content}, ensure_ascii=False)}
+        except Exception as e:
+            yield {"event": "error", "data": json.dumps({"error": str(e)}, ensure_ascii=False)}
+
+        yield {"event": "done", "data": "{}"}
+
+    return EventSourceResponse(event_generator())

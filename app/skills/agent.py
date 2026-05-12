@@ -2,14 +2,13 @@
 import asyncio
 from typing import AsyncGenerator
 
-from openai import AsyncOpenAI
-
 from app.skills.base import IntentInfo
 from app.skills.intent_analyzer import IntentAnalyzer
 from app.skills.skill_router import SkillRouter
 from app.skills.response_generator import ResponseGenerator
 from app.core.session import session_manager
 from app.core.config import get_settings
+from app.core.llm_client import get_llm_client
 from app.services.data_service import get_header_data
 
 settings = get_settings()
@@ -19,11 +18,8 @@ class CryptoAnalystAgent:
     """加密货币分析 Agent - 基于 Skill 架构"""
 
     def __init__(self):
-        # 初始化 LLM 客户端（使用 OpenAI 兼容模式）
-        self.client = AsyncOpenAI(
-            api_key=settings.deepseek_api_key,
-            base_url=settings.deepseek_api_base
-        )
+        # 使用共享 LLM 客户端
+        self.client = get_llm_client()
 
         # 初始化组件
         self.intent_analyzer = IntentAnalyzer(self.client)

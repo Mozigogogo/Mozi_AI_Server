@@ -1,3 +1,4 @@
+import asyncio
 import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
@@ -22,9 +23,29 @@ async def lifespan(app: FastAPI):
     print(f"API地址: http://{settings.api_host}:{settings.api_port}")
     print(f"调试模式: {settings.debug}")
 
+    # BigOrder 后台扫描任务（仅在 Redis 启用时）
+    scan_task = None
+    if settings.redis_enabled:
+        import app.bigorder.deps as bigorder_deps
+        bigorder_deps.init_bigorder_deps()
+        if bigorder_deps.is_redis_available():
+            coins = bigorder_deps.consumer.get_watched_coins()
+            print(f"BigOrder: Redis 已连接，监控 {len(coins)} 个币种")
+            scan_task = asyncio.create_task(
+                _bigorder_background_scan(
+                    bigorder_deps.consumer,
+                    bigorder_deps.scorer,
+                    bigorder_deps.llm_analyzer
+                )
+            )
+        else:
+            print("BigOrder: Redis 连接失败，后台扫描未启动")
+
     yield
 
     # 关闭时
+    if scan_task:
+        scan_task.cancel()
     print("服务关闭")
 
 
@@ -200,6 +221,16 @@ app.include_router(
     tags=["Skill System Test"]
 )
 
+# 注册 BigOrder 路由（条件注册）
+if settings.redis_enabled:
+    from app.bigorder.endpoints import router as bigorder_router
+    from app.bigorder.chat import router as bigorder_chat_router
+    app.include_router(bigorder_router, prefix="/bigorder/v1", tags=["BigOrder Detection"])
+    app.include_router(bigorder_chat_router, prefix="/bigorder/v1", tags=["BigOrder Detection"])
+    print("BigOrder: 路由已注册 (/bigorder/v1/*)")
+else:
+    print("BigOrder: REDIS_ENABLED=false，路由未注册")
+
 
 # 中间件：添加请求处理时间
 @app.middleware("http")
@@ -210,6 +241,36 @@ async def add_process_time_header(request: Request, call_next):
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = str(process_time)
     return response
+
+
+async def _bigorder_background_scan(consumer, scorer, llm_analyzer):
+    """BigOrder 后台定时扫描"""
+    major_coins = [
+        "BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "AVAX", "DOT", "LINK",
+        "UNI", "ATOM", "LTC", "NEAR", "APT", "ARB", "OP", "MATIC", "FIL", "TON"
+    ]
+    while True:
+        try:
+            await asyncio.sleep(settings.scan_interval)
+            watched = consumer.get_watched_coins()
+            scan_coins = [c for c in major_coins if c in watched]
+            if not scan_coins:
+                continue
+            signals = await asyncio.get_event_loop().run_in_executor(None, scorer.score_all, scan_coins)
+            for signal in signals:
+                if signal.score.level.value != "none":
+                    try:
+                        signal = await llm_analyzer.analyze_and_enrich(signal)
+                        if signal.llm_analysis:
+                            coin_key = f"signal:coin:{signal.coin}"
+                            consumer.client.hset(coin_key, "llm_analysis", signal.llm_analysis)
+                    except:
+                        pass
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"BigOrder 后台扫描异常: {e}")
+            await asyncio.sleep(10)
 
 
 if __name__ == "__main__":

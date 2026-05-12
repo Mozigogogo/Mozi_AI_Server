@@ -1,35 +1,84 @@
-# Crypto Analyst Assistant
+# Mozi - 加密市场智能分析平台
 
-基于LangChain的虚拟货币分析助手，提供智能化的加密货币市场分析服务。
+基于 Skill 架构的加密货币分析助手，集成行情分析和大单侦测两大 Agent，通过 SSE 流式输出提供实时智能分析。
 
-## 赛道匹配说明：User-Facing AI Agents
+## 系统架构
 
-本项目是一个面向用户的 AI Agent 产品形态：它通过 `FastAPI` 暴露可直接使用的对话/分析接口（如 `/api/v1/chat`、`/api/v1/chat/stream`、`/api/v1/analyze`、`/api/v1/analyze/stream`），由 `LangChain` 智能体根据用户输入自动选择并编排多种工具（市场数据、新闻、衍生品、技术/量化分析等）完成分析任务；同时通过 SSE 流式输出逐步呈现生成过程，并支持多轮会话记忆（会话历史持久化到 `MySQL`），从而形成可交互、可持续对话的用户侧 AI 助手。
+```
+用户请求
+  ├─ /api/v1/*          → Agent（行情分析）
+  │   意图识别 → Skill路由 → 数据获取 → LLM回答
+  │
+  └─ /bigorder/v1/*     → BigOrder Agent（大单侦测）
+      Function Calling → Tool执行 → LLM回答
+      后台30s扫描 → 四维打分 → 异动信号
+```
 
-## 功能特性
+**技术栈**：FastAPI + DeepSeek LLM + MySQL + Redis + SSE
 
-- 🚀 **智能路由**: 基于LangChain的智能体动态选择分析工具
-- 📊 **多维度分析**: 市场数据、新闻、衍生品、技术分析等
-- 🔄 **流式响应**: 支持SSE流式输出，实时展示分析过程
-- 👥 **会话隔离**: 支持多用户独立会话，记忆持久化到MySQL
-- 🛠️ **模块化工具**: 独立的功能模块，易于扩展和维护
-- 🔧 **配置管理**: 基于环境变量的配置系统
-- 🌐 **RESTful API**: 标准HTTP接口，便于前端集成
+## 功能一览
+
+### 行情分析 Agent
+
+| 能力 | 示例问题 |
+|------|---------|
+| 实时行情 | BTC怎么样、ETH当前价格 |
+| 技术分析 | SOL技术面怎么样 |
+| 衍生品 | BTC多空比和资金费率 |
+| 量化评分 | ETH量化评分 |
+| 新闻资讯 | BTC最近有什么新闻 |
+| 综合分析 | 全面分析一下ETH |
+| 会话记忆 | 同一对话中沿用币种上下文 |
+
+### 大单侦测 Agent（需 Redis）
+
+| 能力 | 示例问题 |
+|------|---------|
+| 异动信号 | 市场有哪些异动 |
+| 币种信号 | BTC有什么异动 |
+| 资金流向 | ETH资金流怎么样 |
+| 大单明细 | BTC最近的大单 |
+| 交易所对比 | 对比SOL各交易所 |
+| 历史查询 | 过去7天有哪些强信号 |
+| SSE实时推送 | 新信号自动推送 |
 
 ## 项目结构
 
 ```
-crypto-analyst-assistant/
-├── app/
-│   ├── main.py              # FastAPI应用入口
-│   ├── api/                 # API路由和模型
-│   ├── core/               # 核心配置和异常处理
-│   ├── agents/             # LangChain智能体和工具
-│   ├── services/           # 数据服务和LLM服务
-│   └── utils/              # 工具函数
-├── config/                 # 配置文件
-├── requirements.txt        # 依赖包
-└── README.md              # 项目说明
+app/
+├── main.py                    # FastAPI 入口 + 生命周期管理
+├── core/
+│   ├── config.py              # 配置加载
+│   ├── llm_client.py          # 共享 LLM 客户端单例
+│   ├── session.py             # 会话管理（用户隔离 + 币种记忆）
+│   └── exceptions.py          # 异常定义
+├── api/
+│   ├── endpoints.py           # Agent SSE 端点
+│   ├── schemas.py             # 请求/响应模型
+│   └── skill_endpoints.py     # 测试端点
+├── skills/                     # Agent Skill 体系
+│   ├── agent.py               # 主编排器
+│   ├── intent_analyzer.py     # LLM 意图识别
+│   ├── skill_router.py        # Skill 路由
+│   ├── response_generator.py  # LLM 回答生成
+│   ├── query_skills/          # 查询类 Skill（价格/K线/新闻/衍生品）
+│   └── analysis_skills/       # 分析类 Skill（技术面/量化/综合）
+├── bigorder/                   # BigOrder Agent 子模块
+│   ├── models.py              # 数据模型（TickData/SignalScore/AnomalySignal）
+│   ├── deps.py                # 依赖管理（Redis 可选）
+│   ├── consumer.py            # Redis ZSET 消费器
+│   ├── scorer.py              # 四维打分引擎
+│   ├── history.py             # 历史基线（滑动窗口）
+│   ├── llm_analyzer.py        # 信号 LLM 解读
+│   ├── endpoints.py           # REST + SSE 端点
+│   └── chat.py                # Function Calling 对话
+├── services/
+│   ├── data_service.py        # 外部 API 调用 + 缓存
+│   └── session_service.py     # MySQL 会话持久化
+└── utils/
+    └── validators.py          # 输入校验
+config/
+    └── settings.py            # 统一配置（所有 Agent 的参数）
 ```
 
 ## 快速开始
@@ -37,255 +86,179 @@ crypto-analyst-assistant/
 ### 1. 环境准备
 
 ```bash
-# 克隆项目
 git clone <repository-url>
-cd crypto-analyst-assistant
+cd agent
 
-# 创建虚拟环境
 python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# 或
-venv\Scripts\activate     # Windows
+source venv/bin/activate   # Linux/Mac
+# venv\Scripts\activate    # Windows
 
-# 安装依赖
 pip install -r requirements.txt
 ```
 
-### 2. 配置环境变量
-
-复制环境变量模板并配置：
+### 2. 配置 .env
 
 ```bash
-cp config/.env.example .env
+cp .env.example .env
 ```
 
-编辑`.env`文件，配置以下信息：
-- MySQL数据库连接信息
-- DeepSeek API密钥
-- 其他应用配置
+**必填配置**：
+
+```bash
+# MySQL（Agent 用）
+MYSQL_HOST=your_mysql_host
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=your_password
+MYSQL_DATABASE=community
+
+# DeepSeek API
+DEEPSEEK_API_KEY=your_api_key
+DEEPSEEK_API_BASE=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-pro
+```
+
+**可选配置（启用大单侦测 Agent）**：
+
+```bash
+# 开启 BigOrder Agent
+REDIS_ENABLED=true
+REDIS_HOST=your_redis_host
+REDIS_PORT=6379
+REDIS_PASSWORD=your_password
+
+# BigOrder 独立 MySQL（存储异动历史）
+BIGORDER_MYSQL_HOST=your_mysql_host
+BIGORDER_MYSQL_PASSWORD=your_password
+BIGORDER_MYSQL_DATABASE=exchange
+
+# BigOrder 使用更快的模型
+BIGORDER_DEEPSEEK_MODEL=deepseek-v4-flash
+
+# 引擎参数
+SCAN_INTERVAL=30
+SCORE_THRESHOLD_STRONG=70
+SCORE_THRESHOLD_MEDIUM=50
+```
 
 ### 3. 启动服务
 
 ```bash
-python -m app.main
+# 仅行情分析（无需 Redis）
+REDIS_ENABLED=false python -m app.main
+
+# 行情分析 + 大单侦测
+REDIS_ENABLED=true python -m app.main
 ```
 
-服务将在 `http://localhost:8000` 启动。
+服务默认运行在 `http://localhost:8000`
 
-### 4. API文档
-
-启动服务后访问：
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-
-## API接口
-
-### 分析接口
-
-**POST** `/api/v1/analyze`
-
-请求体：
-```json
-{
-  "symbol": "BTC",
-  "question": "请分析BTC的当前市场状况",
-  "lang": "zh"
-}
-```
-
-响应：SSE流式输出
-
-### 聊天接口
-
-**POST** `/api/v1/chat`
-
-请求体：
-```json
-{
-  "message": "BTC最近表现如何？",
-  "conversation_id": "user-session-id",
-  "lang": "zh"
-}
-```
-
-**说明**：
-- `conversation_id`: 可选参数，用于标识用户会话
-- 提供后：AI会记住该会话的历史对话（最多50轮）
-- 不提供：无状态模式，每次对话独立
-
-响应：SSE流式输出
-
-### 清除会话记忆
-
-**POST** `/api/v1/clear?conversation_id=user-session-id`
-
-**说明**：
-- 不传参数：清除所有内存缓存的会话
-- 传参数：清除指定会话的记忆
-- 数据库记录保留，需手动清理
-
-## 会话隔离功能
-
-### 特性说明
-
-- **多用户隔离**: 每个用户（conversation_id）拥有独立的对话历史
-- **内存缓存**: LRU缓存机制，最多缓存100个活跃会话
-- **数据库持久化**: 对话历史保存到MySQL，重启不丢失
-- **自动清理**: 每会话保留50轮（100条消息），超出自动清理
-- **优雅降级**: 数据库失败时自动降级为无状态模式
-
-### API使用
+### 4. 验证
 
 ```bash
-# 创建新会话
-curl -X POST http://localhost:8000/api/v1/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "你好，我是用户A",
-    "conversation_id": "user_a_session"
-  }'
+# Agent 健康检查
+curl http://localhost:8000/api/v1/health
 
-# 在同一会话中继续对话
-curl -X POST http://localhost:8000/api/v1/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "你还记得我刚才说了什么吗？",
-    "conversation_id": "user_a_session"
-  }'
-
-# 清除指定会话
-curl -X POST "http://localhost:8000/api/v1/clear?conversation_id=user_a_session"
+# BigOrder 健康检查（需 REDIS_ENABLED=true）
+curl http://localhost:8000/bigorder/v1/health
 ```
 
-### 数据库表
+## API 接口
 
-会话历史存储在 `session_history` 表中：
+### 行情分析 Agent
 
-| 字段 | 类型 | 说明 |
+#### 对话式分析（SSE 流式）
+
+```bash
+curl -N -X POST http://localhost:8000/api/v1/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"message": "BTC怎么样", "conversation_id": "user-001"}'
+```
+
+SSE 事件序列：`start → chunk(多次) → suggestions → complete`
+
+#### 深度分析（SSE 流式）
+
+```bash
+curl -N -X POST http://localhost:8000/api/v1/analyze/stream \
+  -H "Content-Type: application/json" \
+  -d '{"symbol": "BTC", "question": "综合分析", "conversation_id": "user-001"}'
+```
+
+### 大单侦测 Agent（需 REDIS_ENABLED=true）
+
+#### 对话式查询（SSE 流式）
+
+```bash
+curl -N -X POST http://localhost:8000/bigorder/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "BTC有什么异动"}'
+```
+
+SSE 事件序列：`thinking → tool_call → tool_result → content(多次) → done`
+
+#### REST 接口
+
+| 方法 | 路径 | 说明 |
 |------|------|------|
-| id | BIGINT | 主键ID |
-| session_id | VARCHAR(100) | 会话ID |
-| role | VARCHAR(20) | 角色（user/assistant） |
-| content | TEXT | 消息内容 |
-| created_at | TIMESTAMP | 创建时间 |
+| GET | /bigorder/v1/health | 健康检查 |
+| GET | /bigorder/v1/anomalies | 异动信号列表 |
+| GET | /bigorder/v1/coin/{coin}/signal | 币种异动详情 |
+| GET | /bigorder/v1/coin/{coin}/flow | 资金流向统计 |
+| GET | /bigorder/v1/coin/{coin}/orders | 大单明细 |
+| GET | /bigorder/v1/coin/{coin}/compare | 多交易所对比 |
+| GET | /bigorder/v1/history | 历史异动记录 |
+| POST | /bigorder/v1/scan | 手动触发全量扫描 |
+| GET | /bigorder/v1/stream | SSE 实时信号推送 |
 
-## 工具模块
+## Docker 部署
 
-### 市场数据工具
-- 获取K线数据
-- 获取币种基本信息
-
-### 新闻数据工具
-- 从MySQL获取相关新闻
-- 新闻情感分析
-
-### 衍生品数据工具
-- 获取买卖比例
-- 获取持仓量数据
-- 获取交易量数据
-- 获取资金费率
-
-### 分析工具
-- 技术分析工具
-- 量化分析工具
-- 新闻解读工具
-- 多空结构分析工具
-- 综合总结工具
-
-## 工具调用示例
-
-智能体会根据用户的问题自动选择合适的工具进行分析。以下是一些示例问题：
-
-### 市场数据查询
-- "BTC的当前价格是多少？" → 调用 `get_header_data` 工具
-- "获取ETH的市场数据" → 调用 `get_market_data` 工具
-- "显示BTC最近30天的K线数据" → 调用 `get_kline_data` 工具
-
-### 新闻分析
-- "BTC最近有什么新闻？" → 调用 `get_recent_news` 工具
-- "ETH相关的新闻有多少条？" → 调用 `get_news_count` 工具
-- "分析SOL的新闻情绪" → 调用 `news_analysis` 工具
-
-### 衍生品分析
-- "BTC的买卖比例数据" → 调用 `get_buy_sell_ratio` 工具
-- "ETH的持仓量数据" → 调用 `get_open_interest` 工具
-- "分析BTC的衍生品市场" → 调用 `derivatives_analysis` 工具
-
-### 技术分析
-- "分析BTC的技术面" → 调用 `technical_analysis` 工具
-- "BTC当前价格趋势如何？" → 调用 `technical_analysis` 工具
-- "ETH的支撑位和阻力位在哪里？" → 调用 `technical_analysis` 工具
-
-### 量化分析
-- "对BTC进行量化评分" → 调用 `quantitative_analysis` 工具
-- "BTC的六因子评分是多少？" → 调用 `quantitative_analysis` 工具
-
-### 综合总结
-- "总结一下BTC的总体情况" → 调用 `summary_analysis` 工具
-- "对ETH做个全面的分析总结" → 调用 `summary_analysis` 工具
-
-### API调用示例
+### 构建并运行
 
 ```bash
-# 获取BTC市场数据
-curl -X POST "http://localhost:8000/api/v1/chat" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "BTC的当前价格是多少？",
-    "chat_history": []
-  }'
-
-# 技术分析
-curl -X POST "http://localhost:8000/api/v1/analyze" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "symbol": "BTC",
-    "question": "当前价格趋势如何？",
-    "lang": "zh"
-  }'
+docker build -t mozi-agent .
+docker run -d \
+  --name mozi-agent \
+  -p 8000:8000 \
+  --env-file .env \
+  mozi-agent
 ```
 
-## 开发指南
-
-### 添加新工具
-
-1. 在`app/agents/tools/`目录下创建新工具文件
-2. 继承`BaseTool`类，实现`_run`方法
-3. 在`app/agents/crypto_agent.py`中注册新工具
-4. 更新工具描述以便智能体正确路由
-
-### 扩展数据源
-
-1. 在`app/services/data_service.py`中添加新的数据获取函数
-2. 创建对应的格式化工具在`app/utils/formatters.py`
-3. 创建对应的LangChain工具
-
-### 测试
+### Docker Compose
 
 ```bash
-# 运行单元测试
-pytest tests/
-
-# 运行API测试
-pytest tests/api/
+docker-compose up -d
 ```
 
-## 部署
+### 注意事项
 
-### Docker部署
+- 生产环境设置 `DEBUG=False`
+- BigOrder 后台扫描为单 worker 运行，`uvicorn --workers 1`
+- `REDIS_ENABLED=false` 时 BigOrder 相关路由不会注册，Agent 功能不受影响
 
-```bash
-# 构建镜像
-docker build -t crypto-analyst-assistant .
+## 扩展新 Agent
 
-# 运行容器
-docker run -p 8000:8000 --env-file .env crypto-analyst-assistant
-```
+项目支持模块化扩展，添加新 Agent 只需：
 
-### 生产环境建议
+1. 在 `app/` 下创建新的子目录（如 `app/trading/`）
+2. 实现独立的路由、依赖、模型
+3. 在 `config/settings.py` 添加开关配置
+4. 在 `app/main.py` 条件注册路由和生命周期
 
-1. 使用Nginx反向代理
-2. 配置SSL证书
-3. 设置数据库连接池
-4. 启用API限流
-5. 配置监控和日志
+## 环境变量参考
+
+| 变量 | 默认值 | 必填 | 说明 |
+|------|--------|------|------|
+| MYSQL_HOST | localhost | 是 | Agent MySQL 地址 |
+| MYSQL_DATABASE | community | 是 | Agent 数据库名 |
+| DEEPSEEK_API_KEY | | 是 | DeepSeek API Key |
+| DEEPSEEK_MODEL | deepseek-v4-pro | 否 | Agent LLM 模型 |
+| API_PORT | 8000 | 否 | 服务端口 |
+| REDIS_ENABLED | false | 否 | 开启 BigOrder Agent |
+| REDIS_HOST | localhost | 条件 | Redis 地址 |
+| REDIS_PASSWORD | | 条件 | Redis 密码 |
+| BIGORDER_MYSQL_DATABASE | exchange | 条件 | BigOrder 数据库 |
+| BIGORDER_DEEPSEEK_MODEL | deepseek-v4-flash | 否 | BigOrder LLM 模型 |
+| SCAN_INTERVAL | 30 | 否 | BigOrder 扫描间隔(秒) |
+| SCORE_THRESHOLD_STRONG | 70 | 否 | 强信号阈值 |
+| SCORE_THRESHOLD_MEDIUM | 50 | 否 | 中等信号阈值 |
