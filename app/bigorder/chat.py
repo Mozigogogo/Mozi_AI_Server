@@ -4,6 +4,7 @@ import time
 import asyncio
 from typing import Optional
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from app.bigorder.models import ChatRequest, SignalLevel
@@ -329,17 +330,16 @@ def _query_history(coin: Optional[str], days: int, level: Optional[str], limit: 
 
 
 @router.post("/chat")
-async def chat(request: __import__("fastapi").Request):
-    """对话式 SSE 流式接口"""
+async def chat(request: ChatRequest):
+    """大单侦测对话（SSE 流式，Function Calling）"""
     if not bigorder_deps.is_redis_available():
         return JSONResponse(
             status_code=503,
             content={"error": "BigOrder 功能需要 Redis，请设置 REDIS_ENABLED=true"}
         )
 
-    body = await request.json()
-    user_message = body.get("message", "")
-    coin_hint = body.get("coin")
+    user_message = request.message
+    coin_hint = request.coin
 
     client = get_llm_client()
     model = settings.bigorder_deepseek_model

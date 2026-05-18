@@ -221,15 +221,18 @@ app.include_router(
     tags=["Skill System Test"]
 )
 
-# 注册 BigOrder 路由（条件注册）
+# BigOrder 对话接口（始终注册；Redis 未启用时返回 503）
+from app.bigorder.chat import router as bigorder_chat_router
+app.include_router(bigorder_chat_router, prefix="/bigorder/v1", tags=["BigOrder Chat"])
+print("BigOrder: POST /bigorder/v1/chat 已注册")
+
+# BigOrder REST / SSE（需 REDIS_ENABLED=true）
 if settings.redis_enabled:
     from app.bigorder.endpoints import router as bigorder_router
-    from app.bigorder.chat import router as bigorder_chat_router
     app.include_router(bigorder_router, prefix="/bigorder/v1", tags=["BigOrder Detection"])
-    app.include_router(bigorder_chat_router, prefix="/bigorder/v1", tags=["BigOrder Detection"])
-    print("BigOrder: 路由已注册 (/bigorder/v1/*)")
+    print("BigOrder: REST 路由已注册 (/bigorder/v1/*)")
 else:
-    print("BigOrder: REDIS_ENABLED=false，路由未注册")
+    print("BigOrder: REDIS_ENABLED=false，REST 路由未注册（/chat 仍可用，需开启 Redis 后才有数据）")
 
 
 # 中间件：添加请求处理时间
