@@ -1,9 +1,35 @@
-from pydantic_settings import BaseSettings
-from pydantic import Field
-from typing import Optional, List
+import os
+from functools import lru_cache
+from typing import List
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _parse_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _env(name: str) -> str | None:
+    """读取 Railway / 系统环境变量。"""
+    val = os.environ.get(name)
+    if val is None or val == "":
+        return None
+    return val
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        # Railway Variables 注入到 os.environ，优先于 .env 文件
+    )
+
     # ── MySQL（agent 用） ──
     mysql_host: str = "localhost"
     mysql_port: int = 3306
@@ -24,7 +50,7 @@ class Settings(BaseSettings):
 
     # ── API配置 ──
     api_host: str = "0.0.0.0"
-    api_port: int = Field(default=8000, alias="PORT")
+    api_port: int = Field(default=8000, validation_alias="PORT")
     api_prefix: str = "/api/v1"
 
     # ── Agent 数据获取配置 ──
@@ -45,12 +71,12 @@ class Settings(BaseSettings):
     analysis_llm_max_tokens: int = 2000
     tool_call_max_retries: int = 1
 
-    # ── Redis（bigorder，可选） ──
-    redis_enabled: bool = False
-    redis_host: str = "localhost"
-    redis_port: int = 6379
-    redis_db: int = 0
-    redis_password: str = ""
+    # ── Redis（bigorder；Railway 变量名 REDIS_*） ──
+    redis_enabled: bool = Field(default=False, validation_alias="REDIS_ENABLED")
+    redis_host: str = Field(default="localhost", validation_alias="REDIS_HOST")
+    redis_port: int = Field(default=6379, validation_alias="REDIS_PORT")
+    redis_db: int = Field(default=0, validation_alias="REDIS_DB")
+    redis_password: str = Field(default="", validation_alias="REDIS_PASSWORD")
 
     # ── Bigorder MySQL（独立数据库） ──
     bigorder_mysql_host: str = ""
@@ -80,10 +106,49 @@ class Settings(BaseSettings):
     price_change_pct: float = 0.015
     exchanges: List[str] = ["Binance", "OKX", "Bybit", "Bitget", "Gate"]
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"
+    @field_validator("redis_enabled", mode="before")
+    @classmethod
+    def redis_enabled_from_railway_env(cls, v):
+        """强制优先读 os.environ['REDIS_ENABLED']（Railway Variables）。"""
+        raw = _env("REDIS_ENABLED")
+        if raw is not None:
+            return _parse_bool(raw)
+        return _parse_bool(v)
+
+    @field_validator("redis_host", mode="before")
+    @classmethod
+    def redis_host_from_railway_env(cls, v):
+        return _env("REDIS_HOST") or v or "localhost"
+
+    @field_validator("redis_port", mode="before")
+    @classmethod
+    def redis_port_from_railway_env(cls, v):
+        raw = _env("REDIS_PORT")
+        if raw is not None:
+            return int(raw)
+        return v if v is not None else 6379
+
+    @field_validator("redis_db", mode="before")
+    @classmethod
+    def redis_db_from_railway_env(cls, v):
+        raw = _env("REDIS_DB")
+        if raw is not None:
+            return int(raw)
+        return v if v is not None else 0
+
+    @field_validator("redis_password", mode="before")
+    @classmethod
+    def redis_password_from_railway_env(cls, v):
+        raw = _env("REDIS_PASSWORD")
+        if raw is not None:
+            return raw
+        return v or ""
 
 
-settings = Settings()
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+# 兼容：from config.settings import settings
+settings = get_settings()

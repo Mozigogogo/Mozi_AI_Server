@@ -15,6 +15,12 @@ from config.settings import settings
 router = APIRouter()
 
 
+@router.get("/status")
+async def bigorder_status():
+    """诊断 BigOrder：REDIS_ENABLED 是否生效、Redis 是否连上（无需 Redis 即可访问）"""
+    return bigorder_deps.get_status()
+
+
 SYSTEM_PROMPT = """You are the "BigOrder Detection" intelligent assistant, specializing in cryptocurrency large-trade anomaly analysis.
 
 You MUST call exactly ONE tool to get real-time data, then answer based on the result.
@@ -448,10 +454,8 @@ def _query_history(coin: Optional[str], days: int, level: Optional[str], limit: 
 async def chat(request: Request):
     """对话式 SSE 流式接口"""
     if not bigorder_deps.is_redis_available():
-        return JSONResponse(
-            status_code=503,
-            content={"error": "BigOrder 功能需要 Redis，请设置 REDIS_ENABLED=true"}
-        )
+        status = bigorder_deps.get_status()
+        return JSONResponse(status_code=503, content=status)
 
     body = await request.json()
     user_message = body.get("message", "")

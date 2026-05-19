@@ -22,6 +22,11 @@ async def lifespan(app: FastAPI):
     print(f"启动 {settings.app_name} v{settings.app_version}")
     print(f"API地址: http://{settings.api_host}:{settings.api_port}")
     print(f"调试模式: {settings.debug}")
+    print(
+        f"Redis配置: REDIS_ENABLED={settings.redis_enabled} "
+        f"(env={__import__('os').environ.get('REDIS_ENABLED', '<unset>')}), "
+        f"host={settings.redis_host}:{settings.redis_port}"
+    )
 
     # BigOrder 后台扫描任务（仅在 Redis 启用时）
     scan_task = None

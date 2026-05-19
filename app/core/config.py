@@ -1,7 +1,3 @@
-from config.settings import Settings
+from config.settings import Settings, get_settings
 
-
-# 移除 lru_cache 以便每次都能读取最新的环境变量配置
-def get_settings() -> Settings:
-    """获取配置实例"""
-    return Settings()
+__all__ = ["Settings", "get_settings"]
