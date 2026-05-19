@@ -3,7 +3,8 @@ import json
 import time
 import asyncio
 from typing import Optional
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from app.bigorder.models import ChatRequest, SignalLevel
@@ -167,6 +168,118 @@ class _Cache:
 _cache = _Cache()
 
 
+# ── 推荐问题模板 ──────────────────────────────────────────
+_SUGGESTION_TEMPLATES = {
+    "zh": {
+        "query_anomalies": [
+            "BTC有什么异动信号",
+            "ETH大单资金流怎么样",
+            "过去3天有哪些强信号",
+        ],
+        "query_coin_signal": [
+            "{coin}资金流向怎么样",
+            "{coin}最近的大单明细",
+            "对比{coin}各交易所",
+        ],
+        "query_order_flow": [
+            "{coin}有什么异动信号",
+            "{coin}最近的大单明细",
+            "对比{coin}各交易所",
+        ],
+        "query_large_orders": [
+            "{coin}有什么异动信号",
+            "{coin}资金流向怎么样",
+            "对比{coin}各交易所",
+        ],
+        "query_history": [
+            "市场有哪些异动信号",
+            "BTC有什么异动",
+            "ETH资金流向怎么样",
+        ],
+        "query_exchange_compare": [
+            "{coin}有什么异动信号",
+            "{coin}最近的大单明细",
+            "{coin}资金流向怎么样",
+        ],
+        "manual_scan": [
+            "市场有哪些异动信号",
+            "BTC有什么异动",
+            "ETH资金流向怎么样",
+        ],
+    },
+    "en": {
+        "query_anomalies": [
+            "Any anomalies for BTC?",
+            "ETH fund flow stats",
+            "Strong signals in the past 3 days",
+        ],
+        "query_coin_signal": [
+            "{coin} fund flow stats",
+            "{coin} recent large orders",
+            "Compare {coin} across exchanges",
+        ],
+        "query_order_flow": [
+            "{coin} anomaly signals",
+            "{coin} recent large orders",
+            "Compare {coin} across exchanges",
+        ],
+        "query_large_orders": [
+            "{coin} anomaly signals",
+            "{coin} fund flow stats",
+            "Compare {coin} across exchanges",
+        ],
+        "query_history": [
+            "Market anomaly signals",
+            "BTC anomaly details",
+            "ETH fund flow stats",
+        ],
+        "query_exchange_compare": [
+            "{coin} anomaly signals",
+            "{coin} recent large orders",
+            "{coin} fund flow stats",
+        ],
+        "manual_scan": [
+            "Market anomaly signals",
+            "BTC anomaly details",
+            "ETH fund flow stats",
+        ],
+    },
+}
+
+
+def _detect_language(text: str) -> str:
+    """简单语言检测：含中文字符返回 zh"""
+    for ch in text:
+        if '一' <= ch <= '鿿':
+            return "zh"
+    return "en"
+
+
+def _extract_coin(text: str) -> str:
+    """从消息中提取币种名"""
+    import re
+    # 不依赖 \b，直接匹配币种名（兼容中英文混合文本）
+    coins = ["BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "AVAX", "DOT", "LINK",
+             "UNI", "ATOM", "LTC", "NEAR", "APT", "ARB", "OP", "MATIC", "FIL", "TON"]
+    upper = text.upper()
+    for coin in coins:
+        if coin in upper:
+            return coin
+    return ""
+
+
+def _get_suggestions(tool_name: str, user_message: str) -> list:
+    """根据调用的 tool 和用户消息生成推荐问题"""
+    language = _detect_language(user_message)
+    coin = _extract_coin(user_message)
+    templates = _SUGGESTION_TEMPLATES.get(language, _SUGGESTION_TEMPLATES["zh"])
+    suggestions = templates.get(tool_name, templates.get("query_anomalies", []))
+    return [
+        {"id": str(i + 1), "suggestion": s.format(coin=coin) if coin else s}
+        for i, s in enumerate(suggestions)
+    ]
+
+
 def _get_bigorder_mysql_config():
     """获取 bigorder 专属 MySQL 配置"""
     return {
@@ -297,6 +410,7 @@ def _execute_tool(name: str, args: dict) -> dict:
 
 def _query_history(coin: Optional[str], days: int, level: Optional[str], limit: int) -> dict:
     import pymysql
+    conn = None
     try:
         mysql_cfg = _get_bigorder_mysql_config()
         conn = pymysql.connect(
@@ -322,14 +436,16 @@ def _query_history(coin: Optional[str], days: int, level: Optional[str], limit: 
         cursor.execute(sql, params)
         rows = cursor.fetchall()
         cursor.close()
-        conn.close()
         return {"count": len(rows), "data": rows}
     except Exception as e:
         return {"count": 0, "data": [], "error": str(e)}
+    finally:
+        if conn:
+            conn.close()
 
 
 @router.post("/chat")
-async def chat(request: __import__("fastapi").Request):
+async def chat(request: Request):
     """对话式 SSE 流式接口"""
     if not bigorder_deps.is_redis_available():
         return JSONResponse(
@@ -389,7 +505,7 @@ async def chat(request: __import__("fastapi").Request):
 
         yield {"event": "tool_call", "data": json.dumps({"tool": tool_name, "args": tool_args}, ensure_ascii=False)}
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         timeout = _TOOL_TIMEOUTS.get(tool_name, 10)
         try:
             tool_result = await asyncio.wait_for(
@@ -427,6 +543,13 @@ async def chat(request: __import__("fastapi").Request):
                     yield {"event": "content", "data": json.dumps({"text": delta.content}, ensure_ascii=False)}
         except Exception as e:
             yield {"event": "error", "data": json.dumps({"error": str(e)}, ensure_ascii=False)}
+
+        # 生成推荐问题
+        suggestions = _get_suggestions(tool_name, user_message)
+        if suggestions:
+            yield {"event": "suggestions", "data": json.dumps(
+                {"type": "suggestions", "suggestions": suggestions}, ensure_ascii=False
+            )}
 
         yield {"event": "done", "data": "{}"}
 

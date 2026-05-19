@@ -3,7 +3,7 @@ import json
 import time
 import asyncio
 from typing import Optional, List
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
@@ -36,7 +36,9 @@ async def get_anomaly_list(
 ):
     if not bigorder_deps.is_redis_available():
         return JSONResponse(status_code=503, content={"error": "BigOrder 功能需要 Redis"})
-    signals = bigorder_deps.scorer.get_anomaly_list(exchange=exchange, min_score=min_score, limit=limit)
+    signals = await asyncio.get_running_loop().run_in_executor(
+        None, bigorder_deps.scorer.get_anomaly_list, exchange, min_score, limit
+    )
     return {"count": len(signals), "data": signals}
 
 
@@ -50,16 +52,7 @@ async def get_coin_signal(coin: str):
     cached = bigorder_deps.scorer.get_coin_signal(coin.upper())
     if cached:
         return cached
-
-    result = {}
-    for exchange in settings.exchanges:
-        try:
-            signal = bigorder_deps.scorer.score_exchange(exchange, coin.upper())
-            if signal:
-                result[exchange] = signal.model_dump()
-        except:
-            continue
-    return {"coin": coin.upper(), "exchanges": result} if result else {"coin": coin.upper(), "message": "暂无数据"}
+    return {"coin": coin.upper(), "message": "暂无数据，请通过 POST /scan 触发扫描或等待后台自动扫描"}
 
 
 # ----------------------------------------------------------------
@@ -76,22 +69,25 @@ async def get_order_flow(
     if cached:
         return cached
 
-    result = {"coin": coin.upper(), "window_minutes": window, "exchanges": {}}
-    for exchange in settings.exchanges:
-        buy_ticks, sell_ticks = bigorder_deps.consumer.fetch_ticks(exchange, coin.upper(), window * 60)
-        if buy_ticks or sell_ticks:
-            buy_amount = sum(t.amount for t in buy_ticks)
-            sell_amount = sum(t.amount for t in sell_ticks)
-            total = buy_amount + sell_amount
-            result["exchanges"][exchange] = {
-                "buy_amount": round(buy_amount, 2),
-                "sell_amount": round(sell_amount, 2),
-                "net_flow": round(buy_amount - sell_amount, 2),
-                "buy_count": len(buy_ticks),
-                "sell_count": len(sell_ticks),
-                "buy_ratio": round(buy_amount / total, 4) if total > 0 else 0.5,
-            }
-    return result
+    def _compute_flow():
+        result = {"coin": coin.upper(), "window_minutes": window, "exchanges": {}}
+        for exchange in settings.exchanges:
+            buy_ticks, sell_ticks = bigorder_deps.consumer.fetch_ticks(exchange, coin.upper(), window * 60)
+            if buy_ticks or sell_ticks:
+                buy_amount = sum(t.amount for t in buy_ticks)
+                sell_amount = sum(t.amount for t in sell_ticks)
+                total = buy_amount + sell_amount
+                result["exchanges"][exchange] = {
+                    "buy_amount": round(buy_amount, 2),
+                    "sell_amount": round(sell_amount, 2),
+                    "net_flow": round(buy_amount - sell_amount, 2),
+                    "buy_count": len(buy_ticks),
+                    "sell_count": len(sell_ticks),
+                    "buy_ratio": round(buy_amount / total, 4) if total > 0 else 0.5,
+                }
+        return result
+
+    return await asyncio.get_running_loop().run_in_executor(None, _compute_flow)
 
 
 # ----------------------------------------------------------------
@@ -105,12 +101,17 @@ async def get_large_orders(
 ):
     if not bigorder_deps.is_redis_available():
         return JSONResponse(status_code=503, content={"error": "BigOrder 功能需要 Redis"})
-    cached = bigorder_deps.scorer.get_large_orders(coin.upper(), top)
-    if cached:
-        return {"coin": coin.upper(), "count": len(cached), "orders": cached}
 
-    orders = bigorder_deps.consumer.get_top_orders(coin.upper(), exchange=exchange or "Binance", top_n=top)
-    return {"coin": coin.upper(), "count": len(orders), "orders": [o.model_dump() for o in orders]}
+    def _get_orders():
+        cached = bigorder_deps.scorer.get_large_orders(coin.upper(), top)
+        if cached:
+            if exchange:
+                cached = [o for o in cached if o.get("exchange") == exchange]
+            return {"coin": coin.upper(), "count": len(cached), "orders": cached}
+        orders = bigorder_deps.consumer.get_top_orders(coin.upper(), exchange=exchange or "Binance", top_n=top)
+        return {"coin": coin.upper(), "count": len(orders), "orders": [o.model_dump() for o in orders]}
+
+    return await asyncio.get_running_loop().run_in_executor(None, _get_orders)
 
 
 # ----------------------------------------------------------------
@@ -125,6 +126,7 @@ async def search_history(
 ):
     """查询历史异动记录（使用 bigorder 专属 MySQL 配置）"""
     import pymysql
+    conn = None
     try:
         mysql_cfg = _get_bigorder_mysql_config()
         conn = pymysql.connect(
@@ -158,10 +160,12 @@ async def search_history(
         cursor.execute(sql, params)
         rows = cursor.fetchall()
         cursor.close()
-        conn.close()
         return {"count": len(rows), "data": rows}
     except Exception as e:
-        return {"count": 0, "data": [], "error": str(e)}
+        return JSONResponse(status_code=500, content={"count": 0, "data": [], "error": str(e)})
+    finally:
+        if conn:
+            conn.close()
 
 
 # ----------------------------------------------------------------
@@ -171,7 +175,9 @@ async def search_history(
 async def get_exchange_compare(coin: str):
     if not bigorder_deps.is_redis_available():
         return JSONResponse(status_code=503, content={"error": "BigOrder 功能需要 Redis"})
-    return bigorder_deps.scorer.get_exchange_compare(coin.upper())
+    return await asyncio.get_running_loop().run_in_executor(
+        None, bigorder_deps.scorer.get_exchange_compare, coin.upper()
+    )
 
 
 # ----------------------------------------------------------------
@@ -181,13 +187,15 @@ async def get_exchange_compare(coin: str):
 async def manual_scan(coins: Optional[List[str]] = None):
     if not bigorder_deps.is_redis_available():
         return JSONResponse(status_code=503, content={"error": "BigOrder 功能需要 Redis"})
-    signals = bigorder_deps.scorer.score_all(coins)
+    signals = await asyncio.get_running_loop().run_in_executor(
+        None, bigorder_deps.scorer.score_all, coins
+    )
     enriched = []
     for signal in signals:
         if signal.score.level != SignalLevel.NONE:
             try:
                 signal = await bigorder_deps.llm_analyzer.analyze_and_enrich(signal)
-            except:
+            except Exception:
                 pass
             enriched.append(signal.model_dump())
 
@@ -205,12 +213,14 @@ async def manual_scan(coins: Optional[List[str]] = None):
 # SSE 实时推送
 # ----------------------------------------------------------------
 @router.get("/stream")
-async def signal_stream():
+async def signal_stream(request: Request):
     if not bigorder_deps.is_redis_available():
         return JSONResponse(status_code=503, content={"error": "BigOrder 功能需要 Redis"})
     async def event_generator():
         last_ts = int(time.time() * 1000)
         while True:
+            if await request.is_disconnected():
+                break
             await asyncio.sleep(5)
             try:
                 results = bigorder_deps.consumer.client.zrangebyscore(
@@ -221,7 +231,7 @@ async def signal_stream():
                     yield {"event": "signal", "data": json.dumps(data, ensure_ascii=False)}
                 if results:
                     last_ts = int(results[-1][1])
-            except:
+            except Exception:
                 pass
 
     return EventSourceResponse(event_generator())
@@ -257,6 +267,7 @@ async def _save_to_mysql(signals: List[AnomalySignal]):
     if not signals:
         return
     import pymysql
+    conn = None
     try:
         mysql_cfg = _get_bigorder_mysql_config()
         conn = pymysql.connect(
@@ -286,6 +297,8 @@ async def _save_to_mysql(signals: List[AnomalySignal]):
             )
         conn.commit()
         cursor.close()
-        conn.close()
     except Exception as e:
         print(f"MySQL 写入失败: {e}")
+    finally:
+        if conn:
+            conn.close()

@@ -1,11 +1,15 @@
 """Redis 消费器 - 从 ZSET 读取成交数据"""
 import json
 import time
+import re
 import redis
-import numpy as np
 from typing import Dict, List, Tuple, Optional
 from app.bigorder.models import TickData
 from config.settings import settings
+
+
+# 匹配 key 中 _big_deal_ 之后的 {BASE}_{SIDE} 部分
+_COIN_PATTERN = re.compile(r"_big_deal_([A-Za-z0-9]+)_(buy|sell)$")
 
 
 class RedisConsumer:
@@ -26,6 +30,24 @@ class RedisConsumer:
     def _build_key(self, exchange: str, base: str, side: str) -> str:
         """构造 ZSET key: {Exchange}_big_deal_{base}_{side}"""
         return f"{exchange}_big_deal_{base}_{side}"
+
+    def _parse_tick(self, member: str, score: float, side: str, exchange: str) -> Optional[TickData]:
+        """解析单条 tick JSON，失败返回 None"""
+        try:
+            data = json.loads(member)
+            tick = TickData(
+                symbol=data.get("symbol", ""),
+                deal_price=data.get("deal_price", "0"),
+                deal_quantity=data.get("deal_quantity", "0"),
+                deal_timestamp=int(data.get("deal_timestamp", score)),
+                is_maker=data.get("is_maker", False),
+                side=side,
+                exchange=exchange
+            )
+            tick.calc_amount()
+            return tick
+        except (json.JSONDecodeError, ValueError, TypeError, Exception):
+            return None
 
     def fetch_ticks(
         self,
@@ -64,21 +86,9 @@ class RedisConsumer:
 
         ticks = []
         for member, score in results:
-            try:
-                data = json.loads(member)
-                tick = TickData(
-                    symbol=data.get("symbol", ""),
-                    deal_price=data.get("deal_price", "0"),
-                    deal_quantity=data.get("deal_quantity", "0"),
-                    deal_timestamp=int(data.get("deal_timestamp", score)),
-                    is_maker=data.get("is_maker", False),
-                    side=side,
-                    exchange=exchange
-                )
-                tick.calc_amount()
+            tick = self._parse_tick(member, score, side, exchange)
+            if tick:
                 ticks.append(tick)
-            except (json.JSONDecodeError, Exception) as e:
-                continue
         return ticks
 
     def fetch_all_exchanges(
@@ -109,22 +119,10 @@ class RedisConsumer:
             try:
                 results = self.client.zrevrange(key, 0, 99, withscores=True)
                 for member, score in results:
-                    try:
-                        data = json.loads(member)
-                        tick = TickData(
-                            symbol=data.get("symbol", ""),
-                            deal_price=data.get("deal_price", "0"),
-                            deal_quantity=data.get("deal_quantity", "0"),
-                            deal_timestamp=int(data.get("deal_timestamp", score)),
-                            is_maker=data.get("is_maker", False),
-                            side=s,
-                            exchange=exchange
-                        )
-                        tick.calc_amount()
+                    tick = self._parse_tick(member, score, s, exchange)
+                    if tick:
                         all_ticks.append(tick)
-                    except:
-                        continue
-            except:
+            except Exception:
                 continue
 
         all_ticks.sort(key=lambda t: t.amount, reverse=True)
@@ -138,10 +136,10 @@ class RedisConsumer:
             try:
                 keys = self.client.keys(pattern)
                 for key in keys:
-                    parts = key.split("_")
-                    if len(parts) >= 4:
-                        coins.add(parts[-2])
-            except:
+                    match = _COIN_PATTERN.search(key)
+                    if match:
+                        coins.add(match.group(1))
+            except Exception:
                 continue
         return sorted(coins)
 
@@ -172,21 +170,9 @@ class RedisConsumer:
         for i, (exchange, side, key) in enumerate(keys_map):
             ticks = []
             for member, score in results[i]:
-                try:
-                    data = json.loads(member)
-                    tick = TickData(
-                        symbol=data.get("symbol", ""),
-                        deal_price=data.get("deal_price", "0"),
-                        deal_quantity=data.get("deal_quantity", "0"),
-                        deal_timestamp=int(data.get("deal_timestamp", score)),
-                        is_maker=data.get("is_maker", False),
-                        side=side,
-                        exchange=exchange
-                    )
-                    tick.calc_amount()
+                tick = self._parse_tick(member, score, side, exchange)
+                if tick:
                     ticks.append(tick)
-                except:
-                    continue
 
             if exchange not in grouped:
                 grouped[exchange] = ([], [])
@@ -201,5 +187,5 @@ class RedisConsumer:
         """检查 Redis 连接"""
         try:
             return self.client.ping()
-        except:
+        except Exception:
             return False

@@ -250,7 +250,7 @@ class AnomalyScorer:
         """获取最新异动列表"""
         try:
             results = self.redis.zrevrange("signal:anomaly", 0, limit - 1, withscores=True)
-        except:
+        except Exception:
             return []
 
         signals = []
@@ -262,7 +262,7 @@ class AnomalyScorer:
                 if min_score and data.get("score", {}).get("total_score", 0) < min_score:
                     continue
                 signals.append(data)
-            except:
+            except Exception:
                 continue
         return signals
 
@@ -275,7 +275,7 @@ class AnomalyScorer:
                 if "score" in data:
                     data["score"] = json.loads(data["score"])
                 return data
-        except:
+        except Exception:
             pass
         return None
 
@@ -293,7 +293,7 @@ class AnomalyScorer:
                     if k in data:
                         data[k] = int(data[k])
                 return data
-        except:
+        except Exception:
             pass
         return None
 
@@ -307,10 +307,10 @@ class AnomalyScorer:
                     data = json.loads(member)
                     data["amount"] = score
                     orders.append(data)
-                except:
+                except Exception:
                     continue
             return orders
-        except:
+        except Exception:
             return []
 
     def get_exchange_compare(self, coin: str) -> dict:
