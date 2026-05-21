@@ -10,7 +10,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from indicators import (
+from .indicators import (
     ema_triple, adx, supertrend,
     rsi, macd, detect_divergence,
     obv, vwap,
