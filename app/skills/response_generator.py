@@ -84,7 +84,7 @@ class ResponseGenerator:
 ## 🎯 综合信号
 直接引用数据"交易信号"中的方向、强度、综合评分、胜率估计。偏多用🟢，偏空用🔴，中性用⚪。
 
-## 💰 操盘建议（核心，必须完整输出）
+## 💰 操盘建议
 从数据"可执行操作"中提取，逐项列出：
 - **方向**：做多/做空/观望
 - **入场区间**：低 ~ 高
@@ -101,6 +101,24 @@ class ResponseGenerator:
 
 ## ⚠️ 风险提示
 引用数据"主要风险"字段，1-2句。""",
+
+                "quantitative_chat": """你是专业量化交易员。严格约束：
+1. 只分析用户问的币种，不要编造数据。
+2. 只使用下面提供的数据。
+3. 必须引用数据中的具体数字。
+
+时间：{timestamp}
+数据：
+{data}
+要求：{answer_requirements}
+
+简洁输出，格式：
+
+🟢/🔴/⚪ **方向** | 综合: X分 | 胜率: X%
+入场: X ~ X | 止损: X | TP1: X | TP2: X | 仓位: X%
+⚠️ 1句风险提示
+
+不要输出六因子表格和关键价位，只输出核心操盘信息。观望时说明原因和关注价位。""",
             },
             "en": {
                 "chat": """You are a friendly cryptocurrency analysis assistant. Please answer the user's question concisely and friendly in English.
@@ -153,7 +171,7 @@ Fill from "六因子明细". Green for positive, red for negative, white for zer
 ## 🎯 Signal Summary
 Quote "交易信号" directly: direction, strength, score, win rate.
 
-## 💰 Trade Plan (CORE - must output completely)
+## 💰 Trade Plan
 Extract from "可执行操作":
 - Direction: long/short/wait
 - Entry Zone: low ~ high
@@ -169,7 +187,25 @@ If direction is "wait", state no clear signal and list key levels to watch.
 From "关键价位": VWAP, Supertrend, Bollinger bands, resistances, supports.
 
 ## ⚠️ Risk
-Quote "主要风险". 1-2 sentences."""
+Quote "主要风险". 1-2 sentences.""",
+
+                "quantitative_chat": """You are a professional quantitative trader. Constraints:
+1. Only analyze the coin the user asked about. Do not fabricate data.
+2. Only use the data provided below.
+3. Must cite specific numbers from the data.
+
+Time: {timestamp}
+Data:
+{data}
+Requirements: {answer_requirements}
+
+Output concisely:
+
+🟢/🔴/⚪ **Direction** | Score: X | Win rate: X%
+Entry: X ~ X | SL: X | TP1: X | TP2: X | Position: X%
+⚠️ 1 risk sentence
+
+No factor table or key levels. Only core trade info. For "wait", explain why and list levels to watch."""
             }
         }
 
@@ -195,7 +231,7 @@ Quote "主要风险". 1-2 sentences."""
             template = self.templates.get(intent.language, self.templates["zh"])[mode]
 
             # 格式化数据（量化模式用 JSON 序列化，保留完整结构）
-            if mode == "quantitative":
+            if mode in ("quantitative", "quantitative_chat"):
                 formatted_data = json.dumps(skill_result.data, ensure_ascii=False, indent=2)
             else:
                 formatted_data = self._format_data(skill_result.data)
@@ -220,7 +256,7 @@ Quote "主要风险". 1-2 sentences."""
 
             # 调用 LLM 生成回答（添加超时设置）
             # 使用配置中的 token 限制
-            if mode == "quantitative":
+            if mode in ("quantitative", "quantitative_chat"):
                 max_tokens = 2500
                 timeout_seconds = 90.0
             elif mode == "think":
@@ -274,7 +310,7 @@ Quote "主要风险". 1-2 sentences."""
             template = self.templates.get(intent.language, self.templates["zh"])[mode]
 
             # 格式化数据（量化模式用 JSON 序列化，保留完整结构）
-            if mode == "quantitative":
+            if mode in ("quantitative", "quantitative_chat"):
                 formatted_data = json.dumps(skill_result.data, ensure_ascii=False, indent=2)
             else:
                 formatted_data = self._format_data(skill_result.data)
@@ -298,7 +334,7 @@ Quote "主要风险". 1-2 sentences."""
             )
 
             # 设置 token 限制和总超时
-            if mode == "quantitative":
+            if mode in ("quantitative", "quantitative_chat"):
                 max_tokens = 2500
                 timeout_seconds = 90.0
             elif mode == "think":

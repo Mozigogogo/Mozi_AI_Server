@@ -183,7 +183,7 @@ class CryptoAnalystAgent:
 
                 # 根据意图类型决定模式
                 if intent.intent_type == "analyze_quantitative":
-                    response_mode = "quantitative"
+                    response_mode = "quantitative_chat" if mode == "chat" else "quantitative"
                 else:
                     response_mode = mode
 

@@ -178,8 +178,8 @@ _cache = _Cache()
 _SUGGESTION_TEMPLATES = {
     "zh": {
         "query_anomalies": [
-            "BTC有什么异动信号",
-            "ETH大单资金流怎么样",
+            "{coin}有什么异动信号",
+            "{coin}大单资金流怎么样",
             "过去3天有哪些强信号",
         ],
         "query_coin_signal": [
@@ -199,8 +199,8 @@ _SUGGESTION_TEMPLATES = {
         ],
         "query_history": [
             "市场有哪些异动信号",
-            "BTC有什么异动",
-            "ETH资金流向怎么样",
+            "{coin}有什么异动",
+            "{coin}资金流向怎么样",
         ],
         "query_exchange_compare": [
             "{coin}有什么异动信号",
@@ -209,14 +209,14 @@ _SUGGESTION_TEMPLATES = {
         ],
         "manual_scan": [
             "市场有哪些异动信号",
-            "BTC有什么异动",
-            "ETH资金流向怎么样",
+            "{coin}有什么异动",
+            "{coin}资金流向怎么样",
         ],
     },
     "en": {
         "query_anomalies": [
-            "Any anomalies for BTC?",
-            "ETH fund flow stats",
+            "Any anomalies for {coin}?",
+            "{coin} fund flow stats",
             "Strong signals in the past 3 days",
         ],
         "query_coin_signal": [
@@ -236,8 +236,8 @@ _SUGGESTION_TEMPLATES = {
         ],
         "query_history": [
             "Market anomaly signals",
-            "BTC anomaly details",
-            "ETH fund flow stats",
+            "{coin} anomaly details",
+            "{coin} fund flow stats",
         ],
         "query_exchange_compare": [
             "{coin} anomaly signals",
@@ -246,8 +246,8 @@ _SUGGESTION_TEMPLATES = {
         ],
         "manual_scan": [
             "Market anomaly signals",
-            "BTC anomaly details",
-            "ETH fund flow stats",
+            "{coin} anomaly details",
+            "{coin} fund flow stats",
         ],
     },
 }
