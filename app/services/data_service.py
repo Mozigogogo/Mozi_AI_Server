@@ -147,9 +147,9 @@ def fetch_json(url: str, timeout: int = None, max_retries: int = None) -> Any:
     raise last_exception if last_exception else DataFetchException(f"API请求失败: {url}")
 
 
-def get_kline_data(symbol: str) -> Dict[str, Any]:
-    """获取K线数据"""
-    url = f"{settings.kline_api_base}/detail/kline?symbol={symbol}&type=2"
+def get_kline_data(symbol: str, kline_type: int = 2) -> Dict[str, Any]:
+    """获取K线数据，kline_type: 1=小时 2=天 3=周 4=月"""
+    url = f"{settings.kline_api_base}/detail/kline?symbol={symbol}&type={kline_type}"
     try:
         data = fetch_json_cached(url)
         if data.get("code") == 0:
@@ -158,6 +158,19 @@ def get_kline_data(symbol: str) -> Dict[str, Any]:
             raise DataFetchException(f"API返回错误: {data.get('errorMsg', '未知错误')}")
     except Exception as e:
         raise DataFetchException(f"获取K线数据失败: {str(e)}")
+
+
+def get_trade_volume(symbol: str) -> List[Dict[str, Any]]:
+    """获取每日成交量/成交额"""
+    url = f"{settings.kline_api_base}/detail/spot/tradevolume?symbol={symbol}"
+    try:
+        data = fetch_json_cached(url)
+        if data.get("code") == 0:
+            return data.get("data") or []
+        else:
+            raise DataFetchException(f"API返回错误: {data.get('errorMsg', '未知错误')}")
+    except Exception as e:
+        raise DataFetchException(f"获取成交量数据失败: {str(e)}")
 
 
 def get_header_data(symbol: str) -> Dict[str, Any]:

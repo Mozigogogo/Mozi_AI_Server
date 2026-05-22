@@ -71,32 +71,55 @@ class TradeSignal:
 # K 线解析
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _parse_kline(kline_data: dict) -> Optional[dict]:
+def _parse_kline(kline_data: dict, volume_data: list = None) -> Optional[dict]:
     """
     从 get_kline_data 返回值中解析 OHLCV 列表
-    预期格式: {"values": [[timestamp, open, high, low, close, volume], ...]}
+    支持两种格式:
+      - [open, high, low, close]（4字段，需 volume_data 补充成交量）
+      - [timestamp, open, high, low, close, volume]（6字段，已含成交量）
     返回 {"opens", "highs", "lows", "closes", "volumes"} 或 None
     """
     if not kline_data or not isinstance(kline_data, dict):
         return None
     values = kline_data.get("values", [])
-    if not values or len(values) < 60:   # 至少需要 60 根K线
+    dates  = kline_data.get("categoryData", [])
+    if not values or len(values) < 25:
         return None
 
+    # 构建日期→成交量的映射
+    vol_map = {}
+    if volume_data and isinstance(volume_data, list):
+        for item in volume_data:
+            if isinstance(item, dict):
+                dt = item.get("dt", "").replace("-", "/")
+                vol_map[dt] = item.get("usd", 0.0)
+
     opens, highs, lows, closes, volumes = [], [], [], [], []
-    for bar in values:
-        if not isinstance(bar, (list, tuple)) or len(bar) < 6:
+    for i, bar in enumerate(values):
+        if not isinstance(bar, (list, tuple)) or len(bar) < 4:
             continue
         try:
-            opens.append(float(bar[1]))
-            highs.append(float(bar[2]))
-            lows.append(float(bar[3]))
-            closes.append(float(bar[4]))
-            volumes.append(float(bar[5]))
+            if len(bar) >= 6:
+                # [timestamp, open, high, low, close, volume]
+                opens.append(float(bar[1]))
+                highs.append(float(bar[2]))
+                lows.append(float(bar[3]))
+                closes.append(float(bar[4]))
+                volumes.append(float(bar[5]))
+            elif len(bar) >= 4:
+                # [open, high, low, close]
+                opens.append(float(bar[0]))
+                highs.append(float(bar[1]))
+                lows.append(float(bar[2]))
+                closes.append(float(bar[3]))
+                # 按日期匹配成交量（usd 成交额）
+                dt = dates[i] if i < len(dates) else ""
+                vol = vol_map.get(dt, 1.0)
+                volumes.append(vol)
         except (ValueError, TypeError):
             continue
 
-    if len(closes) < 60:
+    if len(closes) < 25:
         return None
     return dict(opens=opens, highs=highs, lows=lows, closes=closes, volumes=volumes)
 
@@ -236,7 +259,7 @@ def _score_volume_price(ohlcv: dict) -> FactorResult:
     vwap_dev = (price - vwap_now) / vwap_now * 100  # % 偏离
 
     # OBV 趋势：用 EMA(10) 平滑后判断斜率
-    from indicators import ema as _ema
+    from .indicators import ema as _ema
     obv_ema = _ema(obv_vals, 10)
     def last_valid(lst):
         for v in reversed(lst):
@@ -516,7 +539,7 @@ def _build_trade_signal(
     suggested_pos = pos_map[strength] if direction != "neutral" else 0.0
 
     # ATR 止损止盈计算
-    from indicators import atr as _atr, vwap as _vwap, bollinger_bands as _bb, supertrend as _st
+    from .indicators import atr as _atr, vwap as _vwap, bollinger_bands as _bb, supertrend as _st
     atr_vals  = _atr(highs, lows, closes, 14)
     vwap_vals = _vwap(highs, lows, closes, volumes)
     bb_u, _, bb_l = _bb(closes, 20, 2.0)
@@ -713,13 +736,15 @@ class QuantitativeAnalysisSkill:
             from app.services.data_service import (
                 get_header_data, get_kline_data, get_recent_news,
                 get_buy_sell_ratio, get_open_interest, get_funding_rate,
+                get_trade_volume,
             )
         except ImportError:
             raise RuntimeError("数据服务未找到，请确认 app.services.data_service 路径正确")
 
         tasks = [
             asyncio.to_thread(get_header_data,      symbol),
-            asyncio.to_thread(get_kline_data,        symbol),
+            asyncio.to_thread(get_kline_data,        symbol),       # 日线60条
+            asyncio.to_thread(get_trade_volume,      symbol),       # 每日成交量
             asyncio.to_thread(get_recent_news,       symbol, limit=10),
             asyncio.to_thread(get_buy_sell_ratio,    symbol),
             asyncio.to_thread(get_open_interest,     symbol),
@@ -728,7 +753,7 @@ class QuantitativeAnalysisSkill:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         api_names = [
-            "get_header_data", "get_kline_data", "get_recent_news",
+            "get_header_data", "get_kline_data", "get_trade_volume", "get_recent_news",
             "get_buy_sell_ratio", "get_open_interest", "get_funding_rate",
         ]
         raw_data  = {}
@@ -762,7 +787,10 @@ class QuantitativeAnalysisSkill:
         raw_data: 各 API 返回值组成的 dict
         返回: LLM 数据包（dict）
         """
-        ohlcv = _parse_kline(raw_data.get("get_kline_data"))
+        ohlcv = _parse_kline(
+            raw_data.get("get_kline_data"),
+            raw_data.get("get_trade_volume"),
+        )
         if ohlcv is None:
             return {
                 "error": "K线数据不足（需要至少60根），无法进行六因子分析",

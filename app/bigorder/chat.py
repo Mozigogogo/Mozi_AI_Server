@@ -261,27 +261,16 @@ def _detect_language(text: str) -> str:
     return "en"
 
 
-def _extract_coin(text: str) -> str:
-    """从消息中提取币种名"""
-    import re
-    # 不依赖 \b，直接匹配币种名（兼容中英文混合文本）
-    coins = ["BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "AVAX", "DOT", "LINK",
-             "UNI", "ATOM", "LTC", "NEAR", "APT", "ARB", "OP", "MATIC", "FIL", "TON"]
-    upper = text.upper()
-    for coin in coins:
-        if coin in upper:
-            return coin
-    return ""
-
-
-def _get_suggestions(tool_name: str, user_message: str) -> list:
-    """根据调用的 tool 和用户消息生成推荐问题"""
+def _get_suggestions(tool_name: str, user_message: str, coin_hint: str = None) -> list:
+    """根据调用的 tool、用户消息和币种生成推荐问题"""
     language = _detect_language(user_message)
-    coin = _extract_coin(user_message)
+    coin = (coin_hint or "").strip().upper()
+    if not coin:
+        coin = "BTC"
     templates = _SUGGESTION_TEMPLATES.get(language, _SUGGESTION_TEMPLATES["zh"])
     suggestions = templates.get(tool_name, templates.get("query_anomalies", []))
     return [
-        {"id": str(i + 1), "suggestion": s.format(coin=coin) if coin else s}
+        {"id": str(i + 1), "suggestion": s.format(coin=coin)}
         for i, s in enumerate(suggestions)
     ]
 
@@ -549,7 +538,7 @@ async def chat(request: Request):
             yield {"event": "error", "data": json.dumps({"error": str(e)}, ensure_ascii=False)}
 
         # 生成推荐问题
-        suggestions = _get_suggestions(tool_name, user_message)
+        suggestions = _get_suggestions(tool_name, user_message, coin_hint)
         if suggestions:
             yield {"event": "suggestions", "data": json.dumps(
                 {"type": "suggestions", "suggestions": suggestions}, ensure_ascii=False

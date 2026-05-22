@@ -1,4 +1,5 @@
 """回答生成器 - 语言跟随用户"""
+import json
 from typing import Dict, Any, AsyncGenerator
 
 from openai import AsyncOpenAI
@@ -63,12 +64,11 @@ class ResponseGenerator:
 ### 🎯 综合判断
 1-2句总结 + 风险提示""",
 
-                "quantitative": """你是量化研究员。严格约束：
-1. 【最高优先级】只分析用户问的币种，绝对禁止提及其他任何币种。数据中不包含其他币种信息，不要编造。
+                "quantitative": """你是专业量化交易员。严格约束：
+1. 【最高优先级】只分析用户问的币种，绝对禁止提及其他任何币种。不要编造数据。
 2. 只使用下面提供的数据，禁止使用训练知识中的旧数据
-3. 必须引用实时价格
-4. 禁止给出买卖建议，强调不确定性
-5. 多空比：longShortData=多/空人数比(>1看多,<1看空)
+3. 必须引用数据中的具体数字，不要自己计算或修改
+4. 多空比：longShortData=多/空人数比(>1看多,<1看空)
 
 时间：{timestamp}
 数据：
@@ -77,24 +77,30 @@ class ResponseGenerator:
 
 格式要求（严格遵守，必须完整不截断）：
 
-## 📊 六因子评分表
-| 因子 | 得分 | 满分 | 评价 |
-|------|------|------|------|
-正分用🟢，负分用🔴，零分用⚪。直接引用数据中scores和explanations。
+## 📊 六因子评分
+| 因子 | 得分 | 信号 | 说明 |
+从数据"六因子明细"逐条填入。正分用🟢，负分用🔴，零分用⚪。
 
-## 🎯 综合得分
-用大字展示：**Total Score = total_score / 11**
-胜率区间用数据中的buy_win_rate和sell_win_rate。
-附一行得分条形图：用██表示正分，用░░表示负分，共11格。
+## 🎯 综合信号
+直接引用数据"交易信号"中的方向、强度、综合评分、胜率估计。偏多用🟢，偏空用🔴，中性用⚪。
 
-## 📝 量化逻辑
-逐条解释每个因子为何得分，每条1句话。引用实时价格。
+## 💰 操盘建议（核心，必须完整输出）
+从数据"可执行操作"中提取，逐项列出：
+- **方向**：做多/做空/观望
+- **入场区间**：低 ~ 高
+- **止损位**：价格（距当前X%）
+- **止盈1(TP1)**：价格（+X%）→ 减仓50%，止损上移至成本
+- **止盈2(TP2)**：价格（+X%）→ 启用移动止损
+- **风险回报比**：X
+- **建议仓位**：X%
+- **信号失效条件**：跌破/突破X，立即止损
+如果方向为"观望"，说明当前无明确信号，列出上方突破和下方跌破的关注价位。
 
-## ⚖️ 综合倾向
-用数据中的tendency。1-2句话。偏多用🟢，偏空用🔴，中性用⚪。
+## 🔑 关键价位
+从数据"关键价位"提取：VWAP、Supertrend、布林上下轨、阻力位、支撑位。
 
 ## ⚠️ 风险提示
-1句。""",
+引用数据"主要风险"字段，1-2句。""",
             },
             "en": {
                 "chat": """You are a friendly cryptocurrency analysis assistant. Please answer the user's question concisely and friendly in English.
@@ -128,12 +134,10 @@ Requirements: {answer_requirements}
 
 200-300 words concise analysis, 3 sections: price trend, derivatives sentiment, overall judgment. 3-4 sentences per section. End with 1 risk disclaimer sentence. Must be complete, no truncation.""",
 
-                "quantitative": """You are a quantitative researcher analyzing six-factor scoring data. Constraints:
-1. [HIGHEST PRIORITY] Only analyze the coin the user asked about. Absolutely do NOT mention any other coins. Do not fabricate data.
+                "quantitative": """You are a professional quantitative trader. Constraints:
+1. [HIGHEST PRIORITY] Only analyze the coin the user asked about. Do not fabricate data.
 2. Only use the data provided below. Never use outdated data from training knowledge.
-3. Must cite specific price from real-time data
-4. Never give buy/sell recommendations, emphasize uncertainty
-5. Ratio fields: longShortData=long/short ratio (>1 bullish, <1 bearish)
+3. Must cite specific numbers from the data, do not calculate or modify them.
 
 Time: {timestamp}
 Data:
@@ -142,21 +146,30 @@ Requirements: {answer_requirements}
 
 Output format (must be complete, no truncation):
 
-## 📊 Six-Factor Scoring Table
-| Factor | Score | Max | Rating |
-Use scores and explanations from data directly.
+## 📊 Six-Factor Scores
+| Factor | Score | Signal | Note |
+Fill from "六因子明细". Green for positive, red for negative, white for zero.
 
-## 🎯 Total Score
-Total Score = total_score from data / 11. Win rates from buy_win_rate and sell_win_rate.
+## 🎯 Signal Summary
+Quote "交易信号" directly: direction, strength, score, win rate.
 
-## 📝 Quantitative Logic
-Explain each factor's score in 1-2 sentences. Cite real-time price.
+## 💰 Trade Plan (CORE - must output completely)
+Extract from "可执行操作":
+- Direction: long/short/wait
+- Entry Zone: low ~ high
+- Stop Loss: price
+- TP1: price -> reduce 50%, move SL to cost
+- TP2: price -> trailing stop
+- Risk/Reward: ratio
+- Position: X%
+- Invalidation: price level
+If direction is "wait", state no clear signal and list key levels to watch.
 
-## ⚖️ Overall Tendency
-Use tendency from data. 1-2 sentences.
+## 🔑 Key Levels
+From "关键价位": VWAP, Supertrend, Bollinger bands, resistances, supports.
 
-## ⚠️ Risk Disclaimer
-For reference only, not investment advice. Crypto is volatile."""
+## ⚠️ Risk
+Quote "主要风险". 1-2 sentences."""
             }
         }
 
@@ -181,8 +194,11 @@ For reference only, not investment advice. Crypto is volatile."""
             # 获取对应的语言模板
             template = self.templates.get(intent.language, self.templates["zh"])[mode]
 
-            # 格式化数据
-            formatted_data = self._format_data(skill_result.data)
+            # 格式化数据（量化模式用 JSON 序列化，保留完整结构）
+            if mode == "quantitative":
+                formatted_data = json.dumps(skill_result.data, ensure_ascii=False, indent=2)
+            else:
+                formatted_data = self._format_data(skill_result.data)
 
             # 在数据头部注入币种标识，防止 LLM 幻觉其他币种
             symbol = intent.coin_symbol or ""
@@ -205,8 +221,8 @@ For reference only, not investment advice. Crypto is volatile."""
             # 调用 LLM 生成回答（添加超时设置）
             # 使用配置中的 token 限制
             if mode == "quantitative":
-                max_tokens = 1500
-                timeout_seconds = 60.0
+                max_tokens = 2500
+                timeout_seconds = 90.0
             elif mode == "think":
                 max_tokens = 1200
                 timeout_seconds = 45.0
@@ -257,8 +273,11 @@ For reference only, not investment advice. Crypto is volatile."""
             # 获取对应的语言模板
             template = self.templates.get(intent.language, self.templates["zh"])[mode]
 
-            # 格式化数据
-            formatted_data = self._format_data(skill_result.data)
+            # 格式化数据（量化模式用 JSON 序列化，保留完整结构）
+            if mode == "quantitative":
+                formatted_data = json.dumps(skill_result.data, ensure_ascii=False, indent=2)
+            else:
+                formatted_data = self._format_data(skill_result.data)
 
             # 在数据头部注入币种标识，防止 LLM 幻觉其他币种
             symbol = intent.coin_symbol or ""
@@ -280,8 +299,8 @@ For reference only, not investment advice. Crypto is volatile."""
 
             # 设置 token 限制和总超时
             if mode == "quantitative":
-                max_tokens = 1500
-                timeout_seconds = 60.0
+                max_tokens = 2500
+                timeout_seconds = 90.0
             elif mode == "think":
                 max_tokens = 1200
                 timeout_seconds = 50.0
