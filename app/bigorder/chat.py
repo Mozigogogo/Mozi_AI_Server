@@ -41,13 +41,13 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_anomalies",
-            "description": "获取最新异动信号列表，可按交易所和最低分数过滤",
+            "description": "获取最新异动信号列表，可按交易所和最低分数过滤 | Get latest anomaly signals, filterable by exchange and minimum score",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "exchange": {"type": "string", "description": "交易所: Binance/OKX/Bybit/Bitget/Gate"},
-                    "min_score": {"type": "integer", "description": "最低得分阈值"},
-                    "limit": {"type": "integer", "description": "返回条数，默认20"}
+                    "exchange": {"type": "string", "description": "交易所: Binance/OKX/Bybit/Bitget/Gate | Exchange name"},
+                    "min_score": {"type": "integer", "description": "最低得分阈值 | Minimum score threshold"},
+                    "limit": {"type": "integer", "description": "返回条数，默认20 | Number of results, default 20"}
                 },
                 "required": []
             }
@@ -57,11 +57,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_coin_signal",
-            "description": "查询指定币种的异动评分详情（四维得分、综合得分、信号等级）",
+            "description": "查询指定币种的异动评分详情（四维得分、综合得分、信号等级） | Get anomaly score details for a specific coin (4-dimension scores, total score, signal level)",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "coin": {"type": "string", "description": "币种名称，如 BTC/ETH/SOL"}
+                    "coin": {"type": "string", "description": "币种名称，如 BTC/ETH/SOL | Coin symbol, e.g. BTC/ETH/SOL"}
                 },
                 "required": ["coin"]
             }
@@ -71,12 +71,12 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_order_flow",
-            "description": "查询指定币种的资金流向（买入额、卖出额、净流入、买卖比）",
+            "description": "查询指定币种的资金流向（买入额、卖出额、净流入、买卖比） | Get fund flow for a specific coin (buy/sell amount, net flow, buy/sell ratio)",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "coin": {"type": "string", "description": "币种名称"},
-                    "window": {"type": "integer", "description": "时间窗口（分钟），默认5"}
+                    "coin": {"type": "string", "description": "币种名称 | Coin symbol"},
+                    "window": {"type": "integer", "description": "时间窗口（分钟），默认5 | Time window in minutes, default 5"}
                 },
                 "required": ["coin"]
             }
@@ -86,13 +86,13 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_large_orders",
-            "description": "获取指定币种最近的大单明细（按金额排序）",
+            "description": "获取指定币种最近的大单明细（按金额排序） | Get recent large orders for a specific coin, sorted by amount",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "coin": {"type": "string", "description": "币种名称"},
-                    "top": {"type": "integer", "description": "取前N笔，默认10"},
-                    "exchange": {"type": "string", "description": "交易所，默认Binance"}
+                    "coin": {"type": "string", "description": "币种名称 | Coin symbol"},
+                    "top": {"type": "integer", "description": "取前N笔，默认10 | Top N orders, default 10"},
+                    "exchange": {"type": "string", "description": "交易所，默认Binance | Exchange, default Binance"}
                 },
                 "required": ["coin"]
             }
@@ -102,14 +102,14 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_history",
-            "description": "查询历史异动记录，可按币种、天数、等级过滤",
+            "description": "查询历史异动记录，可按币种、天数、等级过滤 | Query historical anomaly records, filterable by coin, days, and level",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "coin": {"type": "string", "description": "币种名称"},
-                    "days": {"type": "integer", "description": "最近N天，默认7"},
-                    "level": {"type": "string", "enum": ["medium", "strong"], "description": "信号等级"},
-                    "limit": {"type": "integer", "description": "返回条数，默认50"}
+                    "coin": {"type": "string", "description": "币种名称 | Coin symbol"},
+                    "days": {"type": "integer", "description": "最近N天，默认7 | Last N days, default 7"},
+                    "level": {"type": "string", "enum": ["medium", "strong"], "description": "信号等级 | Signal level"},
+                    "limit": {"type": "integer", "description": "返回条数，默认50 | Number of results, default 50"}
                 },
                 "required": []
             }
@@ -119,11 +119,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "query_exchange_compare",
-            "description": "对比同一币种在不同交易所的买卖分布",
+            "description": "对比同一币种在不同交易所的买卖分布 | Compare buy/sell distribution of a coin across exchanges",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "coin": {"type": "string", "description": "币种名称"}
+                    "coin": {"type": "string", "description": "币种名称 | Coin symbol"}
                 },
                 "required": ["coin"]
             }
@@ -133,11 +133,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "manual_scan",
-            "description": "手动触发全量扫描",
+            "description": "手动触发全量扫描 | Manually trigger a full scan",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "coins": {"type": "array", "items": {"type": "string"}, "description": "币种列表"}
+                    "coins": {"type": "array", "items": {"type": "string"}, "description": "币种列表 | List of coin symbols"}
                 },
                 "required": []
             }
@@ -319,7 +319,7 @@ def _execute_tool(name: str, args: dict) -> dict:
                     result[exchange] = signal.model_dump()
             except Exception:
                 continue
-        data = {"coin": coin, "exchanges": result} if result else {"coin": coin, "message": "暂无数据"}
+        data = {"coin": coin, "exchanges": result} if result else {"coin": coin, "message": "No data available"}
         _cache.set(cache_key, data)
         return data
 
@@ -456,7 +456,9 @@ async def chat(request: Request):
     async def event_generator():
         user_content = user_message
         if coin_hint:
-            user_content = f"[当前关注币种: {coin_hint.upper()}] {user_message}"
+            lang = _detect_language(user_message)
+            prefix = f"[当前关注币种: {coin_hint.upper()}]" if lang == "zh" else f"[Focus coin: {coin_hint.upper()}]"
+            user_content = f"{prefix} {user_message}"
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
