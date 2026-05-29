@@ -5,7 +5,7 @@ import re
 import redis
 from typing import Dict, List, Tuple, Optional
 from app.bigorder.models import TickData
-from config.settings import settings
+from config.settings import get_settings
 
 
 # 匹配 key 中 _big_deal_ 之后的 {BASE}_{SIDE} 部分
@@ -16,6 +16,7 @@ class RedisConsumer:
     """从 Redis ZSET 消费各交易所的成交数据"""
 
     def __init__(self):
+        settings = get_settings()
         self.client = redis.Redis(
             host=settings.redis_host,
             port=settings.redis_port,

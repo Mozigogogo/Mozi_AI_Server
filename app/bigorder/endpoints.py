@@ -14,6 +14,10 @@ from config.settings import settings
 router = APIRouter()
 
 
+def _redis_unavailable():
+    return JSONResponse(status_code=503, content=bigorder_deps.get_status())
+
+
 def _get_bigorder_mysql_config():
     """获取 bigorder 专属 MySQL 配置（fallback 到主配置）"""
     return {
@@ -35,7 +39,7 @@ async def get_anomaly_list(
     limit: int = Query(50, le=200)
 ):
     if not bigorder_deps.is_redis_available():
-        return JSONResponse(status_code=503, content={"error": "BigOrder 功能需要 Redis"})
+        return _redis_unavailable()
     signals = await asyncio.get_running_loop().run_in_executor(
         None, bigorder_deps.scorer.get_anomaly_list, exchange, min_score, limit
     )
@@ -48,7 +52,7 @@ async def get_anomaly_list(
 @router.get("/coin/{coin}/signal")
 async def get_coin_signal(coin: str):
     if not bigorder_deps.is_redis_available():
-        return JSONResponse(status_code=503, content={"error": "BigOrder 功能需要 Redis"})
+        return _redis_unavailable()
     cached = bigorder_deps.scorer.get_coin_signal(coin.upper())
     if cached:
         return cached
@@ -64,7 +68,7 @@ async def get_order_flow(
     window: int = Query(5, description="时间窗口(分钟)", ge=1, le=60)
 ):
     if not bigorder_deps.is_redis_available():
-        return JSONResponse(status_code=503, content={"error": "BigOrder 功能需要 Redis"})
+        return _redis_unavailable()
     cached = bigorder_deps.scorer.get_order_flow(coin.upper(), window)
     if cached:
         return cached
@@ -100,7 +104,7 @@ async def get_large_orders(
     exchange: Optional[str] = Query(None)
 ):
     if not bigorder_deps.is_redis_available():
-        return JSONResponse(status_code=503, content={"error": "BigOrder 功能需要 Redis"})
+        return _redis_unavailable()
 
     def _get_orders():
         cached = bigorder_deps.scorer.get_large_orders(coin.upper(), top)
@@ -174,7 +178,7 @@ async def search_history(
 @router.get("/coin/{coin}/compare")
 async def get_exchange_compare(coin: str):
     if not bigorder_deps.is_redis_available():
-        return JSONResponse(status_code=503, content={"error": "BigOrder 功能需要 Redis"})
+        return _redis_unavailable()
     return await asyncio.get_running_loop().run_in_executor(
         None, bigorder_deps.scorer.get_exchange_compare, coin.upper()
     )
@@ -186,7 +190,7 @@ async def get_exchange_compare(coin: str):
 @router.post("/scan")
 async def manual_scan(coins: Optional[List[str]] = None):
     if not bigorder_deps.is_redis_available():
-        return JSONResponse(status_code=503, content={"error": "BigOrder 功能需要 Redis"})
+        return _redis_unavailable()
     signals = await asyncio.get_running_loop().run_in_executor(
         None, bigorder_deps.scorer.score_all, coins
     )
@@ -215,7 +219,7 @@ async def manual_scan(coins: Optional[List[str]] = None):
 @router.get("/stream")
 async def signal_stream(request: Request):
     if not bigorder_deps.is_redis_available():
-        return JSONResponse(status_code=503, content={"error": "BigOrder 功能需要 Redis"})
+        return _redis_unavailable()
     async def event_generator():
         last_ts = int(time.time() * 1000)
         while True:
@@ -242,21 +246,18 @@ async def signal_stream(request: Request):
 # ----------------------------------------------------------------
 @router.get("/health")
 async def health():
+    status = bigorder_deps.get_status()
+    status["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     if not bigorder_deps.is_redis_available():
-        return {
-            "status": "disabled",
-            "redis": "not configured",
-            "watched_coins": [],
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        }
+        status["status"] = "disabled"
+        status["watched_coins"] = []
+        return status
     redis_ok = bigorder_deps.consumer.ping()
-    coins = bigorder_deps.consumer.get_watched_coins() if redis_ok else []
-    return {
-        "status": "healthy" if redis_ok else "degraded",
-        "redis": "connected" if redis_ok else "disconnected",
-        "watched_coins": coins,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    }
+    status["status"] = "healthy" if redis_ok else "degraded"
+    status["watched_coins"] = (
+        bigorder_deps.consumer.get_watched_coins() if redis_ok else []
+    )
+    return status
 
 
 # ----------------------------------------------------------------

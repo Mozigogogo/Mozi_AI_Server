@@ -1,4 +1,5 @@
 import asyncio
+import os
 import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
@@ -24,7 +25,7 @@ async def lifespan(app: FastAPI):
     print(f"调试模式: {settings.debug}")
     print(
         f"Redis配置: REDIS_ENABLED={settings.redis_enabled} "
-        f"(env={__import__('os').environ.get('REDIS_ENABLED', '<unset>')}), "
+        f"(env={os.environ.get('REDIS_ENABLED', '<unset>')}), "
         f"host={settings.redis_host}:{settings.redis_port}"
     )
 
@@ -231,13 +232,10 @@ from app.bigorder.chat import router as bigorder_chat_router
 app.include_router(bigorder_chat_router, prefix="/bigorder/v1", tags=["BigOrder Chat"])
 print("BigOrder: POST /bigorder/v1/chat 已注册")
 
-# BigOrder REST / SSE（需 REDIS_ENABLED=true）
-if settings.redis_enabled:
-    from app.bigorder.endpoints import router as bigorder_router
-    app.include_router(bigorder_router, prefix="/bigorder/v1", tags=["BigOrder Detection"])
-    print("BigOrder: REST 路由已注册 (/bigorder/v1/*)")
-else:
-    print("BigOrder: REDIS_ENABLED=false，REST 路由未注册（/chat 仍可用，需开启 Redis 后才有数据）")
+# BigOrder REST / SSE（始终注册；Redis 不可用时返回 503 + 诊断信息）
+from app.bigorder.endpoints import router as bigorder_router
+app.include_router(bigorder_router, prefix="/bigorder/v1", tags=["BigOrder Detection"])
+print("BigOrder: REST 路由已注册 (/bigorder/v1/*)")
 
 
 # 中间件：添加请求处理时间
