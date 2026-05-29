@@ -32,8 +32,11 @@ Rules:
 4. Use tables when comparing multiple items
 5. Never fabricate data
 
-LANGUAGE RULE:
-- Respond in the SAME language as the user's message (Chinese -> Chinese, English -> English)
+CRITICAL LANGUAGE RULE:
+- You MUST respond in the SAME language as the user's message.
+- If the user writes in English, your ENTIRE response (headings, analysis, labels, conclusions) MUST be in English.
+- If the user writes in Chinese, your ENTIRE response MUST be in Chinese.
+- This is mandatory. Do NOT mix languages.
 """
 
 TOOLS = [
@@ -524,6 +527,14 @@ async def chat(request: Request):
             "tool_call_id": tc.id,
             "content": json.dumps(tool_result, ensure_ascii=False, default=str),
         })
+
+        # 注入语言指令，确保回答语言与用户一致
+        user_lang = _detect_language(user_message)
+        if user_lang == "en":
+            messages.append({
+                "role": "user",
+                "content": "IMPORTANT: You MUST write your entire response in English. All headings, labels, analysis, and conclusions must be in English. Do NOT use any Chinese characters.",
+            })
 
         try:
             final_resp = await client.chat.completions.create(
