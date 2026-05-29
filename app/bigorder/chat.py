@@ -300,7 +300,9 @@ def _execute_tool(name: str, args: dict) -> dict:
             min_score=args.get("min_score"),
             limit=args.get("limit", 20)
         )
-        result = {"count": len(signals), "signals": signals}
+        result = {"count": len(signals), "signals": [
+            {k: v for k, v in s.items() if k != "llm_analysis"} for s in signals
+        ]}
         _cache.set(cache_key, result)
         return result
 
@@ -312,6 +314,7 @@ def _execute_tool(name: str, args: dict) -> dict:
             return hit
         cached = bigorder_deps.scorer.get_coin_signal(coin)
         if cached:
+            cached.pop("llm_analysis", None)
             _cache.set(cache_key, cached)
             return cached
         result = {}
@@ -319,7 +322,10 @@ def _execute_tool(name: str, args: dict) -> dict:
             try:
                 signal = bigorder_deps.scorer.score_exchange(exchange, coin)
                 if signal:
-                    result[exchange] = signal.model_dump()
+                    d = signal.model_dump()
+                    d.pop("llm_analysis", None)
+                    d.pop("top_orders", None)
+                    result[exchange] = d
             except Exception:
                 continue
         data = {"coin": coin, "exchanges": result} if result else {"coin": coin, "message": "No data available"}
