@@ -24,7 +24,7 @@ class RedisConsumer:
             decode_responses=True,
             socket_connect_timeout=5,
             socket_timeout=5,
-            retry_on_timeout=False
+            protocol=2,
         )
 
     def _build_key(self, exchange: str, base: str, side: str) -> str:
