@@ -534,13 +534,27 @@ async def chat(request: Request):
             "content": json.dumps(tool_result, ensure_ascii=False, default=str),
         })
 
-        # 注入语言指令，确保回答语言与用户一致
+        # 英文用户：重构 messages，去掉 tool_call 历史，避免 DeepSeek 继续调 tool
         user_lang = _detect_language(user_message)
         if user_lang == "en":
-            messages.append({
-                "role": "user",
-                "content": "IMPORTANT: You MUST write your entire response in English. All headings, labels, analysis, and conclusions must be in English. Do NOT use any Chinese characters.",
-            })
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a cryptocurrency large-trade anomaly analyst.\n"
+                        "Based on the data provided, write a clear analysis in English.\n"
+                        "Be concise, include key numbers. Use tables when comparing multiple items. Never fabricate data."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Question: {user_message}\n\n"
+                        f"Data:\n{json.dumps(tool_result, ensure_ascii=False, default=str, indent=2)}\n\n"
+                        "Write a clear analysis in English."
+                    )
+                }
+            ]
 
         try:
             final_resp = await client.chat.completions.create(
