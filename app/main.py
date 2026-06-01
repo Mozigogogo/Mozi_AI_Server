@@ -46,11 +46,18 @@ async def lifespan(app: FastAPI):
         else:
             print("BigOrder: Redis 连接失败，后台扫描未启动")
 
+    # 信号卡后台任务（始终启动，不依赖 Redis）
+    settlement_task = asyncio.create_task(_signal_settlement_task())
+    review_task = asyncio.create_task(_weekly_review_task())
+    print("Signal Cards: 后台结算(10min) + 周期复盘(每周日) 已启动")
+
     yield
 
     # 关闭时
     if scan_task:
         scan_task.cancel()
+    settlement_task.cancel()
+    review_task.cancel()
     print("服务关闭")
 
 
@@ -239,6 +246,11 @@ if settings.redis_enabled:
 else:
     print("BigOrder: REDIS_ENABLED=false，REST 路由未注册（/chat 仍可用，需开启 Redis 后才有数据）")
 
+# Signal Cards 交易信号卡
+from app.signals.endpoints import router as signal_router
+app.include_router(signal_router, prefix="/api/v1/signals", tags=["Signal Cards"])
+print("Signal Cards: 路由已注册 (/api/v1/signals/*)")
+
 
 # 中间件：添加请求处理时间
 @app.middleware("http")
@@ -279,6 +291,49 @@ async def _bigorder_background_scan(consumer, scorer, llm_analyzer):
         except Exception as e:
             print(f"BigOrder 后台扫描异常: {e}")
             await asyncio.sleep(10)
+
+
+async def _signal_settlement_task():
+    """信号卡后台结算任务 — 每 10 分钟扫一次 pending 卡，用真实价格结算"""
+    while True:
+        try:
+            await asyncio.sleep(600)  # 10 分钟
+            from app.signals.settlement import settle_pending_cards
+            result = await asyncio.get_event_loop().run_in_executor(None, settle_pending_cards)
+            if result["settled"] > 0:
+                print(f"Signal Cards: 结算 {result['settled']} 张 (TP={result['hit_tp']} SL={result['hit_sl']} 过期={result['expired']})")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"信号卡结算任务异常: {e}")
+            await asyncio.sleep(60)
+
+
+async def _weekly_review_task():
+    """信号卡周期复盘任务 — 每周日凌晨 3 点复盘"""
+    while True:
+        try:
+            import datetime
+            now = datetime.datetime.now()
+            # 计算到下一个周日凌晨 3 点的秒数
+            days_until_sunday = (6 - now.weekday()) % 7
+            if days_until_sunday == 0 and now.hour >= 3:
+                days_until_sunday = 7
+            next_review = now.replace(hour=3, minute=0, second=0, microsecond=0) + datetime.timedelta(days=days_until_sunday)
+            wait_seconds = (next_review - now).total_seconds()
+
+            print(f"Signal Cards: 下次复盘时间 {next_review.strftime('%Y-%m-%d %H:%M')}（{wait_seconds/3600:.1f}h 后）")
+            await asyncio.sleep(wait_seconds)
+
+            from app.signals.review import weekly_review
+            report = await asyncio.get_event_loop().run_in_executor(None, weekly_review)
+            print(f"Signal Cards: 周复盘完成 — 胜率{report.get('win_rate', 0)}% 夏普{report.get('sharpe_ratio', 0)}")
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"周期复盘任务异常: {e}")
+            await asyncio.sleep(3600)
 
 
 if __name__ == "__main__":

@@ -137,6 +137,34 @@ class CryptoAnalystAgent:
                 print(f"  - 调用的 API: {skill_result.api_calls}")
                 print(f"  - 时间戳: {skill_result.timestamp}")
 
+                # ── 信号卡分支（纯增量，不影响已有流程）──────────────────
+                if skill.name == "signal_card":
+                    card_event = skill_result.data.get("signal_card_event")
+                    if card_event:
+                        # 返回 signal_card 事件 → 前端渲染为卡片
+                        yield {"type": "signal_card", "data": card_event}
+                        print(f"  ✅ 信号卡已生成: {card_event.get('card', {}).get('coin')} {card_event.get('card', {}).get('direction')}")
+                    else:
+                        # 无信号时返回文字提示
+                        coin_name = intent.coin_symbol or ""
+                        if intent.language == "zh":
+                            yield f"当前 {coin_name} 信号不足，未达到生成交易信号卡的条件。建议等待至少 2 个信号源方向一致后再操作。"
+                        else:
+                            yield f"No sufficient signal for {coin_name} to generate a trade card. Wait for at least 2 signal sources to align."
+
+                    # 推荐问题
+                    if intent.coin_symbol:
+                        suggestions = self.response_generator.get_suggestions(
+                            "analyze_quantitative", intent.coin_symbol, intent.language
+                        )
+                        yield {"type": "suggestions", "suggestions": suggestions}
+
+                    if conversation_id:
+                        session_manager.update(conversation_id, coin_symbol=intent.coin_symbol, question=question)
+                    print(f"\n=== 请求完成（信号卡）===\n")
+                    return
+                # ── 信号卡分支结束 ──────────────────────────────────────
+
                 # 检查数据是否全空（API 可能因币种符号错误而全部失败）
                 if not skill_result.api_calls:
                     print(f"  ⚠️ 所有 API 调用失败，币种符号可能有误: {intent.coin_symbol}")

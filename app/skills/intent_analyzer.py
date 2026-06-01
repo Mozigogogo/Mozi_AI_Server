@@ -30,7 +30,7 @@ class IntentAnalyzer:
 输出格式：
 {{"language":"zh或en","intent_type":"类型","coin_symbol":"币种","required_apis":["API列表"],"answer_requirements":["要求"],"confidence":0.0}}
 
-意图类型：query_price(价格/市值/涨跌幅) | query_trend(趋势/走势/K线) | query_news(新闻) | query_derivatives(成交量/持仓量/多空比/资金费率) | analyze_technical(技术面) | analyze_comprehensive(综合分析) | analyze_quantitative(量化分析) | simple_chat(闲聊)
+意图类型：query_price(价格/市值/涨跌幅) | query_trend(趋势/走势/K线) | query_news(新闻) | query_derivatives(成交量/持仓量/多空比/资金费率) | analyze_technical(技术面) | analyze_comprehensive(综合分析) | analyze_quantitative(量化分析) | analyze_signal(信号卡/能否买入/卖出建议/交易信号/操盘建议) | simple_chat(闲聊)
 
 API：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) | get_buy_sell_ratio(多空比) | get_open_interest(持仓量) | get_trading_volume(成交量) | get_funding_rate(资金费率)
 

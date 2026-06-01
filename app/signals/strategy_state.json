@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "weights": {
+    "bigorder_anomaly": 0.35,
+    "quantitative": 0.35,
+    "technical": 0.3
+  },
+  "factor_performances": {},
+  "regime": "quiet",
+  "regime_updated_at": 0.0,
+  "total_signals_generated": 21,
+  "total_signals_settled": 0,
+  "global_win_rate": 0.5,
+  "evolution_history": [],
+  "last_evolution_at": 0.0
+}
