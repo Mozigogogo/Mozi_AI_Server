@@ -1,6 +1,6 @@
-# 墨子（Mozi）— 交易信号卡 产品文档 v2.0
+# 墨子（Mozi）— 交易信号卡 产品文档 v2.1
 
-> 最后更新：2026-06-01 | 版本：v2.0（新增信号卡 + 后验验证 + 自适应策略）
+> 最后更新：2026-06-05 | 版本：v2.1（新增 Signal Chat 独立对话接口 + C级信号 + 中英双语）
 
 ---
 
@@ -8,15 +8,16 @@
 
 1. [系统架构总览](#1-系统架构总览)
 2. [信号卡核心概念](#2-信号卡核心概念)
-3. [API 接口文档](#3-api-接口文档)
-4. [SSE 事件格式](#4-sse-事件格式)
-5. [后验验证与周期复盘](#5-后验验证与周期复盘)
-6. [前端集成指南](#6-前端集成指南)
-7. [会员等级差异](#7-会员等级差异)
-8. [后端部署指南](#8-后端部署指南)
-9. [数据表结构](#9-数据表结构)
-10. [配置参数说明](#10-配置参数说明)
-11. [迭代与扩展](#11-迭代与扩展)
+3. [Signal Chat 对话接口](#3-signal-chat-对话接口)
+4. [REST API 接口](#4-rest-api-接口)
+5. [SSE 事件格式](#5-sse-事件格式)
+6. [后验验证与周期复盘](#6-后验验证与周期复盘)
+7. [前端集成指南](#7-前端集成指南)
+8. [会员等级差异](#8-会员等级差异)
+9. [后端部署指南](#9-后端部署指南)
+10. [数据表结构](#10-数据表结构)
+11. [配置参数说明](#11-配置参数说明)
+12. [迭代与扩展](#12-迭代与扩展)
 
 ---
 
@@ -140,12 +141,229 @@ f* = (p × b - q) / b
 | S | 3源一致 + 置信度≥65% + 数学确认 | 多维共振，最高置信度 |
 | A | 2源一致 + 置信度≥50% | 强信号 |
 | B | 2源一致 + 置信度<50% | 中等信号 |
+| C | 方向冲突或信号偏弱（Chat兜底） | ⚠️ 信号偏弱，仅供参考 |
 
 ---
 
 ## 3. API 接口文档
 
-### 3.1 信号卡生成
+### 3.1 信号卡对话（SSE 流式）
+
+```
+POST /signals/v1/chat
+```
+
+**概述：** 独立的信号卡对话接口，与 `/bigorder/v1/chat` 并列。前端根据用户意图分流到不同端点。自动识别中英文，返回对应语言的信号卡和 LLM 解读。
+
+**请求体：**
+
+```json
+{
+  "message": "BTC可以买进吗",
+  "coin": "BTC"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| message | string | 是 | 用户问题。支持中文/英文，自动检测语言 |
+| coin | string | 否 | 前端上下文传入的关注币种（附加到系统提示） |
+
+**完整 SSE 事件序列：**
+
+```
+1. event: thinking    → {"status": "Analyzing..."}              // LLM 正在选择工具
+2. event: tool_call   → {"tool": "analyze_coin", "args": {...}} // 选择了哪个工具
+3. event: signal_card → {完整信号卡数据}                          // 前端渲染卡片 ⭐
+4. event: tool_result → {"tool": "analyze_coin"}                // 工具执行完成
+5. event: content     → {"text": "..."}                         // LLM 文字解读（多次）
+6. event: suggestions → {"type": "suggestions", "suggestions": [...]}  // 推荐追问
+7. event: done        → {}                                       // 流结束
+```
+
+> 如果 LLM 未选择工具（直接回答），则只返回 `content` + `done`。
+
+**signal_card 事件完整数据结构：**
+
+```json
+{
+  "type": "signal_card",
+  "tier": "pro",
+  "card": {
+    "coin": "BTC",
+    "direction": "long",
+    "grade": "A",
+    "confidence": 80.0,
+    "current_price": 67500.00,
+    "entry_zone": [67200.00, 67800.00],
+    "stop_loss": 65100.00,
+    "take_profit": 70500.00,
+    "risk_reward": 2.2,
+    "position_pct": 5.6,
+    "invalidation": 65100.00,
+    "sources": [
+      {
+        "name": "bigorder_anomaly",
+        "score": 55.4,
+        "direction": "long",
+        "detail": "Binance medium信号, 净流入+160,268, 买200,874/卖40,606"
+      },
+      {
+        "name": "quantitative",
+        "score": 11.0,
+        "direction": "short",
+        "detail": "综合评分-11, 强度弱, 置信度50.0%"
+      },
+      {
+        "name": "technical",
+        "score": 15.0,
+        "direction": "short",
+        "detail": "EMA空头排列(9<21<55), ADX=33趋势强+DI空头, RSI=12严重超卖"
+      }
+    ]
+  },
+  "math": {
+    "hurst": 0.50,
+    "hurst_interp": "数据不足(需≥100)",
+    "predictability": 0.3243,
+    "kelly": 0.125,
+    "mc_bull_prob": 0.275,
+    "mc_bear_prob": 0.725,
+    "mc_var95": -20.77,
+    "vol_regime": "high",
+    "vol_percentile": 82.1,
+    "market_regime": "trending_down",
+    "findings": [
+      "MC上涨概率仅28%，方向存疑",
+      "VaR(95%)=-20.8%，尾部风险大"
+    ]
+  },
+  "display": "📊 BTC 交易信号卡 | 🟡A级 | 置信度 80%\n├─ 方向：做多\n...",
+  "strategy": {
+    "version": 1,
+    "regime": "trending_down",
+    "global_win_rate": 0.5
+  }
+}
+```
+
+**C 级信号卡示例（弱信号兜底）：**
+
+```json
+{
+  "type": "signal_card",
+  "tier": "pro",
+  "card": {
+    "coin": "BTC",
+    "direction": "long",
+    "grade": "C",
+    "confidence": 30.0,
+    ...
+  },
+  "display": "📊 BTC 交易信号卡 | 🔸C级 | 置信度 30%\n│  ⚠️ 信号偏弱，仅供参考\n├─ 方向：做多\n..."
+}
+```
+
+> C 级卡的特征：grade="C"、confidence 较低、display 中有"⚠️ 信号偏弱"警告。C 级卡不参与结算统计。
+
+**Function Calling 工具列表：**
+
+| 工具名 | 说明 | 参数 | 超时 |
+|--------|------|------|------|
+| `analyze_coin` | 分析币种，生成信号卡 + 量化分析 | coin (必填) | 60s |
+| `query_winrate` | 查询历史胜率和回测数据 | coin, days(默认30) | 10s |
+| `query_strategy` | 查看策略性能报告（自适应权重、各因子胜率） | 无 | 5s |
+| `query_scan_results` | 查看最近一次全市场扫描结果 | limit(默认10) | 10s |
+
+**前端接入示例（JavaScript）：**
+
+```javascript
+async function signalChat(message, coin) {
+  const response = await fetch('/signals/v1/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, coin })
+  });
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();  // 保留未完成的行
+
+    let currentEvent = '';
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        currentEvent = line.slice(7).trim();
+      } else if (line.startsWith('data: ')) {
+        const data = JSON.parse(line.slice(6));
+
+        switch (currentEvent) {
+          case 'signal_card':
+            // ⭐ 渲染信号卡组件（用 card 结构化数据或 display 文本）
+            renderSignalCard(data);
+            break;
+          case 'content':
+            // 追加 LLM 文字解读（流式）
+            appendText(data.text);
+            break;
+          case 'suggestions':
+            // 渲染推荐追问按钮
+            renderSuggestions(data.suggestions);
+            break;
+          case 'thinking':
+            showLoading();
+            break;
+          case 'done':
+            finishResponse();
+            break;
+          case 'error':
+            showError(data.error);
+            break;
+        }
+      }
+    }
+  }
+}
+
+// 调用示例
+signalChat('BTC可以买进吗');
+signalChat('How is ETH');
+signalChat('最近有什么信号');
+signalChat('策略表现如何');
+```
+
+**curl 测试：**
+
+```bash
+# 中文 — 分析币种
+curl -N -X POST http://localhost:8000/signals/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "BTC可以买进吗"}'
+
+# 英文 — 自动识别
+curl -N -X POST http://localhost:8000/signals/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "How is ETH"}'
+
+# 查看策略
+curl -N -X POST http://localhost:8000/signals/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "策略表现如何"}'
+
+# 查看扫描结果
+curl -N -X POST http://localhost:8000/signals/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "最近有什么信号"}'
+```
+
+### 3.2 信号卡生成
 
 ```
 GET /api/v1/signals/generate/{coin}
@@ -880,47 +1098,22 @@ app/signals/
 ├── __init__.py
 ├── models.py              # 数据模型（SignalCard/MathDerivationSummary/StrategyMeta）
 ├── math_engine.py         # 第一性原理数学推导引擎
-│   ├── hurst_exponent()   # Hurst 指数
-│   ├── shannon_entropy()  # Shannon 熵
-│   ├── kelly_criterion()  # Kelly 公式
-│   ├── monte_carlo_simulation()  # 蒙特卡洛模拟
-│   ├── volatility_cone()  # 波动率锥
-│   ├── detect_regime()    # 市场状态检测
-│   ├── statistical_significance()  # 统计显著性
-│   ├── compute_information_coefficient()  # IC 评估
-│   └── run_math_derivation()  # 一键分析入口
 ├── adaptive_strategy.py   # 自适应策略引擎
-│   ├── AdaptiveStrategyEngine
-│   │   ├── get_adaptive_weights()   # 获取自适应权重
-│   │   ├── record_signal_result()   # 记录结果（batch/即时）
-│   │   ├── evolve()                  # 策略演化
-│   │   └── get_performance_report() # 性能报告
-│   └── get_strategy_engine()        # 全局单例
-├── fusion.py               # 三源融合引擎
-│   ├── _bigorder_source()  # 大单异动信号源
-│   ├── _quantitative_source()  # 量化六因子信号源
-│   ├── _technical_source() # 技术分析信号源（7维）
-│   ├── fuse_signals()      # 融合入口
-│   ├── generate_card_for_chat()  # 对话生成入口
-│   └── _build_card_event() # SSE 事件构建
-├── backtest.py             # 回测引擎
-│   ├── backtest_signal()   # 真实价格回测
-│   └── walk_forward_validation()  # Walk-Forward 验证
-├── settlement.py           # 结算引擎（后验验证）
-│   ├── save_signal_card()  # 生成时存库
-│   └── settle_pending_cards()  # 真实K线结算
-├── review.py               # 周期复盘引擎
-│   ├── weekly_review()     # 每周复盘
-│   └── get_review_summary()  # 摘要查询
-└── endpoints.py            # API 端点
-    ├── /generate/{coin}    # 生成信号卡
-    ├── /scan               # 扫描热门币
-    ├── /stream             # SSE 实时推送
-    ├── /strategy/*         # 策略管理
-    ├── /backtest/{coin}    # 详细回测
-    ├── /review             # 复盘摘要
-    ├── /review/trigger     # 手动复盘
-    └── /settle             # 手动结算
+├── fusion.py              # 三源融合引擎（大单/量化/技术 + 自适应权重）
+├── chat.py                # Signal Chat 独立 SSE 端点（Function Calling）
+│   ├── POST /signals/v1/chat  # 主端点
+│   ├── _execute_tool()         # 同步工具执行
+│   ├── _tool_analyze_coin()    # 分析币种 → 信号卡
+│   ├── _tool_query_winrate()   # 历史胜率
+│   ├── _tool_query_strategy()  # 策略报告
+│   ├── _tool_query_scan_results() # 扫描结果
+│   ├── _detect_language()      # 中英文检测
+│   └── _get_suggestions()      # 推荐追问生成
+├── alpha_scanner.py       # 全市场 Alpha 雷达扫描器
+├── endpoints.py           # REST 端点
+├── settlement.py          # 结算引擎（真实K线后验 + 扫描缓存）
+├── backtest.py            # 回测引擎
+└── review.py              # 周期复盘引擎
 ```
 
 ### 11.2 扩展方向

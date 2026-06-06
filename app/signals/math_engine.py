@@ -567,7 +567,7 @@ def detect_regime(closes: list[float]) -> RegimeResult:
     自相关: ρ(k) = Cov(r_t, r_{t-k}) / Var(r_t)
     偏度: γ₁ = E[(X-μ)³] / σ³
     """
-    if len(closes) < 60:
+    if len(closes) < 40:
         return RegimeResult("quiet", 0.3, "unknown", "normal", 0, "数据不足")
 
     returns = [closes[i] / closes[i - 1] - 1 for i in range(1, len(closes))]
@@ -724,6 +724,7 @@ def run_math_derivation(
     avg_loss_pct: float = 2.0,
     stop_loss_pct: float = None,
     take_profit_pct: float = None,
+    lang: str = "zh",
 ) -> MathDerivation:
     """
     执行完整的第一性原理数学推导
@@ -780,57 +781,58 @@ def run_math_derivation(
     # ── 综合评分修正 ──────────────────────────────────────────────────
     adjustment = 0.0
     findings = []
+    en = lang == "en"
 
     # Hurst 修正
     if result.hurst:
         if direction == "long" and result.hurst.hurst > 0.6:
             adjustment += 15
-            findings.append(f"H={result.hurst.hurst:.2f} 趋势持续性强，支撑做多")
+            findings.append(f"H={result.hurst.hurst:.2f} strong trend persistence, supports long" if en else f"H={result.hurst.hurst:.2f} 趋势持续性强，支撑做多")
         elif direction == "short" and result.hurst.hurst > 0.6:
             adjustment += 15
-            findings.append(f"H={result.hurst.hurst:.2f} 趋势持续性强，支撑做空")
+            findings.append(f"H={result.hurst.hurst:.2f} strong trend persistence, supports short" if en else f"H={result.hurst.hurst:.2f} 趋势持续性强，支撑做空")
         elif result.hurst.hurst < 0.4:
             adjustment -= 10
-            findings.append(f"H={result.hurst.hurst:.2f} 均值回归，趋势信号可靠性降低")
+            findings.append(f"H={result.hurst.hurst:.2f} mean-reverting, trend signal unreliable" if en else f"H={result.hurst.hurst:.2f} 均值回归，趋势信号可靠性降低")
 
     # 熵修正
     if result.entropy:
         if result.entropy.predictability > 0.5:
             adjustment += 10
-            findings.append(f"可预测性{result.entropy.predictability:.0%}，信号可靠性高")
+            findings.append(f"Predictability {result.entropy.predictability:.0%}, high signal reliability" if en else f"可预测性{result.entropy.predictability:.0%}，信号可靠性高")
         elif result.entropy.predictability < 0.25:
             adjustment -= 15
-            findings.append(f"可预测性{result.entropy.predictability:.0%}过低，噪音主导")
+            findings.append(f"Predictability {result.entropy.predictability:.0%} too low, noise-dominated" if en else f"可预测性{result.entropy.predictability:.0%}过低，噪音主导")
 
     # 蒙特卡洛修正
     if result.monte_carlo:
         if direction == "long":
             if result.monte_carlo.bull_prob > 0.6:
                 adjustment += 20
-                findings.append(f"MC上涨概率{result.monte_carlo.bull_prob:.0%}，方向确认")
+                findings.append(f"MC bull prob {result.monte_carlo.bull_prob:.0%}, direction confirmed" if en else f"MC上涨概率{result.monte_carlo.bull_prob:.0%}，方向确认")
             elif result.monte_carlo.bull_prob < 0.4:
                 adjustment -= 25
-                findings.append(f"MC上涨概率仅{result.monte_carlo.bull_prob:.0%}，方向存疑")
+                findings.append(f"MC bull prob only {result.monte_carlo.bull_prob:.0%}, direction uncertain" if en else f"MC上涨概率仅{result.monte_carlo.bull_prob:.0%}，方向存疑")
         else:
             if result.monte_carlo.bear_prob > 0.6:
                 adjustment += 20
-                findings.append(f"MC下跌概率{result.monte_carlo.bear_prob:.0%}，方向确认")
+                findings.append(f"MC bear prob {result.monte_carlo.bear_prob:.0%}, direction confirmed" if en else f"MC下跌概率{result.monte_carlo.bear_prob:.0%}，方向确认")
             elif result.monte_carlo.bear_prob < 0.4:
                 adjustment -= 25
-                findings.append(f"MC下跌概率仅{result.monte_carlo.bear_prob:.0%}，方向存疑")
+                findings.append(f"MC bear prob only {result.monte_carlo.bear_prob:.0%}, direction uncertain" if en else f"MC下跌概率仅{result.monte_carlo.bear_prob:.0%}，方向存疑")
 
         if result.monte_carlo.var_95 < -10:
             adjustment -= 10
-            findings.append(f"VaR(95%)={result.monte_carlo.var_95:.1f}%，尾部风险大")
+            findings.append(f"VaR(95%)={result.monte_carlo.var_95:.1f}%, high tail risk" if en else f"VaR(95%)={result.monte_carlo.var_95:.1f}%，尾部风险大")
 
     # 波动率修正
     if result.vol_cone:
         if result.vol_cone.regime == "extreme":
             adjustment -= 20
-            findings.append(f"波动率极端(P{result.vol_cone.percentile:.0f})，建议降仓")
+            findings.append(f"Extreme volatility (P{result.vol_cone.percentile:.0f}), reduce position" if en else f"波动率极端(P{result.vol_cone.percentile:.0f})，建议降仓")
         elif result.vol_cone.regime == "low":
             adjustment += 10
-            findings.append(f"波动率低位(P{result.vol_cone.percentile:.0f})，趋势可靠")
+            findings.append(f"Low volatility (P{result.vol_cone.percentile:.0f}), trend reliable" if en else f"波动率低位(P{result.vol_cone.percentile:.0f})，趋势可靠")
 
     # 市场状态修正
     if result.regime:
@@ -840,13 +842,13 @@ def run_math_derivation(
         )
         if regime_match:
             adjustment += 20
-            findings.append(f"市场状态={result.regime.regime}，与信号方向一致")
+            findings.append(f"Market regime={result.regime.regime}, aligns with signal" if en else f"市场状态={result.regime.regime}，与信号方向一致")
         elif result.regime.regime == "volatile":
             adjustment -= 15
-            findings.append(f"市场状态=极端波动，信号可靠性下降")
+            findings.append("Market regime=extreme volatility, signal unreliable" if en else "市场状态=极端波动，信号可靠性下降")
         elif result.regime.regime == "mean_reverting" and result.hurst and result.hurst.hurst < 0.4:
             adjustment -= 10
-            findings.append("均值回归市场，趋势信号可能失效")
+            findings.append("Mean-reverting market, trend signal may fail" if en else "均值回归市场，趋势信号可能失效")
 
     result.math_score_adjustment = max(-100, min(100, round(adjustment, 1)))
 

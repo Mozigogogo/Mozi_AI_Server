@@ -21,6 +21,52 @@ import app.bigorder.deps as bigorder_deps
 from config.settings import settings
 
 
+def _extract_realtime_price(raw_data: dict) -> Optional[float]:
+    """从 raw_data/header 中提取统一实时价。"""
+    if not isinstance(raw_data, dict):
+        return None
+
+    value = raw_data.get("current_price")
+    if value is not None:
+        try:
+            price = float(value)
+            if price > 0:
+                return price
+        except (ValueError, TypeError):
+            pass
+
+    header = raw_data.get("header") or raw_data.get("get_header_data") or raw_data.get("header_data")
+    if isinstance(header, dict):
+        for key in ("currentPrice", "current_price", "price"):
+            value = header.get(key)
+            if value is None:
+                continue
+            try:
+                price = float(value)
+                if price > 0:
+                    return price
+            except (ValueError, TypeError):
+                continue
+    return None
+
+
+def _apply_realtime_price(ohlcv: dict, current_price: Optional[float]) -> dict:
+    """用实时价替换最后一根 close，并扩展 high/low。"""
+    if not ohlcv or not current_price or current_price <= 0:
+        return ohlcv
+
+    for key in ("highs", "lows", "closes"):
+        if key not in ohlcv or not ohlcv[key]:
+            return ohlcv
+
+    ohlcv["closes"][-1] = float(current_price)
+    ohlcv["highs"][-1] = max(float(ohlcv["highs"][-1]), float(current_price))
+    ohlcv["lows"][-1] = min(float(ohlcv["lows"][-1]), float(current_price))
+    ohlcv["realtime_price"] = float(current_price)
+    ohlcv["price_source"] = "header.currentPrice"
+    return ohlcv
+
+
 def _score_to_direction(score: float) -> SignalDirection:
     if score >= 50:
         return SignalDirection.LONG
@@ -29,7 +75,7 @@ def _score_to_direction(score: float) -> SignalDirection:
     return SignalDirection.NEUTRAL
 
 
-def _bigorder_source(coin: str, weight: float) -> Optional[SignalSource]:
+def _bigorder_source(coin: str, weight: float, lang: str = "zh") -> Optional[SignalSource]:
     """获取大单异动信号源"""
     cached = None
     if bigorder_deps.scorer:
@@ -69,10 +115,16 @@ def _bigorder_source(coin: str, weight: float) -> Optional[SignalSource]:
         direction = SignalDirection.NEUTRAL
         normalized = total_score * 0.5
 
-    detail = (
-        f"{exchange} {level}信号, 净流入{net_flow:+,.0f}, "
-        f"买{buy_amount:,.0f}/卖{sell_amount:,.0f}"
-    )
+    if lang == "en":
+        detail = (
+            f"{exchange} {level} signal, net flow {net_flow:+,.0f}, "
+            f"buy {buy_amount:,.0f}/sell {sell_amount:,.0f}"
+        )
+    else:
+        detail = (
+            f"{exchange} {level}信号, 净流入{net_flow:+,.0f}, "
+            f"买{buy_amount:,.0f}/卖{sell_amount:,.0f}"
+        )
 
     return SignalSource(
         name="bigorder_anomaly",
@@ -83,32 +135,61 @@ def _bigorder_source(coin: str, weight: float) -> Optional[SignalSource]:
     )
 
 
-def _quantitative_source(coin: str, weight: float) -> Optional[SignalSource]:
+def _quantitative_source(coin: str, weight: float, lang: str = "zh") -> Optional[SignalSource]:
     """获取量化六因子信号源"""
     try:
         from app.skills.analysis_skills.quantitative import QuantitativeAnalysisSkill
-        from app.services.data_service import get_kline_data, get_trade_volume
+        from app.services.data_service import get_header_data, get_kline_data, get_trade_volume
     except ImportError:
         return None
 
     try:
+        header = get_header_data(coin)
         kline = get_kline_data(coin, 2)
         volume = get_trade_volume(coin)
-        raw_data = {"get_kline_data": kline, "get_trade_volume": volume}
+        raw_data = {
+            "get_header_data": header,
+            "get_kline_data": kline,
+            "get_trade_volume": volume,
+        }
 
         skill = QuantitativeAnalysisSkill()
         result = skill.analyze(coin, raw_data)
     except Exception:
         return None
 
-    if not result or result.get("error") or not result.get("signal"):
+    if not result or result.get("error"):
         return None
 
-    signal = result["signal"]
-    composite = signal.get("composite_score", 0)
-    direction_str = signal.get("direction", "neutral")
-    strength = signal.get("strength", "none")
-    confidence = signal.get("confidence_pct", 0)
+    signal = result.get("signal") or result.get("交易信号") or {}
+    composite = signal.get("composite_score", signal.get("综合评分", 0))
+    direction_str = signal.get("direction", signal.get("方向", "neutral"))
+    strength = signal.get("strength", signal.get("强度", "none"))
+    # Normalize Chinese strength to English for display
+    strength_map = {"强": "strong", "中等": "moderate", "弱": "weak", "无": "none"}
+    strength_en = strength_map.get(strength, strength)
+    confidence = signal.get("confidence_pct", signal.get("胜率估计", 0))
+
+    direction_alias = {
+        "做多": "long",
+        "long": "long",
+        "做空": "short",
+        "short": "short",
+        "观望": "neutral",
+        "neutral": "neutral",
+    }
+    direction_str = direction_alias.get(str(direction_str), "neutral")
+
+    try:
+        composite = float(composite)
+    except (ValueError, TypeError):
+        composite = 0
+
+    if isinstance(confidence, str):
+        try:
+            confidence = float(confidence.replace("%", ""))
+        except ValueError:
+            confidence = 0
 
     direction_map = {
         "long": SignalDirection.LONG,
@@ -121,29 +202,24 @@ def _quantitative_source(coin: str, weight: float) -> Optional[SignalSource]:
         score=abs(composite),
         direction=direction_map.get(direction_str, SignalDirection.NEUTRAL),
         weight=weight,
-        detail=f"综合评分{composite:.0f}, 强度{strength}, 置信度{confidence}%",
+        detail=(
+            f"Score {composite:.0f}, strength {strength_en}, confidence {confidence}%"
+            if lang == "en" else
+            f"综合评分{composite:.0f}, 强度{strength}, 置信度{confidence}%"
+        ),
     )
 
 
-def _technical_source(ohlcv: dict, weight: float) -> Optional[SignalSource]:
+def _technical_source(ohlcv: dict, weight: float, lang: str = "zh") -> Optional[SignalSource]:
     """
     技术分析信号源（专业升级版）
-
-    从简单的 MA7/MA20 升级为：
-    1. EMA 多头/空头排列 (9/21/55)
-    2. ADX 趋势强度过滤
-    3. RSI 超买超卖 + 背离检测
-    4. MACD 方向 + 动量
-    5. 布林带位置
-    6. Supertrend 方向
-    7. 量价确认 (OBV 趋势)
     """
     closes = ohlcv.get("closes", [])
     highs = ohlcv.get("highs", [])
     lows = ohlcv.get("lows", [])
     volumes = ohlcv.get("volumes", [])
 
-    if len(closes) < 55:
+    if len(closes) < 25:
         return None
 
     from app.skills.analysis_skills.indicators import (
@@ -155,6 +231,7 @@ def _technical_source(ohlcv: dict, weight: float) -> Optional[SignalSource]:
     price = closes[-1]
     score = 0
     details = []
+    en = lang == "en"
 
     def last_valid(lst):
         for v in reversed(lst):
@@ -163,8 +240,13 @@ def _technical_source(ohlcv: dict, weight: float) -> Optional[SignalSource]:
         return None
 
     # ── 1. EMA 排列 (权重 25%) ─────────────────────────────
-    e9, e21, e55 = ema_triple(closes, 9, 21, 55)
-    e9_v, e21_v, e55_v = last_valid(e9), last_valid(e21), last_valid(e55)
+    if len(closes) >= 55:
+        fast_p, mid_p, slow_p = 9, 21, 55
+    else:
+        fast_p, mid_p, slow_p = 5, 13, 21
+
+    e_fast, e_mid, e_slow = ema_triple(closes, fast_p, mid_p, slow_p)
+    e9_v, e21_v, e55_v = last_valid(e_fast), last_valid(e_mid), last_valid(e_slow)
 
     if e9_v and e21_v and e55_v:
         bull_stack = e9_v > e21_v > e55_v
@@ -172,33 +254,34 @@ def _technical_source(ohlcv: dict, weight: float) -> Optional[SignalSource]:
 
         if bull_stack:
             score += 25
-            details.append(f"EMA多头排列(9>{21}>{55})")
+            details.append(f"EMA bull stack({fast_p}>{mid_p}>{slow_p})" if en else f"EMA多头排列({fast_p}>{mid_p}>{slow_p})")
         elif bear_stack:
             score -= 25
-            details.append(f"EMA空头排列(9<{21}<{55})")
+            details.append(f"EMA bear stack({fast_p}<{mid_p}<{slow_p})" if en else f"EMA空头排列({fast_p}<{mid_p}<{slow_p})")
         elif e9_v > e21_v:
             score += 10
-            details.append("短期EMA偏多")
+            details.append("Short-term EMA bullish" if en else "短期EMA偏多")
         elif e9_v < e21_v:
             score -= 10
-            details.append("短期EMA偏空")
+            details.append("Short-term EMA bearish" if en else "短期EMA偏空")
 
     # ── 2. ADX 趋势强度 (权重 15%) ─────────────────────────
-    adx_vals, pdi, mdi = adx(highs, lows, closes, 14)
-    adx_v = last_valid(adx_vals)
-    pdi_v = last_valid(pdi)
-    mdi_v = last_valid(mdi)
+    if len(closes) >= 28:
+        adx_vals, pdi, mdi = adx(highs, lows, closes, 14)
+        adx_v = last_valid(adx_vals)
+        pdi_v = last_valid(pdi)
+        mdi_v = last_valid(mdi)
 
-    if adx_v is not None:
-        if adx_v > 25:  # 趋势有效
-            if pdi_v and mdi_v and pdi_v > mdi_v:
-                score += 15
-                details.append(f"ADX={adx_v:.0f}趋势强+DI多头")
-            elif pdi_v and mdi_v and mdi_v > pdi_v:
-                score -= 15
-                details.append(f"ADX={adx_v:.0f}趋势强+DI空头")
-        elif adx_v < 20:
-            details.append(f"ADX={adx_v:.0f}震荡市")
+        if adx_v is not None:
+            if adx_v > 25:  # 趋势有效
+                if pdi_v and mdi_v and pdi_v > mdi_v:
+                    score += 15
+                    details.append(f"ADX={adx_v:.0f} trend+DI bull" if en else f"ADX={adx_v:.0f}趋势强+DI多头")
+                elif pdi_v and mdi_v and mdi_v > pdi_v:
+                    score -= 15
+                    details.append(f"ADX={adx_v:.0f} trend+DI bear" if en else f"ADX={adx_v:.0f}趋势强+DI空头")
+            elif adx_v < 20:
+                details.append(f"ADX={adx_v:.0f} sideways" if en else f"ADX={adx_v:.0f}震荡市")
 
     # ── 3. RSI + 背离 (权重 20%) ─────────────────────────────
     rsi_vals = rsi(closes, 14)
@@ -207,59 +290,60 @@ def _technical_source(ohlcv: dict, weight: float) -> Optional[SignalSource]:
     if rsi_v is not None:
         if rsi_v >= 75:
             score -= 20
-            details.append(f"RSI={rsi_v:.0f}严重超买")
+            details.append(f"RSI={rsi_v:.0f} extreme OB" if en else f"RSI={rsi_v:.0f}严重超买")
         elif rsi_v >= 65:
             score -= 10
-            details.append(f"RSI={rsi_v:.0f}超买区")
+            details.append(f"RSI={rsi_v:.0f} OB zone" if en else f"RSI={rsi_v:.0f}超买区")
         elif rsi_v >= 55:
             score += 10
-            details.append(f"RSI={rsi_v:.0f}偏强")
+            details.append(f"RSI={rsi_v:.0f} bullish" if en else f"RSI={rsi_v:.0f}偏强")
         elif rsi_v <= 25:
             score += 20
-            details.append(f"RSI={rsi_v:.0f}严重超卖")
+            details.append(f"RSI={rsi_v:.0f} extreme OS" if en else f"RSI={rsi_v:.0f}严重超卖")
         elif rsi_v <= 35:
             score += 10
-            details.append(f"RSI={rsi_v:.0f}超卖区")
+            details.append(f"RSI={rsi_v:.0f} OS zone" if en else f"RSI={rsi_v:.0f}超卖区")
         elif rsi_v <= 45:
             score -= 10
-            details.append(f"RSI={rsi_v:.0f}偏弱")
+            details.append(f"RSI={rsi_v:.0f} bearish" if en else f"RSI={rsi_v:.0f}偏弱")
 
         # 背离检测
         div = detect_divergence(closes, rsi_vals, 20)
         if div == "bullish_divergence":
             score += 15
-            details.append("RSI底背离")
+            details.append("RSI bull div" if en else "RSI底背离")
         elif div == "bearish_divergence":
             score -= 15
-            details.append("RSI顶背离")
+            details.append("RSI bear div" if en else "RSI顶背离")
 
     # ── 4. MACD (权重 15%) ──────────────────────────────────
-    macd_line, sig_line, hist = macd(closes, 12, 26, 9)
-    macd_v = last_valid(macd_line)
-    hist_v = last_valid(hist)
+    if len(closes) >= 26:
+        macd_line, sig_line, hist = macd(closes, 12, 26, 9)
+        macd_v = last_valid(macd_line)
+        hist_v = last_valid(hist)
 
-    if hist_v is not None and macd_v is not None:
-        if hist_v > 0 and macd_v > 0:
-            score += 15
-            details.append("MACD金叉+零轴上方")
-        elif hist_v > 0:
-            score += 8
-            details.append("MACD柱正值")
-        elif hist_v < 0 and macd_v < 0:
-            score -= 15
-            details.append("MACD死叉+零轴下方")
-        elif hist_v < 0:
-            score -= 8
-            details.append("MACD柱负值")
+        if hist_v is not None and macd_v is not None:
+            if hist_v > 0 and macd_v > 0:
+                score += 15
+                details.append("MACD golden+above zero" if en else "MACD金叉+零轴上方")
+            elif hist_v > 0:
+                score += 8
+                details.append("MACD histogram +" if en else "MACD柱正值")
+            elif hist_v < 0 and macd_v < 0:
+                score -= 15
+                details.append("MACD death+below zero" if en else "MACD死叉+零轴下方")
+            elif hist_v < 0:
+                score -= 8
+                details.append("MACD histogram -" if en else "MACD柱负值")
 
-        # MACD 背离
-        macd_div = detect_divergence(closes, macd_line, 20)
-        if macd_div == "bullish_divergence":
-            score += 10
-            details.append("MACD底背离")
-        elif macd_div == "bearish_divergence":
-            score -= 10
-            details.append("MACD顶背离")
+            # MACD 背离
+            macd_div = detect_divergence(closes, macd_line, 20)
+            if macd_div == "bullish_divergence":
+                score += 10
+                details.append("MACD bull div" if en else "MACD底背离")
+            elif macd_div == "bearish_divergence":
+                score -= 10
+                details.append("MACD bear div" if en else "MACD顶背离")
 
     # ── 5. 布林带位置 (权重 10%) ─────────────────────────────
     bb_up, bb_mid, bb_low = bollinger_bands(closes, 20, 2.0)
@@ -272,21 +356,21 @@ def _technical_source(ohlcv: dict, weight: float) -> Optional[SignalSource]:
             bb_pos = (price - bb_l) / bb_range * 100
             if bb_pos >= 90:
                 score -= 10
-                details.append(f"BB上轨({bb_pos:.0f}%)")
+                details.append(f"BB upper({bb_pos:.0f}%)" if en else f"BB上轨({bb_pos:.0f}%)")
             elif bb_pos <= 10:
                 score += 10
-                details.append(f"BB下轨({bb_pos:.0f}%)")
+                details.append(f"BB lower({bb_pos:.0f}%)" if en else f"BB下轨({bb_pos:.0f}%)")
             elif 40 <= bb_pos <= 60:
-                details.append(f"BB中部({bb_pos:.0f}%)")
+                details.append(f"BB mid({bb_pos:.0f}%)" if en else f"BB中部({bb_pos:.0f}%)")
 
     # ── 6. Supertrend (权重 10%) ─────────────────────────────
     st_line, st_dir = supertrend(highs, lows, closes, 10, 3.0)
     if st_dir[-1] == 1:
         score += 10
-        details.append("Supertrend多头")
+        details.append("Supertrend bull" if en else "Supertrend多头")
     elif st_dir[-1] == -1:
         score -= 10
-        details.append("Supertrend空头")
+        details.append("Supertrend bear" if en else "Supertrend空头")
 
     # ── 7. OBV 量价确认 (权重 5%) ───────────────────────────
     if volumes and len(volumes) >= len(closes):
@@ -310,10 +394,10 @@ def _technical_source(ohlcv: dict, weight: float) -> Optional[SignalSource]:
 
             if obv_up and price_up:
                 score += 5
-                details.append("量价齐升")
+                details.append("Vol-price bullish" if en else "量价齐升")
             elif not obv_up and price_up:
                 score -= 5
-                details.append("量价背离")
+                details.append("Vol-price divergence" if en else "量价背离")
 
     # 限幅
     score = max(-100, min(100, score))
@@ -324,7 +408,7 @@ def _technical_source(ohlcv: dict, weight: float) -> Optional[SignalSource]:
         SignalDirection.NEUTRAL
     )
 
-    detail_str = ", ".join(details) if details else "技术指标信号不明确"
+    detail_str = ", ".join(details) if details else ("No clear signal" if en else "技术指标信号不明确")
 
     return SignalSource(
         name="technical",
@@ -335,10 +419,18 @@ def _technical_source(ohlcv: dict, weight: float) -> Optional[SignalSource]:
     )
 
 
-def fuse_signals(coin: str, ohlcv: dict, raw_data: dict) -> Optional[SignalCard]:
+def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, lang: str = "zh") -> Optional[SignalCard]:
     """
-    多维信号融合，生成交易信号卡（数学推导 + 自适应权重版）
+    多维信号融合，生成交易信号卡
+
+    Args:
+        relaxed: True=降低门槛，始终返回卡（C级兜底），用于 Chat 场景
     """
+    raw_data = raw_data or {}
+    realtime_price = _extract_realtime_price(raw_data)
+    ohlcv = _apply_realtime_price(ohlcv, realtime_price)
+    entry_ohlcv = _apply_realtime_price(raw_data.get("entry_ohlcv") or {}, realtime_price)
+
     # ── 获取自适应引擎 ──────────────────────────────────────────
     engine = get_strategy_engine()
 
@@ -347,8 +439,8 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict) -> Optional[SignalCard]
     math_result = None
     regime = "quiet"
 
-    if len(closes) >= 60:
-        math_result = run_math_derivation(closes, direction="long")
+    if len(closes) >= 40:
+        math_result = run_math_derivation(closes, direction="long", lang=lang)
         if math_result and math_result.regime:
             regime = math_result.regime.regime
 
@@ -359,20 +451,22 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict) -> Optional[SignalCard]
     # ── 收集信号源 ──────────────────────────────────────────────
     sources: List[SignalSource] = []
 
-    bigorder_src = _bigorder_source(coin, adaptive_weights.get("bigorder_anomaly", 0.35))
+    # 大单信号：优先用 Alpha 扫描传入的12h聚合，否则读实时快照
+    bigorder_src = raw_data.get("bigorder_12h") or _bigorder_source(coin, adaptive_weights.get("bigorder_anomaly", 0.35), lang)
     if bigorder_src:
         sources.append(bigorder_src)
 
-    quant_src = _quantitative_source(coin, adaptive_weights.get("quantitative", 0.35))
+    quant_src = _quantitative_source(coin, adaptive_weights.get("quantitative", 0.35), lang)
     if quant_src:
         sources.append(quant_src)
 
-    tech_src = _technical_source(ohlcv, adaptive_weights.get("technical", 0.30))
+    tech_src = _technical_source(ohlcv, adaptive_weights.get("technical", 0.30), lang)
     if tech_src:
         sources.append(tech_src)
 
     if len(sources) < 2:
-        return None
+        if not relaxed:
+            return None
 
     # ── 融合计算 ──────────────────────────────────────────────
     direction_score = sum(
@@ -394,24 +488,18 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict) -> Optional[SignalCard]
         direction = SignalDirection.LONG
     elif weighted_direction < -15:
         direction = SignalDirection.SHORT
+    elif relaxed:
+        # relaxed 模式：方向不明确时取最大权重方向
+        direction = SignalDirection.LONG if weighted_direction >= 0 else SignalDirection.SHORT
+        confidence = min(confidence, 30)
     else:
         return None
 
     # 方向一致性
     consistent_count = sum(1 for s in sources if s.direction == direction)
     if consistent_count < 2:
-        return None
-
-    # ── 数学推导二次确认 ──────────────────────────────────────
-    if math_result and len(closes) >= 60:
-        # 重新计算方向相关的数学推导
-        dir_str = "long" if direction == SignalDirection.LONG else "short"
-        math_result = run_math_derivation(closes, direction=dir_str)
-
-        # 如果数学推导强烈反对，提升门槛（仅极高负分+低置信度才否决）
-        if math_result.math_score_adjustment < -50:
-            if confidence < 45:
-                return None
+        if not relaxed:
+            return None
 
     # ── 信号等级 ──────────────────────────────────────────────
     math_confirms = math_result and math_result.math_score_adjustment > 15
@@ -421,17 +509,21 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict) -> Optional[SignalCard]
         grade = SignalGrade.A
     elif consistent_count >= 2 and confidence >= 50:
         grade = SignalGrade.A
-    else:
+    elif consistent_count >= 2 and confidence >= 35:
         grade = SignalGrade.B
+    else:
+        grade = SignalGrade.C if relaxed else SignalGrade.B
 
     # ── 价格计算 ──────────────────────────────────────────────
-    price = ohlcv["closes"][-1] if ohlcv.get("closes") else 0
+    price = realtime_price or (ohlcv["closes"][-1] if ohlcv.get("closes") else 0)
     if price <= 0:
         return None
 
-    # ATR
+    # ATR：小时线可用时优先用于短线进出场，否则回退到主周期（日线）
     from app.skills.analysis_skills.indicators import atr as calc_atr
-    atr_vals = calc_atr(ohlcv.get("highs", closes), ohlcv.get("lows", closes), closes, 14)
+    atr_ohlcv = entry_ohlcv if entry_ohlcv and len(entry_ohlcv.get("closes", [])) >= 15 else ohlcv
+    atr_closes = atr_ohlcv.get("closes", closes)
+    atr_vals = calc_atr(atr_ohlcv.get("highs", atr_closes), atr_ohlcv.get("lows", atr_closes), atr_closes, 14)
 
     def last_valid(lst):
         for v in reversed(lst):
@@ -440,6 +532,8 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict) -> Optional[SignalCard]
         return None
 
     atr_v = last_valid(atr_vals) or (price * 0.02)
+    # 极小价币种 ATR 可能因浮点精度归零，设最小值为价格的 1.5%
+    atr_v = max(atr_v, price * 0.015)
 
     # 使用自适应策略参数
     sl_mult = regime_params.get("stop_loss_atr_mult", 1.5)
@@ -463,10 +557,20 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict) -> Optional[SignalCard]
     risk_reward = round(reward / risk, 1) if risk > 0 else 0
 
     if risk_reward < 1.0:
-        return None
+        if not relaxed:
+            return None
+        # relaxed: 调整 TP 使盈亏比至少 1.5
+        tp_mult_actual = 1.5 * sl_mult
+        if direction == SignalDirection.LONG:
+            take_profit = price + tp_mult_actual * atr_v
+        else:
+            take_profit = price - tp_mult_actual * atr_v
+        reward = abs(take_profit - price)
+        risk_reward = round(reward / risk, 1) if risk > 0 else 1.5
+        grade = SignalGrade.C
 
     # ── Kelly 仓位 ────────────────────────────────────────────
-    base_position = {"S": 8.0, "A": 5.0, "B": 3.0}.get(grade, 3.0)
+    base_position = {"S": 8.0, "A": 5.0, "B": 3.0, "C": 2.0}.get(grade, 3.0)
     kelly_adj = math_result.kelly_fraction if math_result else 0
     position_pct = base_position
     if kelly_adj > 0:
@@ -503,6 +607,15 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict) -> Optional[SignalCard]
         evolution_count=len(engine.state.evolution_history),
     )
 
+    # ── 自适应价格精度 ────────────────────────────────────────
+    def _prec(p):
+        if p >= 1000: return 1
+        elif p >= 1: return 4
+        elif p >= 0.001: return 6
+        elif p >= 0.00001: return 10
+        else: return 12
+    prec = _prec(price)
+
     # ── 生成信号卡 ────────────────────────────────────────────
     engine.increment_generated()
 
@@ -511,49 +624,76 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict) -> Optional[SignalCard]
         direction=direction,
         grade=grade,
         current_price=price,
-        entry_low=round(entry_low, 4),
-        entry_high=round(entry_high, 4),
-        stop_loss=round(stop_loss, 4),
-        take_profit=round(take_profit, 4),
+        entry_low=round(entry_low, prec),
+        entry_high=round(entry_high, prec),
+        stop_loss=round(stop_loss, prec),
+        take_profit=round(take_profit, prec),
         risk_reward_ratio=risk_reward,
         confidence=round(confidence, 1),
         sources=sources,
         position_pct=round(position_pct, 1),
-        invalidation_price=round(invalidation, 4),
+        invalidation_price=round(invalidation, prec),
         math=math_summary,
         strategy=strategy_meta,
         status=SignalStatus.PENDING,
     )
 
 
-def generate_card_for_chat(coin: str, tier: str = "pro") -> Optional[dict]:
+def generate_card_for_chat(coin: str, tier: str = "pro", always: bool = False, lang: str = "zh") -> Optional[dict]:
     """
     供 Agent 对话流调用的信号卡生成器
 
+    Args:
+        always: True=始终返回卡（C级兜底），False=可能返回 None
+
     返回 signal_card 事件数据（前端直接渲染为卡片）或 None
     """
-    from app.services.data_service import get_kline_data as _get_kline
+    from app.services.data_service import get_header_data, get_multi_timeframe_klines, get_trade_volume
     from app.skills.analysis_skills.quantitative import _parse_kline
     from app.signals.backtest import backtest_signal
 
     try:
-        kline_data = _get_kline(coin, 2)
-        ohlcv = _parse_kline(kline_data)
+        header = get_header_data(coin)
+        timeframes = get_multi_timeframe_klines(coin, (1, 2, 3, 4))
+        volume_data = get_trade_volume(coin)
+
+        daily_data = timeframes.get("daily_60d") or timeframes.get("daily_30d") or {}
+        hourly_data = timeframes.get("hourly_24h") or {}
+
+        ohlcv = _parse_kline(daily_data, volume_data)
         if not ohlcv:
             return None
 
-        signal_card = fuse_signals(coin, ohlcv, {})
+        entry_ohlcv = _parse_kline(hourly_data, min_bars=15)
+        raw_data = {
+            "header": header,
+            "current_price": _extract_realtime_price({"header": header}),
+            "timeframes": timeframes,
+            "entry_ohlcv": entry_ohlcv,
+        }
+
+        signal_card = fuse_signals(coin, ohlcv, raw_data, relaxed=always, lang=lang)
         if not signal_card:
             return None
 
-        bt = backtest_signal(coin, signal_card.direction, signal_card.grade)
+        # C 级卡不做回测（不参与结算统计）
+        bt = None
+        if signal_card.grade != SignalGrade.C:
+            bt = backtest_signal(coin, signal_card.direction, signal_card.grade)
         if bt:
             signal_card.win_rate = bt["win_rate"]
             signal_card.sample_count = bt["sample_count"]
             signal_card.avg_profit_pct = bt["avg_profit_pct"]
 
         event_data = _build_card_event(signal_card, bt, tier)
-        event_data["display"] = signal_card.format_card()
+        event_data["price_source"] = "header.currentPrice"
+        event_data["kline_periods"] = {
+            "entry": "hourly_24h" if entry_ohlcv else "daily_30d",
+            "signal": "daily_30d",
+            "weekly": "weekly_1y",
+            "monthly": "monthly_all",
+        }
+        event_data["display"] = signal_card.format_card(lang)
         return event_data
 
     except Exception:

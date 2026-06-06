@@ -8,9 +8,23 @@
   "factor_performances": {},
   "regime": "quiet",
   "regime_updated_at": 0.0,
-  "total_signals_generated": 21,
+  "total_signals_generated": 5550,
   "total_signals_settled": 0,
   "global_win_rate": 0.5,
   "evolution_history": [],
-  "last_evolution_at": 0.0
+  "last_evolution_at": 0.0,
+  "coin_winrates": {
+    "BTC": {
+      "wins": 2,
+      "total": 3,
+      "total_pnl": 6.9,
+      "last_updated": 1780409828.896311
+    },
+    "ETH": {
+      "wins": 3,
+      "total": 4,
+      "total_pnl": 4.1,
+      "last_updated": 1780409828.899018
+    }
+  }
 }

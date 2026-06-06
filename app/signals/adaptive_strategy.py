@@ -143,6 +143,8 @@ class StrategyState:
     global_win_rate: float = 0.5
     evolution_history: list = field(default_factory=list)  # 演化日志
     last_evolution_at: float = 0.0
+    # 按币种累加的胜率 {coin: {win_rate, sample_count, wins, total_pnl, last_updated}}
+    coin_winrates: Dict[str, dict] = field(default_factory=dict)
 
     def get_factor_perf(self, name: str) -> FactorPerformance:
         if name not in self.factor_performances:
@@ -475,6 +477,57 @@ class AdaptiveStrategyEngine:
         """信号生成计数+1"""
         self.state.total_signals_generated += 1
         self._save_state()
+
+    # ── 按币种胜率累加 ────────────────────────────────────────────────
+
+    def update_coin_winrate(self, coin: str, pnl_pct: float, status: str):
+        """
+        结算后更新币种累加胜率（写入本地 strategy_state.json）
+
+        Args:
+            coin: 币种
+            pnl_pct: 盈亏百分比
+            status: hit_tp / hit_sl / expired
+        """
+        coin = coin.upper()
+        ts = time.time()
+
+        wr = self.state.coin_winrates.get(coin, {
+            "wins": 0, "total": 0, "total_pnl": 0.0, "last_updated": 0.0,
+        })
+        wr["total"] = wr.get("total", 0) + 1
+        wr["total_pnl"] = wr.get("total_pnl", 0.0) + pnl_pct
+        wr["last_updated"] = ts
+
+        # hit_tp 算赢，hit_sl 算输，expired 按 pnl 正负判断
+        if status == "hit_tp" or (status == "expired" and pnl_pct > 0):
+            wr["wins"] = wr.get("wins", 0) + 1
+
+        self.state.coin_winrates[coin] = wr
+        self._save_state()
+
+    def get_coin_winrate(self, coin: str, grade: str = None) -> Optional[Dict[str, Any]]:
+        """
+        读取本地币种累加胜率（不查数据库，秒返回）
+
+        Returns:
+            {"win_rate": 65.0, "sample_count": 20, "avg_profit_pct": 3.2}
+            None if no data
+        """
+        coin = coin.upper()
+        wr = self.state.coin_winrates.get(coin)
+        if not wr or wr.get("total", 0) < 1:
+            return None
+
+        total = wr["total"]
+        wins = wr.get("wins", 0)
+        total_pnl = wr.get("total_pnl", 0.0)
+
+        return {
+            "win_rate": round(wins / total * 100, 1),
+            "sample_count": total,
+            "avg_profit_pct": round(total_pnl / total, 2),
+        }
 
 
 # ── 全局单例 ────────────────────────────────────────────────────────────────

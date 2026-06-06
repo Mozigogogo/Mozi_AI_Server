@@ -13,18 +13,19 @@ from app.signals.backtest import backtest_signal, walk_forward_validation
 from app.signals.adaptive_strategy import get_strategy_engine
 from app.signals.settlement import save_signal_card
 from app.signals.review import weekly_review, get_review_summary
-from app.services.data_service import get_kline_data, get_derivatives_agg, get_trade_volume
+from app.signals.alpha_scanner import scan_all_coins, get_scan_coins
+from app.services.data_service import (
+    get_header_data,
+    get_kline_data,
+    get_kline_data_for_period,
+    get_derivatives_agg,
+    get_trade_volume,
+    get_discovery_coins,
+)
 from app.skills.analysis_skills.quantitative import _parse_kline
 from config.settings import settings
 
 router = APIRouter()
-
-# 推送扫描用的主流币列表
-SCAN_COINS = [
-    "BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "AVAX",
-    "DOT", "LINK", "UNI", "ATOM", "LTC", "NEAR", "APT", "ARB",
-    "OP", "MATIC", "FIL", "TON",
-]
 
 # 已推送的信号去重缓存 {coin: (direction, grade, timestamp)}
 _pushed_signals: dict = {}
@@ -38,16 +39,19 @@ async def generate_signal(
     """为指定币种生成交易信号卡（含数学推导 + 自适应策略）"""
     coin = coin.upper()
 
-    # 获取 K 线数据 + 成交量
+    # 获取实时价格 + K 线数据 + 成交量
     try:
-        kline_data, volume_data = await asyncio.gather(
-            asyncio.get_running_loop().run_in_executor(None, get_kline_data, coin, kline_type),
+        header_data, kline_data, hourly_data, volume_data = await asyncio.gather(
+            asyncio.get_running_loop().run_in_executor(None, get_header_data, coin),
+            asyncio.get_running_loop().run_in_executor(None, get_kline_data_for_period, coin, kline_type),
+            asyncio.get_running_loop().run_in_executor(None, get_kline_data_for_period, coin, 1),
             asyncio.get_running_loop().run_in_executor(None, get_trade_volume, coin),
         )
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"获取K线数据失败: {str(e)}"})
 
-    ohlcv = _parse_kline(kline_data, volume_data)
+    min_bars = 15 if kline_type == 1 else 25
+    ohlcv = _parse_kline(kline_data, volume_data, min_bars=min_bars)
     if not ohlcv:
         return JSONResponse(status_code=404, content={"error": f"{coin} K线数据不足（至少需要55根）"})
 
@@ -61,6 +65,15 @@ async def generate_signal(
             raw_data["derivatives"] = derivatives
     except Exception:
         pass
+
+    entry_ohlcv = _parse_kline(hourly_data, min_bars=15)
+    raw_data["header"] = header_data
+    raw_data["current_price"] = header_data.get("currentPrice") if isinstance(header_data, dict) else None
+    raw_data["entry_ohlcv"] = entry_ohlcv
+    raw_data["kline_periods"] = {
+        "signal": kline_data.get("periodName") if isinstance(kline_data, dict) else None,
+        "entry": "hourly_24h" if entry_ohlcv else kline_data.get("periodName") if isinstance(kline_data, dict) else None,
+    }
 
     # 融合生成信号卡
     signal_card = await asyncio.get_running_loop().run_in_executor(
@@ -93,47 +106,90 @@ async def generate_signal(
         "signal": signal_card.model_dump(),
         "display": signal_card.format_card(),
         "backtest": bt_result,
+        "price_source": "header.currentPrice",
+        "kline_periods": raw_data["kline_periods"],
     }
 
 
 @router.get("/scan")
 async def scan_top_coins(
-    limit: int = Query(10, le=50, description="扫描币种数量"),
+    limit: int = Query(10, le=50, description="返回信号数量上限"),
+    refresh: bool = Query(False, description="强制刷新（忽略缓存）"),
 ):
-    """扫描热门币种，返回所有符合条件的信号卡"""
-    major_coins = [
-        "BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "AVAX",
-        "DOT", "LINK", "UNI", "ATOM", "LTC", "NEAR", "APT", "ARB",
-        "OP", "MATIC", "FIL", "TON",
-    ][:limit]
+    """
+    扫描全市场信号卡（缓存优先）
 
-    results = []
+    - 缓存 < 30min → 直接返回
+    - 缓存 > 30min → 返回旧数据，后台异步刷新
+    - refresh=True → 强制重新扫描
+    """
+    from app.signals.settlement import get_latest_scan, save_scan_batch
 
-    for coin in major_coins:
-        try:
-            kline_data = get_kline_data(coin)
-            ohlcv = _parse_kline(kline_data)
-            if not ohlcv:
-                continue
+    if not refresh:
+        cached = await asyncio.get_event_loop().run_in_executor(None, get_latest_scan)
+        if cached and not cached["is_stale"]:
+            signals = cached["signals"][:limit]
+            displays = cached["displays"][:limit]
+            return {
+                "source": "cache",
+                "total_coins_scanned": cached["total_coins"],
+                "count": len(signals),
+                "signals": signals,
+                "display": displays,
+                "scan_time": cached["scan_time"],
+                "cached_at": cached["cached_at"],
+            }
 
-            signal_card = fuse_signals(coin, ohlcv, {})
-            if signal_card:
-                bt = backtest_signal(coin, signal_card.direction, signal_card.grade)
-                if bt:
-                    signal_card.win_rate = bt["win_rate"]
-                    signal_card.sample_count = bt["sample_count"]
-                    signal_card.avg_profit_pct = bt["avg_profit_pct"]
-                results.append(signal_card)
+        # 缓存过期，先返回旧数据，后台触发刷新
+        if cached:
+            signals = cached["signals"][:limit]
+            displays = cached["displays"][:limit]
 
-        except Exception:
-            continue
+            async def _bg_refresh():
+                t0 = time.time()
+                results = await scan_all_coins(concurrency=10)
+                save_scan_batch(results, time.time() - t0)
 
-    results.sort(key=lambda s: s.confidence, reverse=True)
+            asyncio.create_task(_bg_refresh())
+
+            return {
+                "source": "cache_stale",
+                "total_coins_scanned": cached["total_coins"],
+                "count": len(signals),
+                "signals": signals,
+                "display": displays,
+                "scan_time": cached["scan_time"],
+                "cached_at": cached["cached_at"],
+                "note": "缓存已过期，后台正在刷新",
+            }
+
+    # 无缓存或强制刷新：现场扫描
+    t0 = time.time()
+    results = await scan_all_coins(concurrency=10)
+    elapsed = time.time() - t0
+
+    # 存库
+    await asyncio.get_event_loop().run_in_executor(None, save_scan_batch, results, elapsed)
+
+    signals = [r for r in results if r.signal_card is not None][:limit]
 
     return {
-        "count": len(results),
-        "signals": [s.model_dump() for s in results],
-        "display": [s.format_card() for s in results],
+        "source": "fresh",
+        "total_coins_scanned": len(results),
+        "count": len(signals),
+        "signals": [s.signal_card.model_dump() for s in signals],
+        "display": [s.signal_card.format_card() for s in signals],
+        "scan_time": round(elapsed, 1),
+    }
+
+
+@router.get("/scan/coins")
+async def list_scan_coins():
+    """查看当前动态获取的扫描币种列表"""
+    coins = get_scan_coins()
+    return {
+        "count": len(coins),
+        "coins": coins,
     }
 
 
@@ -255,20 +311,30 @@ async def signal_card_stream(
             await asyncio.sleep(interval)
 
             try:
-                for coin in SCAN_COINS:
+                scan_coins = get_scan_coins()
+                for coin in scan_coins:
                     if await request.is_disconnected():
                         break
 
                     try:
-                        kline_data = await asyncio.get_running_loop().run_in_executor(
-                            None, get_kline_data, coin, 2
+                        header_data, kline_data, hourly_data = await asyncio.gather(
+                            asyncio.get_running_loop().run_in_executor(None, get_header_data, coin),
+                            asyncio.get_running_loop().run_in_executor(None, get_kline_data_for_period, coin, 2),
+                            asyncio.get_running_loop().run_in_executor(None, get_kline_data_for_period, coin, 1),
                         )
                         ohlcv = _parse_kline(kline_data)
                         if not ohlcv:
                             continue
 
+                        entry_ohlcv = _parse_kline(hourly_data, min_bars=15)
+                        raw_data = {
+                            "header": header_data,
+                            "current_price": header_data.get("currentPrice") if isinstance(header_data, dict) else None,
+                            "entry_ohlcv": entry_ohlcv,
+                        }
+
                         signal_card = await asyncio.get_running_loop().run_in_executor(
-                            None, fuse_signals, coin, ohlcv, {}
+                            None, fuse_signals, coin, ohlcv, raw_data
                         )
                         if not signal_card:
                             continue

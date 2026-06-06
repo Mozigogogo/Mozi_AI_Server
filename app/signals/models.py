@@ -15,6 +15,7 @@ class SignalGrade(str, Enum):
     S = "S"  # 多维共振 + 数学推导确认
     A = "A"  # 单维强信号 + 数学推导支持
     B = "B"  # 中等信号
+    C = "C"  # 低置信度信号，仅供参考
 
 
 class SignalStatus(str, Enum):
@@ -117,71 +118,103 @@ class SignalCard(BaseModel):
     settled_price: Optional[float] = None
     pnl_pct: Optional[float] = None
 
-    def format_card(self) -> str:
-        """格式化输出信号卡文本"""
-        direction_label = {"long": "做多", "short": "做空", "neutral": "观望"}
-        grade_emoji = {"S": "🔴", "A": "🟡", "B": "⚪"}
+    def format_card(self, lang: str = "zh") -> str:
+        """格式化输出信号卡文本（中英双语）"""
+        en = lang == "en"
+
+        direction_label = {
+            "long": "Long" if en else "做多",
+            "short": "Short" if en else "做空",
+            "neutral": "Neutral" if en else "观望",
+        }
+        grade_emoji = {"S": "🔴", "A": "🟡", "B": "⚪", "C": "🔸"}
+        source_names = {
+            "bigorder_anomaly": "BigOrder" if en else "大单异动",
+            "quantitative": "Quant6F" if en else "量化六因子",
+            "technical": "Technical" if en else "技术分析",
+        }
+
+        def _fp(v):
+            if v >= 1000:
+                return f"${v:,.0f}"
+            elif v >= 1:
+                return f"${v:,.2f}"
+            elif v >= 0.01:
+                return f"${v:.4f}"
+            elif v >= 0.0001:
+                s = f"{v:.8f}".rstrip('0').rstrip('.')
+                return f"${s}"
+            else:
+                s = f"{v:.12f}".rstrip('0').rstrip('.')
+                return f"${s}"
 
         lines = [
-            f"📊 {self.coin} 交易信号卡 | {grade_emoji.get(self.grade, '⚪')}{self.grade}级 | 置信度 {self.confidence:.0f}%",
-            f"├─ 方向：{direction_label.get(self.direction, self.direction)}",
-            f"├─ 当前价格：${self.current_price:,.2f}",
-            f"├─ 进场区间：${self.entry_low:,.2f} - ${self.entry_high:,.2f}",
-            f"├─ 止损：${self.stop_loss:,.2f} ({(self.stop_loss / self.current_price - 1) * 100:+.1f}%)",
-            f"├─ 止盈：${self.take_profit:,.2f} ({(self.take_profit / self.current_price - 1) * 100:+.1f}%)",
-            f"├─ 盈亏比：{self.risk_reward_ratio:.1f} : 1",
-            f"├─ 仓位建议：总资金 {self.position_pct:.0f}%",
+            f"📊 {self.coin} {'Signal Card' if en else '交易信号卡'} | {grade_emoji.get(self.grade, '⚪')}{self.grade}{'-Grade' if en else '级'} | {'Conf' if en else '置信度'} {self.confidence:.0f}%",
+        ]
+        if self.grade == SignalGrade.C:
+            lines.append(f"│  ⚠️ {'Weak signal, for reference only' if en else '信号偏弱，仅供参考'}")
+        lines += [
+            f"├─ {'Direction' if en else '方向'}：{direction_label.get(self.direction, self.direction)}",
+            f"├─ {'Price' if en else '当前价格'}：{_fp(self.current_price)}",
+            f"├─ {'Entry Zone' if en else '进场区间'}：{_fp(self.entry_low)} - {_fp(self.entry_high)}",
+            f"├─ {'Stop Loss' if en else '止损'}：{_fp(self.stop_loss)} ({(self.stop_loss / self.current_price - 1) * 100:+.1f}%)",
+            f"├─ {'Take Profit' if en else '止盈'}：{_fp(self.take_profit)} ({(self.take_profit / self.current_price - 1) * 100:+.1f}%)",
+            f"├─ {'R:R' if en else '盈亏比'}：{self.risk_reward_ratio:.1f} : 1",
+            f"├─ {'Position' if en else '建议仓位'}：{'Capital ' if en else '总资金 '}{self.position_pct:.0f}%（{'Risk-adjusted' if en else '经风险调整后的实际仓位'}）",
         ]
 
-        # 信号源依据
-        source_names = {
-            "bigorder_anomaly": "大单异动",
-            "quantitative": "量化六因子",
-            "technical": "技术分析",
-        }
+        if self.math and self.math.kelly_fraction > 0:
+            lines.append(
+                f"├─ Kelly {'Pos' if en else '仓位'}：{self.math.kelly_fraction:.1%}（"
+                f"{'Theoretical optimal, use half to limit drawdown' if en else '理论最优仓位，建议仓位取其半值防回撤'}）"
+            )
+
         sources_str = " + ".join(
             f"{source_names.get(s.name, s.name)}({s.score:.0f})"
             for s in self.sources
         )
-        lines.append(f"├─ 依据：{sources_str}")
+        lines.append(f"├─ {'Sources' if en else '依据'}：{sources_str}")
 
-        # 历史胜率
-        if self.win_rate is not None:
-            lines.append(f"├─ 历史胜率：{self.win_rate:.0f}%（近30天 {self.sample_count} 次）")
-        if self.avg_profit_pct is not None:
-            lines.append(f"├─ 平均盈利：{self.avg_profit_pct:+.1f}%")
-
-        # 数学推导摘要
         if self.math:
             math_lines = []
             if self.math.hurst is not None:
                 math_lines.append(f"Hurst={self.math.hurst:.2f}")
             if self.math.monte_carlo_bull_prob is not None:
                 if self.direction == SignalDirection.LONG:
-                    math_lines.append(f"MC看涨{self.math.monte_carlo_bull_prob:.0%}")
+                    math_lines.append(f"MC {'Bull' if en else '看涨'}{self.math.monte_carlo_bull_prob:.0%}")
                 else:
-                    math_lines.append(f"MC看跌{self.math.monte_carlo_bear_prob:.0%}")
+                    math_lines.append(f"MC {'Bear' if en else '看跌'}{self.math.monte_carlo_bear_prob:.0%}")
             if self.math.vol_regime:
-                math_lines.append(f"波动率={self.math.vol_regime}")
+                math_lines.append(f"{'Vol' if en else '波动率'}={self.math.vol_regime}")
             if self.math.market_regime:
-                math_lines.append(f"市场={self.math.market_regime}")
+                math_lines.append(f"{'Mkt' if en else '市场'}={self.math.market_regime}")
             if self.math.kelly_fraction > 0:
                 math_lines.append(f"Kelly={self.math.kelly_fraction:.1%}")
             if math_lines:
-                lines.append(f"├─ 数学推导：{' | '.join(math_lines)}")
+                lines.append(f"├─ {'Math' if en else '数学推导'}：{' | '.join(math_lines)}")
 
             if self.math.key_findings:
                 for finding in self.math.key_findings[:3]:
                     lines.append(f"│  · {finding}")
 
-        # 策略元数据
-        if self.strategy:
-            lines.append(f"├─ 策略v{self.strategy.strategy_version} | {self.strategy.regime} | 全局胜率{self.strategy.global_win_rate:.0%}")
+        wr = f"{self.win_rate:.0f}%" if self.win_rate is not None else "--"
+        sc = f"{self.sample_count}" if self.sample_count is not None else "--"
+        ap = f"{self.avg_profit_pct:+.1f}%" if self.avg_profit_pct is not None else "--"
+        lines.append(f"├─ {'Win Rate' if en else '历史胜率'}：{wr}（{'30d' if en else '近30天'} {sc} {'trades' if en else '次'}）")
+        lines.append(f"├─ {'Avg PnL' if en else '平均盈利'}：{ap}")
 
-        # 失效条件
+        if self.strategy:
+            lines.append(
+                f"├─ {'Strat' if en else '策略'}v{self.strategy.strategy_version} | {self.strategy.regime} | "
+                f"{'Global WR' if en else '全局胜率'}{self.strategy.global_win_rate * 100:.0f}%"
+            )
+
         if self.invalidation_price:
-            lines.append(f"└─ 失效条件：跌破 ${self.invalidation_price:,.2f}")
+            action = "breaks above" if self.direction == SignalDirection.SHORT else "breaks below"
+            if not en:
+                action = "突破" if self.direction == SignalDirection.SHORT else "跌破"
+            lines.append(f"└─ {'Invalid' if en else '失效条件'}：{action} {_fp(self.invalidation_price)}")
         else:
-            lines.append(f"└─ 生成时间：{self.created_at}")
+            lines.append(f"└─ {'Generated' if en else '生成时间'}：{self.created_at}")
 
         return "\n".join(lines)

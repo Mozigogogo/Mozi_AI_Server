@@ -89,7 +89,8 @@ class Settings(BaseSettings):
     bigorder_deepseek_model: str = "deepseek-v4-flash"
 
     # ── Bigorder 引擎参数 ──
-    scan_interval: int = 30
+    scan_interval: int = 30  # BigOrder 大单侦测扫描间隔（秒）
+    signal_scan_interval: int = 1800  # 信号卡全市场扫描间隔（秒），30分钟
     history_window_count: int = 288
     score_threshold_strong: int = 70
     score_threshold_medium: int = 50

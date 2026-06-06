@@ -147,6 +147,14 @@ def fetch_json(url: str, timeout: int = None, max_retries: int = None) -> Any:
     raise last_exception if last_exception else DataFetchException(f"API请求失败: {url}")
 
 
+KLINE_TYPE_META = {
+    1: {"name": "hourly_24h", "label": "小时K线(24h)", "limit": 24},
+    2: {"name": "daily_60d", "label": "日线(60d)", "limit": 60},
+    3: {"name": "weekly_1y", "label": "周线(近1年)", "limit": 52},
+    4: {"name": "monthly_all", "label": "月线(全量)", "limit": None},
+}
+
+
 def get_kline_data(symbol: str, kline_type: int = 2) -> Dict[str, Any]:
     """获取K线数据，kline_type: 1=小时 2=天 3=周 4=月"""
     url = f"{settings.kline_api_base}/detail/kline?symbol={symbol}&type={kline_type}"
@@ -158,6 +166,46 @@ def get_kline_data(symbol: str, kline_type: int = 2) -> Dict[str, Any]:
             raise DataFetchException(f"API返回错误: {data.get('errorMsg', '未知错误')}")
     except Exception as e:
         raise DataFetchException(f"获取K线数据失败: {str(e)}")
+
+
+def trim_kline_data(kline_data: Dict[str, Any], kline_type: int) -> Dict[str, Any]:
+    """按业务周期裁剪K线：1=24h小时线，2=30d日线，3=近1年周线，4=月线全量。"""
+    if not kline_data or not isinstance(kline_data, dict):
+        return {}
+
+    meta = KLINE_TYPE_META.get(kline_type, KLINE_TYPE_META[2])
+    limit = meta.get("limit")
+    if not limit:
+        result = dict(kline_data)
+    else:
+        result = dict(kline_data)
+        for key in ("values", "categoryData", "xAxisData"):
+            value = result.get(key)
+            if isinstance(value, list):
+                result[key] = value[-limit:]
+
+    result["klineType"] = kline_type
+    result["periodName"] = meta["name"]
+    result["periodLabel"] = meta["label"]
+    return result
+
+
+def get_kline_data_for_period(symbol: str, kline_type: int = 2) -> Dict[str, Any]:
+    """获取并按业务周期裁剪后的K线数据。"""
+    return trim_kline_data(get_kline_data(symbol, kline_type), kline_type)
+
+
+def get_multi_timeframe_klines(symbol: str, types: tuple = (1, 2, 3, 4)) -> Dict[str, Any]:
+    """获取多周期K线，失败的周期返回空字典，避免单一周期拖垮信号卡。"""
+    result = {}
+    for kline_type in types:
+        meta = KLINE_TYPE_META.get(kline_type, {"name": f"type_{kline_type}"})
+        try:
+            result[meta["name"]] = get_kline_data_for_period(symbol, kline_type)
+        except Exception as e:
+            print(f"获取{meta['name']}失败({symbol}): {e}")
+            result[meta["name"]] = {}
+    return result
 
 
 def get_trade_volume(symbol: str) -> List[Dict[str, Any]]:
@@ -241,6 +289,46 @@ def validate_coin_exists(symbol: str) -> bool:
     except Exception:
         # 验证失败时默认为存在，避免误拒
         return True
+
+
+# 非交易币种黑名单（稳定币、法币、衍生品）
+_COIN_BLACKLIST = {"U", "EUR", "PAXG", "XAUT", "WBTC", "WBETH", "BTCB"}
+# 币种列表缓存（5分钟刷新一次）
+_coin_list_cache: List[str] = []
+_coin_list_expire: float = 0
+_coin_list_lock = threading.Lock()
+
+
+def get_discovery_coins() -> List[str]:
+    """从 discovery API 动态获取全市场币种列表（带5分钟缓存）"""
+    global _coin_list_cache, _coin_list_expire
+    with _coin_list_lock:
+        if _coin_list_cache and time.time() < _coin_list_expire:
+            return _coin_list_cache
+
+    try:
+        url = f"{settings.kline_api_base}/discovery/coin?pageNo=1&pageSize=200"
+        data = fetch_json(url, timeout=10, max_retries=2)
+        if data.get("code") != 0:
+            return _coin_list_cache or []
+
+        coins = []
+        for item in data.get("data", {}).get("list", []):
+            symbol = item.get("symbol", "")
+            # 过滤：url="null" 的是非币种，黑名单跳过
+            if not symbol:
+                continue
+            if symbol in _COIN_BLACKLIST:
+                continue
+            coins.append(symbol)
+
+        with _coin_list_lock:
+            _coin_list_cache = coins
+            _coin_list_expire = time.time() + 300  # 5分钟缓存
+        return coins
+    except Exception as e:
+        print(f"获取币种列表失败: {e}")
+        return _coin_list_cache or []
 
 
 def get_derivatives_agg(symbol: str) -> Dict[str, Any]:

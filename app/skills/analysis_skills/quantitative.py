@@ -71,7 +71,7 @@ class TradeSignal:
 # K 线解析
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _parse_kline(kline_data: dict, volume_data: list = None) -> Optional[dict]:
+def _parse_kline(kline_data: dict, volume_data: list = None, min_bars: int = 25) -> Optional[dict]:
     """
     从 get_kline_data 返回值中解析 OHLCV 列表
     支持两种格式:
@@ -83,7 +83,7 @@ def _parse_kline(kline_data: dict, volume_data: list = None) -> Optional[dict]:
         return None
     values = kline_data.get("values", [])
     dates  = kline_data.get("categoryData", [])
-    if not values or len(values) < 25:
+    if not values or len(values) < min_bars:
         return None
 
     # 构建日期→成交量的映射
@@ -119,9 +119,48 @@ def _parse_kline(kline_data: dict, volume_data: list = None) -> Optional[dict]:
         except (ValueError, TypeError):
             continue
 
-    if len(closes) < 25:
+    if len(closes) < min_bars:
         return None
     return dict(opens=opens, highs=highs, lows=lows, closes=closes, volumes=volumes)
+
+
+def _extract_realtime_price(raw_data: dict) -> Optional[float]:
+    """从 header 数据中提取统一实时价。"""
+    header = raw_data.get("get_header_data") or raw_data.get("header_data") or raw_data.get("header")
+    if not isinstance(header, dict):
+        return None
+
+    for key in ("currentPrice", "current_price", "price"):
+        value = header.get(key)
+        if value is None:
+            continue
+        try:
+            price = float(value)
+            if price > 0:
+                return price
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
+def _apply_realtime_price(ohlcv: dict, current_price: Optional[float]) -> dict:
+    """
+    用 header 实时价替换最后一根 close，保持展示价格和指标/价位计算一致。
+    high/low 同步扩展，避免实时价越过日线高低点后 ATR/结构计算失真。
+    """
+    if not ohlcv or not current_price or current_price <= 0:
+        return ohlcv
+
+    for key in ("opens", "highs", "lows", "closes"):
+        if key not in ohlcv or not ohlcv[key]:
+            return ohlcv
+
+    ohlcv["closes"][-1] = float(current_price)
+    ohlcv["highs"][-1] = max(float(ohlcv["highs"][-1]), float(current_price))
+    ohlcv["lows"][-1] = min(float(ohlcv["lows"][-1]), float(current_price))
+    ohlcv["realtime_price"] = float(current_price)
+    ohlcv["price_source"] = "header.currentPrice"
+    return ohlcv
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -557,17 +596,21 @@ def _build_trade_signal(
     st_now    = last_valid(st_line) or price
     atr_pct   = atr_v / price * 100
 
-    # 入场区间：VWAP ± 0.5ATR（回踩入场优先）
+    # 入场区间：优先用VWAP；若实时价已偏离VWAP过远，改用实时价锚定，避免区间失真。
+    anchor_price = vwap_now
+    if price > 0 and abs(vwap_now - price) / price > 0.03:
+        anchor_price = price
+
     if direction == "long":
-        entry_low    = max(vwap_now - 0.3 * atr_v, price * 0.99)
-        entry_high   = vwap_now + 0.3 * atr_v
+        entry_low    = max(anchor_price - 0.3 * atr_v, price * 0.99)
+        entry_high   = min(anchor_price + 0.3 * atr_v, price * 1.02)
         stop_loss    = price - 1.5 * atr_v
         take_profit_1 = price + 2.0 * atr_v
         take_profit_2 = price + 3.5 * atr_v
         invalidation  = stop_loss
     elif direction == "short":
-        entry_low    = vwap_now - 0.3 * atr_v
-        entry_high   = min(vwap_now + 0.3 * atr_v, price * 1.01)
+        entry_low    = max(anchor_price - 0.3 * atr_v, price * 0.98)
+        entry_high   = min(anchor_price + 0.3 * atr_v, price * 1.01)
         stop_loss    = price + 1.5 * atr_v
         take_profit_1 = price - 2.0 * atr_v
         take_profit_2 = price - 3.5 * atr_v
@@ -575,6 +618,9 @@ def _build_trade_signal(
     else:
         entry_low = entry_high = stop_loss = take_profit_1 = take_profit_2 = price
         invalidation = price
+
+    if entry_low > entry_high:
+        entry_low, entry_high = entry_high, entry_low
 
     risk  = abs(price - stop_loss)
     rrr   = round(abs(take_profit_1 - price) / risk, 2) if risk > 0 else 0.0
@@ -655,6 +701,7 @@ def _build_llm_payload(symbol: str, signal: TradeSignal, raw_data: dict) -> dict
 
     payload = {
         "symbol": symbol,
+        "实时数据": _build_realtime_payload(raw_data),
         "交易信号": {
             "方向": direction_cn.get(signal.direction, signal.direction),
             "强度": strength_cn.get(signal.strength, signal.strength),
@@ -704,6 +751,21 @@ def _build_llm_payload(symbol: str, signal: TradeSignal, raw_data: dict) -> dict
             payload["近期新闻"] = news[:3]
 
     return payload
+
+
+def _build_realtime_payload(raw_data: dict) -> dict:
+    """构建给 LLM 的实时价格口径说明。"""
+    header = raw_data.get("get_header_data") or raw_data.get("header_data") or raw_data.get("header")
+    if not isinstance(header, dict):
+        return {"价格来源": "K线最后收盘价"}
+
+    return {
+        "当前价格": header.get("currentPrice"),
+        "24h涨跌幅": header.get("priceChangePercentage_24h"),
+        "24h最高": header.get("high_24h"),
+        "24h最低": header.get("low_24h"),
+        "价格来源": "header.currentPrice",
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -797,6 +859,8 @@ class QuantitativeAnalysisSkill:
                 "symbol": symbol,
             }
 
+        realtime_price = _extract_realtime_price(raw_data)
+        ohlcv = _apply_realtime_price(ohlcv, realtime_price)
         price = ohlcv["closes"][-1]
 
         # 计算六个因子

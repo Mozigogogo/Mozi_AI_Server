@@ -1,17 +1,21 @@
 # Mozi - 加密市场智能分析平台
 
-基于 Skill 架构的加密货币分析助手，集成**行情分析**和**大单侦测**两大 Agent，通过 SSE 流式输出提供实时智能分析。
+基于 Skill 架构的加密货币分析助手，集成**行情分析**、**大单侦测**、**信号卡**三大模块，通过 SSE 流式输出提供实时智能分析。
 
 ## 系统架构
 
 ```
-用户请求
-  ├─ /api/v1/*          → Agent（行情分析）
+前端意图分流
+  ├─ 行情相关问题  → /api/v1/*           → 行情分析 Agent
   │   意图识别 → Skill路由 → 数据获取 → LLM回答 → 建议问题
   │
-  └─ /bigorder/v1/*     → BigOrder Agent（大单侦测）
-      Function Calling → Tool执行 → LLM回答 → 建议问题
-      后台30s扫描 → 四维打分 → 异动信号 → SSE推送
+  ├─ 大单相关问题  → /bigorder/v1/*      → 大单侦测 Agent
+  │   Function Calling → Tool执行 → LLM回答 → 建议问题
+  │   后台30s扫描 → 四维打分 → 异动信号 → SSE推送
+  │
+  └─ 量化/信号问题 → /signals/v1/*       → 信号卡 Chat
+      Function Calling → Tool执行 → 信号卡推送 → LLM解读 → 建议问题
+      后台30min全市场扫描 → Alpha雷达 → 信号卡生成 → SSE推送
 ```
 
 **技术栈**：FastAPI + DeepSeek LLM + MySQL + Redis + SSE
@@ -42,6 +46,18 @@
 | 历史查询 | 过去7天有哪些强信号 |
 | SSE实时推送 | 新信号自动推送 |
 | 建议问题 | 每次回答后推荐3个相关问题 |
+
+### 信号卡系统
+
+| 能力 | 示例问题 |
+|------|---------|
+| 币种信号卡 | BTC怎么样、ETH可以买进吗、SOL怎么走 |
+| 历史胜率 | BTC历史胜率怎么样 |
+| 策略报告 | 策略表现如何 |
+| 全市场扫描 | 最近有什么信号 |
+| 中英双语 | How is BTC、Analyze ETH |
+| C级弱信号兜底 | 任何币种都能返回信号卡（弱信号标C级） |
+| 信号卡推送 | 结构化卡片数据 + LLM文字解读 |
 
 ## 项目结构
 
@@ -77,6 +93,17 @@ agent/
 │   ├── services/
 │   │   ├── data_service.py        # 外部 API 调用 + 缓存
 │   │   └── session_service.py     # MySQL 会话持久化
+│   ├── signals/                    # 信号卡系统
+│   │   ├── models.py              # 数据模型（SignalCard/MathDerivation/StrategyMeta）
+│   │   ├── math_engine.py         # 数学推导引擎（Hurst/熵/MC/Kelly/波动率锥）
+│   │   ├── fusion.py              # 三源融合引擎（大单/量化/技术 + 自适应权重）
+│   │   ├── adaptive_strategy.py   # 自适应策略引擎（权重演化 + 市场状态感知）
+│   │   ├── chat.py                # 信号卡 Chat 独立 SSE 端点（Function Calling）
+│   │   ├── endpoints.py           # REST 端点（generate/scan/stream/strategy）
+│   │   ├── settlement.py          # 结算引擎（真实K线后验 + 扫描缓存）
+│   │   ├── backtest.py            # 回测引擎
+│   │   ├── review.py              # 周期复盘引擎
+│   │   └── alpha_scanner.py       # 全市场 Alpha 雷达扫描器
 │   └── utils/
 │       └── validators.py          # 输入校验
 ├── config/
@@ -252,6 +279,15 @@ curl -N -X POST http://localhost:8000/bigorder/v1/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "BTC有什么异动"}'
 # 期望：SSE 流式输出，包含 thinking → tool_call → tool_result → content(多次) → suggestions → done
+
+# 6. 测试信号卡 Chat
+curl -N -X POST http://localhost:8000/signals/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "BTC怎么样"}'
+# 期望：SSE 流式输出，包含 thinking → tool_call → signal_card → content(多次) → suggestions → done
+
+# 7. 生成 BTC 信号卡
+curl http://localhost:8000/api/v1/signals/generate/BTC
 ```
 
 ---
@@ -367,6 +403,184 @@ POST /api/v1/analyze/stream
   "conversation_id": "user-001"
 }
 ```
+
+### 信号卡系统
+
+#### 信号卡对话（SSE 流式）
+
+```
+POST /signals/v1/chat
+```
+
+请求体：
+```json
+{
+  "message": "BTC可以买进吗",
+  "coin": "BTC"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| message | string | 是 | 用户问题，自动识别中英文 |
+| coin | string | 否 | 前端上下文传入的关注币种 |
+
+**SSE 事件序列：**
+
+```
+1. event: thinking   → {"status": "Analyzing..."}
+2. event: tool_call  → {"tool": "analyze_coin", "args": {"coin": "BTC"}}
+3. event: signal_card → {完整信号卡数据（前端渲染卡片）}
+4. event: tool_result → {"tool": "analyze_coin"}
+5. event: content    → {"text": "..."}（LLM文字解读，流式多次）
+6. event: suggestions → {"type": "suggestions", "suggestions": [...]}
+7. event: done       → {}
+```
+
+**信号卡事件数据结构（`signal_card`）：**
+
+```json
+{
+  "type": "signal_card",
+  "tier": "pro",
+  "card": {
+    "coin": "BTC",
+    "direction": "long",
+    "grade": "A",
+    "confidence": 80.0,
+    "current_price": 67500.00,
+    "entry_zone": [67200.00, 67800.00],
+    "stop_loss": 65100.00,
+    "take_profit": 70500.00,
+    "risk_reward": 2.2,
+    "position_pct": 5.6,
+    "invalidation": 65100.00,
+    "sources": [
+      {"name": "bigorder_anomaly", "score": 55.4, "direction": "long", "detail": "Binance medium信号..."},
+      {"name": "quantitative", "score": 11.0, "direction": "short", "detail": "综合评分-11..."},
+      {"name": "technical", "score": 15.0, "direction": "short", "detail": "EMA空头排列..."}
+    ]
+  },
+  "math": {
+    "hurst": 0.50,
+    "hurst_interp": "数据不足(需≥100)",
+    "predictability": 0.32,
+    "kelly": 0.125,
+    "mc_bull_prob": 0.28,
+    "mc_bear_prob": 0.72,
+    "mc_var95": -20.8,
+    "vol_regime": "high",
+    "vol_percentile": 82.1,
+    "market_regime": "trending_down",
+    "findings": ["MC上涨概率仅28%，方向存疑", "VaR(95%)=-20.8%，尾部风险大"]
+  },
+  "display": "📊 BTC 交易信号卡 | 🟡A级 | 置信度 80%\n├─ 方向：做多\n...",
+  "strategy": {
+    "version": 1,
+    "regime": "trending_down",
+    "global_win_rate": 0.5
+  }
+}
+```
+
+**信号等级说明：**
+
+| 等级 | 条件 | 标识 | 说明 |
+|------|------|------|------|
+| S | 3源一致 + 置信度≥65% + 数学确认 | 🔴 | 多维共振，最高置信度 |
+| A | 2+源一致 + 置信度≥50% | 🟡 | 强信号 |
+| B | 2+源一致 + 置信度≥35% | ⚪ | 中等信号 |
+| C | 方向冲突或信号偏弱 | 🔸 | 低置信度，仅供参考 |
+
+**可用工具（Function Calling 自动选择）：**
+
+| 工具名 | 说明 | 参数 |
+|--------|------|------|
+| analyze_coin | 分析币种生成信号卡 | coin (必填) |
+| query_winrate | 查询历史胜率 | coin, days(默认30) |
+| query_strategy | 查看策略性能报告 | 无 |
+| query_scan_results | 查看最近全市场扫描结果 | limit(默认10) |
+
+**前端接入示例：**
+
+```javascript
+const response = await fetch('/signals/v1/chat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ message: 'BTC可以买进吗' })
+});
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+
+  const text = decoder.decode(value);
+  const lines = text.split('\n');
+
+  for (const line of lines) {
+    if (line.startsWith('event: ')) {
+      currentEvent = line.slice(7).trim();
+    } else if (line.startsWith('data: ')) {
+      const data = JSON.parse(line.slice(6));
+
+      switch (currentEvent) {
+        case 'signal_card':
+          renderSignalCard(data);        // 渲染信号卡组件
+          break;
+        case 'content':
+          appendText(data.text);          // 追加LLM文字（流式）
+          break;
+        case 'suggestions':
+          renderSuggestions(data.suggestions);  // 渲染推荐追问
+          break;
+        case 'done':
+          finishResponse();
+          break;
+      }
+    }
+  }
+}
+```
+
+**curl 测试：**
+
+```bash
+# 中文
+curl -N -X POST http://localhost:8000/signals/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "BTC可以买进吗"}'
+
+# 英文
+curl -N -X POST http://localhost:8000/signals/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "How is ETH"}'
+
+# 查看策略报告
+curl -N -X POST http://localhost:8000/signals/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "策略表现如何"}'
+
+# 查看扫描结果
+curl -N -X POST http://localhost:8000/signals/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "最近有什么信号"}'
+```
+
+#### REST 接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/v1/signals/generate/{coin} | 生成指定币种信号卡 |
+| GET | /api/v1/signals/scan?limit=10 | 扫描热门币种信号 |
+| GET | /api/v1/signals/stream?tier=pro | SSE 实时信号推送 |
+| GET | /api/v1/signals/strategy/performance | 策略性能报告 |
+| POST | /api/v1/signals/strategy/evolve?coin=BTC | 手动触发策略演化 |
+| POST | /api/v1/signals/settle | 手动触发结算 |
+| GET | /api/v1/signals/review | 历史复盘摘要 |
+| POST | /api/v1/signals/review/trigger | 手动触发复盘 |
 
 ### 大单侦测 Agent（需 REDIS_ENABLED=true）
 
@@ -576,7 +790,8 @@ python tests/test_live_bigorder.py
 | BIGORDER_MYSQL_PASSWORD | (fallback到MYSQL_PASSWORD) | 否 | BigOrder MySQL 密码 |
 | BIGORDER_MYSQL_DATABASE | exchange | 否 | BigOrder 数据库名 |
 | BIGORDER_DEEPSEEK_MODEL | deepseek-v4-flash | 否 | BigOrder LLM 模型 |
-| SCAN_INTERVAL | 30 | 否 | 后台扫描间隔(秒) |
+| SCAN_INTERVAL | 30 | 否 | 大单侦测后台扫描间隔(秒) |
+| SIGNAL_SCAN_INTERVAL | 1800 | 否 | 信号卡全市场扫描间隔(秒)，默认30分钟 |
 | HISTORY_WINDOW_COUNT | 288 | 否 | 历史基线窗口数 |
 | SCORE_THRESHOLD_STRONG | 70 | 否 | 强信号阈值 |
 | SCORE_THRESHOLD_MEDIUM | 50 | 否 | 中等信号阈值 |
@@ -628,3 +843,11 @@ python tests/test_live_bigorder.py
 ### Q: 如何只运行行情分析 Agent，不依赖 Redis？
 
 设置 `REDIS_ENABLED=false` 即可。BigOrder 所有路由不会注册，Agent 功能完全不受影响。
+
+### Q: 信号卡 Chat 接口返回的信号卡数据怎么用？
+
+`signal_card` 事件包含 `card`（结构化数据）和 `display`（格式化文本）。前端用 `card` 渲染自定义卡片组件，`display` 可直接作为纯文本展示。C 级信号前端应显示弱信号警告。
+
+### Q: 信号卡的语言如何控制？
+
+自动检测用户消息语言。中文消息返回中文信号卡，英文消息返回英文信号卡。信号卡字段（方向、止损止盈、技术指标详情）全部跟随用户语言。

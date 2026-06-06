@@ -49,7 +49,8 @@ async def lifespan(app: FastAPI):
     # 信号卡后台任务（始终启动，不依赖 Redis）
     settlement_task = asyncio.create_task(_signal_settlement_task())
     review_task = asyncio.create_task(_weekly_review_task())
-    print("Signal Cards: 后台结算(10min) + 周期复盘(每周日) 已启动")
+    market_scan_task = asyncio.create_task(_market_scan_task())
+    print("Signal Cards: 后台结算(10min) + 周期复盘(每周日) + 全市场扫描(30min) 已启动")
 
     yield
 
@@ -58,6 +59,7 @@ async def lifespan(app: FastAPI):
         scan_task.cancel()
     settlement_task.cancel()
     review_task.cancel()
+    market_scan_task.cancel()
     print("服务关闭")
 
 
@@ -251,6 +253,11 @@ from app.signals.endpoints import router as signal_router
 app.include_router(signal_router, prefix="/api/v1/signals", tags=["Signal Cards"])
 print("Signal Cards: 路由已注册 (/api/v1/signals/*)")
 
+# Signal Cards Chat 量化信号对话
+from app.signals.chat import router as signal_chat_router
+app.include_router(signal_chat_router, prefix="/signals/v1", tags=["Signal Chat"])
+print("Signal Chat: POST /signals/v1/chat 已注册")
+
 
 # 中间件：添加请求处理时间
 @app.middleware("http")
@@ -265,18 +272,13 @@ async def add_process_time_header(request: Request, call_next):
 
 async def _bigorder_background_scan(consumer, scorer, llm_analyzer):
     """BigOrder 后台定时扫描"""
-    major_coins = [
-        "BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "AVAX", "DOT", "LINK",
-        "UNI", "ATOM", "LTC", "NEAR", "APT", "ARB", "OP", "MATIC", "FIL", "TON"
-    ]
     while True:
         try:
-            await asyncio.sleep(settings.scan_interval)
+            await asyncio.sleep(settings.scan_interval)  # 大单侦测：30s
             watched = consumer.get_watched_coins()
-            scan_coins = [c for c in major_coins if c in watched]
-            if not scan_coins:
+            if not watched:
                 continue
-            signals = await asyncio.get_event_loop().run_in_executor(None, scorer.score_all, scan_coins)
+            signals = await asyncio.get_event_loop().run_in_executor(None, scorer.score_all, watched)
             for signal in signals:
                 if signal.score.level.value != "none":
                     try:
@@ -306,6 +308,30 @@ async def _signal_settlement_task():
             break
         except Exception as e:
             print(f"信号卡结算任务异常: {e}")
+            await asyncio.sleep(60)
+
+
+async def _market_scan_task():
+    """全市场扫描定时任务 — 每 30 分钟扫描一次，结果存库"""
+    while True:
+        try:
+            await asyncio.sleep(settings.signal_scan_interval)  # 信号卡扫描：30min
+            import time as _time
+            from app.signals.alpha_scanner import scan_all_coins
+            from app.signals.settlement import save_scan_batch
+
+            t0 = _time.time()
+            results = await scan_all_coins(concurrency=10)
+            elapsed = _time.time() - t0
+
+            signals = [r for r in results if r.signal_card is not None]
+            print(f"全市场扫描完成: {len(results)} 币种, {len(signals)} 信号, 耗时 {elapsed:.1f}s")
+
+            await asyncio.get_event_loop().run_in_executor(None, save_scan_batch, results, elapsed)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"全市场扫描任务异常: {e}")
             await asyncio.sleep(60)
 
 
