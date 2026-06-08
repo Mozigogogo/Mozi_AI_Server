@@ -789,7 +789,7 @@ class QuantitativeAnalysisSkill:
     # ── 如果你使用原有的 BaseSkill 框架，保留以下两个方法 ───────────────────
 
     def match(self, intent, mode="chat") -> bool:
-        return getattr(intent, "intent_type", None) == "analyze_quantitative"
+        return getattr(intent, "intent_type", None) in ("analyze_quantitative", "analyze_signal")
 
     async def execute_async(self, symbol: str, intent=None):
         """与原框架兼容的异步入口"""

@@ -37,7 +37,7 @@ class SkillRouter:
         self.skills["sentiment_analysis"] = SentimentAnalysisSkill()
         self.skills["comprehensive_analysis"] = ComprehensiveAnalysisSkill()
         self.skills["quantitative_analysis"] = QuantitativeAnalysisSkill()
-        self.skills["signal_card"] = SignalCardSkill()
+        # SignalCardSkill 已独立到 /signals/v1/chat 端点，Q&A Agent 不再路由
 
     def route(
         self,
