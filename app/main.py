@@ -271,23 +271,34 @@ async def add_process_time_header(request: Request, call_next):
 
 
 async def _bigorder_background_scan(consumer, scorer, llm_analyzer):
-    """BigOrder 后台定时扫描"""
+    """BigOrder 后台定时扫描 — 与信号卡共用 discovery 币种列表"""
+    # 增量 LLM：记录上次评分，只在分数或等级变化时才调用 LLM
+    _last_scores: dict = {}  # {coin: (total_score, level)}
     while True:
         try:
             await asyncio.sleep(settings.scan_interval)  # 大单侦测：30s
-            watched = consumer.get_watched_coins()
-            if not watched:
+            from app.services.data_service import get_discovery_coins
+            scan_coins = get_discovery_coins()
+            if not scan_coins:
                 continue
-            signals = await asyncio.get_event_loop().run_in_executor(None, scorer.score_all, watched)
+            signals = await asyncio.get_event_loop().run_in_executor(None, scorer.score_all, scan_coins)
             for signal in signals:
-                if signal.score.level.value != "none":
-                    try:
-                        signal = await llm_analyzer.analyze_and_enrich(signal)
-                        if signal.llm_analysis:
-                            coin_key = f"signal:coin:{signal.coin}"
-                            consumer.client.hset(coin_key, "llm_analysis", signal.llm_analysis)
-                    except:
-                        pass
+                if signal.score.level.value == "none":
+                    continue
+                # 增量判断：分数变化 < 10 且等级相同 → 跳过 LLM
+                coin = signal.coin
+                current = (signal.score.total_score, signal.score.level.value)
+                last = _last_scores.get(coin)
+                _last_scores[coin] = current
+                if last and abs(current[0] - last[0]) < 10 and current[1] == last[1]:
+                    continue  # 数据没变，复用上次 LLM 分析
+                try:
+                    signal = await llm_analyzer.analyze_and_enrich(signal)
+                    if signal.llm_analysis:
+                        coin_key = f"signal:coin:{signal.coin}"
+                        consumer.client.hset(coin_key, "llm_analysis", signal.llm_analysis)
+                except:
+                    pass
         except asyncio.CancelledError:
             break
         except Exception as e:
