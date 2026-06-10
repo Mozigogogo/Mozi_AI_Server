@@ -420,3 +420,135 @@ async def trigger_settle():
     from app.signals.settlement import settle_pending_cards
     result = await asyncio.get_running_loop().run_in_executor(None, settle_pending_cards)
     return {"status": "success", "data": result}
+
+
+# ── 胜率 & 历史接口 ──────────────────────────────────────────────────────────
+
+@router.get("/winrate")
+async def query_winrate(
+    coin: Optional[str] = Query(None, description="币种，如 BTC。不传则统计全部"),
+    grade: Optional[str] = Query(None, description="等级过滤: S/A/B。不传则统计全部"),
+    days: int = Query(30, ge=1, le=365, description="回看天数"),
+):
+    """
+    查询历史胜率
+
+    上线后数据随时间自动累积，越久越准。
+    - coin + grade 都不传 → 全局胜率
+    - 只传 coin → 该币种胜率
+    - 只传 grade → 该等级胜率
+    """
+    from app.signals.settlement import get_accumulated_winrate
+    result = await asyncio.get_running_loop().run_in_executor(
+        None, get_accumulated_winrate,
+        coin, grade, days,
+    )
+    if not result:
+        return {
+            "status": "no_data",
+            "message": "暂无历史胜率数据（需上线积累结算记录）",
+            "filters": {"coin": coin, "grade": grade, "days": days},
+        }
+    return {
+        "status": "success",
+        "filters": {"coin": coin, "grade": grade, "days": days},
+        "data": result,
+    }
+
+
+@router.get("/history")
+async def query_history(
+    coin: Optional[str] = Query(None, description="币种，如 BTC"),
+    grade: Optional[str] = Query(None, description="等级: S/A/B"),
+    status: Optional[str] = Query(None, description="状态: pending/hit_tp/hit_sl/expired"),
+    direction: Optional[str] = Query(None, description="方向: long/short"),
+    days: int = Query(7, ge=1, le=90, description="回看天数"),
+    limit: int = Query(50, ge=1, le=200, description="返回条数"),
+):
+    """
+    查询信号卡历史记录（含结算结果）
+
+    每条记录包含：生成时的信号参数 + 结算状态 + 实际盈亏
+    """
+    import pymysql
+    from app.signals.settlement import _get_conn
+
+    conn = None
+    try:
+        conn = _get_conn()
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+
+        where_parts = ["created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)"]
+        params: list = [days]
+
+        if coin:
+            where_parts.append("coin = %s")
+            params.append(coin.upper())
+        if grade:
+            where_parts.append("grade = %s")
+            params.append(grade.upper())
+        if status:
+            where_parts.append("status = %s")
+            params.append(status)
+        if direction:
+            where_parts.append("direction = %s")
+            params.append(direction)
+
+        where = " AND ".join(where_parts)
+
+        # 总数
+        cursor.execute(f"SELECT COUNT(*) as cnt FROM signal_card_history WHERE {where}", params)
+        total = cursor.fetchone()["cnt"]
+
+        # 分页数据
+        cursor.execute(
+            f"""
+            SELECT id, coin, direction, grade,
+                   entry_low, entry_high, stop_loss, take_profit,
+                   current_price, confidence, risk_reward_ratio,
+                   status, settled_price, pnl_pct,
+                   created_at, settled_at
+            FROM signal_card_history
+            WHERE {where}
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            params + [limit],
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+
+        # 格式化
+        cards = []
+        for r in rows:
+            cards.append({
+                "id": r["id"],
+                "coin": r["coin"],
+                "direction": r["direction"],
+                "grade": r["grade"],
+                "entry_zone": [float(r["entry_low"] or 0), float(r["entry_high"] or 0)],
+                "stop_loss": float(r["stop_loss"] or 0),
+                "take_profit": float(r["take_profit"] or 0),
+                "price": float(r["current_price"] or 0),
+                "confidence": float(r["confidence"] or 0),
+                "risk_reward": float(r["risk_reward_ratio"] or 0),
+                "status": r["status"],
+                "settled_price": float(r["settled_price"] or 0) if r["settled_price"] else None,
+                "pnl_pct": float(r["pnl_pct"] or 0) if r["pnl_pct"] else None,
+                "created_at": r["created_at"].strftime("%Y-%m-%d %H:%M") if r["created_at"] else None,
+                "settled_at": r["settled_at"].strftime("%Y-%m-%d %H:%M") if r["settled_at"] else None,
+            })
+
+        return {
+            "status": "success",
+            "filters": {"coin": coin, "grade": grade, "status": status, "direction": direction, "days": days},
+            "total": total,
+            "count": len(cards),
+            "cards": cards,
+        }
+
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+    finally:
+        if conn:
+            conn.close()

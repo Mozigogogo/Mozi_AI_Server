@@ -415,10 +415,56 @@ def save_scan_batch(results: list, scan_time: float):
         [s.signal_card.model_dump() for s in signals],
         ensure_ascii=False,
     )
-    displays_json = json.dumps(
-        [s.signal_card.format_card() for s in signals],
-        ensure_ascii=False,
-    )
+
+    # 构建 displays_json：前端可直接渲染的结构化卡片列表
+    display_cards = []
+    for s in signals:
+        card = s.signal_card
+        bt = s.backtest
+        item = {
+            "type": "signalCard",
+            "data": {
+                "displayText": card.format_card(),
+                "kellyPct": round(card.math.kelly_fraction * 100, 1) if card.math else 12.5,
+                "card": {
+                    "coin": card.coin,
+                    "direction": card.direction.value,
+                    "grade": card.grade.value,
+                    "confidence": card.confidence,
+                    "currentPrice": card.current_price,
+                    "entryZone": [card.entry_low, card.entry_high],
+                    "stopLoss": card.stop_loss,
+                    "takeProfit": card.take_profit,
+                    "riskReward": card.risk_reward_ratio,
+                    "positionPct": round(card.position_pct),
+                    "kellyPct": round(card.math.kelly_fraction * 100, 1) if card.math else 12.5,
+                    "invalidation": card.invalidation_price,
+                    "sources": [
+                        {"name": src.name, "score": round(src.score)}
+                        for src in card.sources
+                    ],
+                    "winRate": card.win_rate,
+                    "sampleCount": card.sample_count,
+                    "avgProfit": card.avg_profit_pct,
+                },
+            },
+        }
+        if card.math:
+            item["data"]["math"] = {
+                "hurst": card.math.hurst,
+                "mcBullProb": card.math.monte_carlo_bull_prob,
+                "volatility": card.math.vol_regime,
+                "marketRegime": card.math.market_regime,
+            }
+        if card.strategy:
+            item["data"]["strategy"] = {
+                "version": card.strategy.strategy_version,
+                "regime": card.strategy.regime,
+                "globalWinRate": card.strategy.global_win_rate,
+            }
+        display_cards.append(item)
+
+    displays_json = json.dumps(display_cards, ensure_ascii=False)
 
     # 1. 尝试 MySQL
     conn = None
@@ -455,7 +501,7 @@ def save_scan_batch(results: list, scan_time: float):
             "signal_count": len(signals),
             "scan_time": round(scan_time, 1),
             "signals": [s.signal_card.model_dump() for s in signals],
-            "displays": [s.signal_card.format_card() for s in signals],
+            "displays": display_cards,
             "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
         _SCAN_CACHE_FILE.write_text(json.dumps(cache, ensure_ascii=False, indent=2))

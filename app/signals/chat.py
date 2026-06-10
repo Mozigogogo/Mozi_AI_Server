@@ -87,6 +87,23 @@ TOOLS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_history",
+            "description": "查询信号卡历史记录和结算结果（胜/负/过期） | Query signal card history with settlement results (win/loss/expired)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "coin": {"type": "string", "description": "币种，如 BTC。不传则查全部 | Coin symbol, omit for all"},
+                    "status": {"type": "string", "enum": ["hit_tp", "hit_sl", "expired"], "description": "结算状态筛选 | Filter by settlement status"},
+                    "days": {"type": "integer", "description": "回看天数，默认7 | Lookback days, default 7"},
+                    "limit": {"type": "integer", "description": "返回条数，默认20 | Number of results, default 20"}
+                },
+                "required": []
+            }
+        }
+    },
 ]
 
 _TOOL_TIMEOUTS = {
@@ -94,6 +111,7 @@ _TOOL_TIMEOUTS = {
     "query_winrate": 10,
     "query_strategy": 5,
     "query_scan_results": 10,
+    "query_history": 10,
 }
 
 
@@ -112,6 +130,11 @@ def _execute_tool(tool_name: str, args: dict, lang: str = "zh") -> dict:
         return _tool_query_strategy()
     elif tool_name == "query_scan_results":
         return _tool_query_scan_results(args.get("limit", 10))
+    elif tool_name == "query_history":
+        return _tool_query_history(
+            args.get("coin"), args.get("status"),
+            args.get("days", 7), args.get("limit", 20),
+        )
     return {"error": f"Unknown tool: {tool_name}"}
 
 
@@ -190,6 +213,99 @@ def _tool_query_scan_results(limit: int) -> dict:
         return {"error": str(e)}
 
 
+def _tool_query_history(coin: str = None, status: str = None, days: int = 7, limit: int = 20) -> dict:
+    """查询信号卡历史记录"""
+    import pymysql
+    from app.signals.settlement import _get_conn
+
+    try:
+        conn = _get_conn()
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+
+        where_parts = ["created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)"]
+        params: list = [days]
+
+        if coin:
+            where_parts.append("coin = %s")
+            params.append(coin.upper())
+        if status:
+            where_parts.append("status = %s")
+            params.append(status)
+
+        where = " AND ".join(where_parts)
+
+        # 汇总
+        cursor.execute(
+            f"""
+            SELECT COUNT(*) as total,
+                   SUM(status = 'pending') as pending,
+                   SUM(status = 'hit_tp') as wins,
+                   SUM(status = 'hit_sl') as losses,
+                   SUM(status = 'expired') as expired,
+                   ROUND(AVG(CASE WHEN status IN ('hit_tp','hit_sl','expired') THEN pnl_pct END), 2) as avg_pnl
+            FROM signal_card_history
+            WHERE {where}
+            """,
+            params,
+        )
+        summary = cursor.fetchone()
+
+        # 明细
+        cursor.execute(
+            f"""
+            SELECT id, coin, direction, grade, current_price, stop_loss, take_profit,
+                   confidence, risk_reward_ratio, status, settled_price, pnl_pct,
+                   created_at, settled_at
+            FROM signal_card_history
+            WHERE {where}
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            params + [limit],
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        cards = []
+        for r in rows:
+            cards.append({
+                "coin": r["coin"],
+                "direction": r["direction"],
+                "grade": r["grade"],
+                "price": float(r["current_price"] or 0),
+                "confidence": float(r["confidence"] or 0),
+                "status": r["status"],
+                "pnl_pct": float(r["pnl_pct"]) if r["pnl_pct"] is not None else None,
+                "created_at": r["created_at"].strftime("%m-%d %H:%M") if r["created_at"] else "",
+                "settled_at": r["settled_at"].strftime("%m-%d %H:%M") if r["settled_at"] else "",
+            })
+
+        total = int(summary["total"] or 0)
+        wins = int(summary["wins"] or 0)
+        losses = int(summary["losses"] or 0)
+        expired = int(summary["expired"] or 0)
+        settled = wins + losses + expired
+        win_rate = round(wins / settled * 100, 1) if settled > 0 else None
+
+        return {
+            "summary": {
+                "total": total,
+                "settled": settled,
+                "pending": int(summary["pending"] or 0),
+                "wins": wins,
+                "losses": losses,
+                "expired": expired,
+                "win_rate": win_rate,
+                "avg_pnl": float(summary["avg_pnl"]) if summary["avg_pnl"] is not None else None,
+            },
+            "filters": {"coin": coin, "status": status, "days": days},
+            "cards": cards,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def _get_suggestions(tool_name: str, user_message: str, coin_hint: str = None) -> list:
     """生成推荐追问"""
     lang = _detect_language(user_message)
@@ -201,12 +317,14 @@ def _get_suggestions(tool_name: str, user_message: str, coin_hint: str = None) -
             "query_winrate": [f"分析一下{coin}", f"{coin}最近有什么信号", "策略权重如何"],
             "query_strategy": ["BTC现在怎么样", "最近有什么信号", "ETH分析一下"],
             "query_scan_results": ["BTC分析一下", "策略表现如何", "ETH胜率多少"],
+            "query_history": [f"分析一下{coin}", f"{coin}历史胜率", "最近有什么信号"],
         },
         "en": {
             "analyze_coin": [f"{coin} win rate", "Latest signals", "Strategy performance"],
             "query_winrate": [f"Analyze {coin}", f"{coin} signals", "Strategy weights"],
             "query_strategy": ["How is BTC", "Latest signals", "Analyze ETH"],
             "query_scan_results": ["Analyze BTC", "Strategy performance", "ETH win rate"],
+            "query_history": [f"Analyze {coin}", f"{coin} win rate", "Latest signals"],
         },
     }
     return templates.get(lang, templates["en"]).get(tool_name, [])

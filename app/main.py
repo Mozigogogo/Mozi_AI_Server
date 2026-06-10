@@ -329,7 +329,7 @@ async def _market_scan_task():
             await asyncio.sleep(settings.signal_scan_interval)  # 信号卡扫描：30min
             import time as _time
             from app.signals.alpha_scanner import scan_all_coins
-            from app.signals.settlement import save_scan_batch
+            from app.signals.settlement import save_scan_batch, save_signal_card
 
             t0 = _time.time()
             results = await scan_all_coins(concurrency=10)
@@ -337,6 +337,18 @@ async def _market_scan_task():
 
             signals = [r for r in results if r.signal_card is not None]
             print(f"全市场扫描完成: {len(results)} 币种, {len(signals)} 信号, 耗时 {elapsed:.1f}s")
+
+            # 信号卡写入 signal_card_history（供结算和复盘）
+            saved = 0
+            for r in signals:
+                try:
+                    record_id = save_signal_card(r.signal_card)
+                    if record_id:
+                        saved += 1
+                except Exception:
+                    pass
+            if saved:
+                print(f"Signal Cards: {saved} 张写入 signal_card_history")
 
             await asyncio.get_event_loop().run_in_executor(None, save_scan_batch, results, elapsed)
         except asyncio.CancelledError:
