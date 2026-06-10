@@ -1,27 +1,27 @@
 {
   "total_coins": 96,
-  "signal_count": 23,
-  "scan_time": 6681.6,
+  "signal_count": 22,
+  "scan_time": 630.2,
   "signals": [
     {
       "id": null,
       "coin": "TON",
       "direction": "short",
       "grade": "A",
-      "current_price": 1.66,
-      "entry_low": 1.6501,
-      "entry_high": 1.6683,
-      "stop_loss": 1.7097,
-      "take_profit": 1.5607,
+      "current_price": 1.67,
+      "entry_low": 1.6602,
+      "entry_high": 1.6783,
+      "stop_loss": 1.7191,
+      "take_profit": 1.5718,
       "risk_reward_ratio": 2.0,
       "confidence": 95.0,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 65.76677493100844,
+          "score": 61.108859545019,
           "direction": "short",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$49K/卖$104K, 净流入$-55K, 598笔大单"
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$60K/卖$114K, 净流入$-54K, 599笔大单"
         },
         {
           "name": "quantitative",
@@ -42,16 +42,16 @@
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 1.7097,
+      "invalidation_price": 1.7191,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
         "hurst_interpretation": "数据不足(需≥100)",
         "entropy_predictability": 0.2588,
         "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.485,
-        "monte_carlo_bear_prob": 0.515,
-        "monte_carlo_var95": -45.96,
+        "monte_carlo_bull_prob": 0.486,
+        "monte_carlo_bear_prob": 0.514,
+        "monte_carlo_var95": -45.76,
         "vol_regime": "normal",
         "vol_percentile": 48.7,
         "market_regime": "trending_up",
@@ -59,7 +59,7 @@
         "math_score_adjustment": 10.0,
         "math_confidence": 0.458,
         "key_findings": [
-          "VaR(95%)=-46.0%，尾部风险大",
+          "VaR(95%)=-45.8%，尾部风险大",
           "市场状态=trending_up，与信号方向一致"
         ]
       },
@@ -75,7 +75,85 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:36:43",
+      "created_at": "2026-06-10 15:15:17",
+      "updated_at": "",
+      "settled_at": null,
+      "settled_price": null,
+      "pnl_pct": null
+    },
+    {
+      "id": null,
+      "coin": "SENT",
+      "direction": "short",
+      "grade": "A",
+      "current_price": 0.02,
+      "entry_low": 0.019617,
+      "entry_high": 0.0201,
+      "stop_loss": 0.021915,
+      "take_profit": 0.01617,
+      "risk_reward_ratio": 2.0,
+      "confidence": 95.0,
+      "sources": [
+        {
+          "name": "bigorder_anomaly",
+          "score": 45.739920197817945,
+          "direction": "short",
+          "weight": 0.3398,
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$17K/卖$23K, 净流入$-6K, 600笔大单"
+        },
+        {
+          "name": "quantitative",
+          "score": 24.75,
+          "direction": "short",
+          "weight": 0.3516,
+          "detail": "综合评分-25, 强度弱, 置信度50.0%"
+        },
+        {
+          "name": "technical",
+          "score": 52.0,
+          "direction": "short",
+          "weight": 0.3288,
+          "detail": "EMA空头排列(9<21<55), RSI=68超买区, MACD柱正值, MACD顶背离, BB上轨(113%), Supertrend空头, 量价齐升"
+        }
+      ],
+      "win_rate": null,
+      "sample_count": null,
+      "avg_profit_pct": null,
+      "position_pct": 5.6,
+      "invalidation_price": 0.021915,
+      "expires_at": null,
+      "math": {
+        "hurst": 0.5,
+        "hurst_interpretation": "数据不足(需≥100)",
+        "entropy_predictability": 0.427,
+        "kelly_fraction": 0.125,
+        "monte_carlo_bull_prob": 0.535,
+        "monte_carlo_bear_prob": 0.465,
+        "monte_carlo_var95": -35.56,
+        "vol_regime": "normal",
+        "vol_percentile": 74.4,
+        "market_regime": "trending_up",
+        "market_regime_confidence": 1.0,
+        "math_score_adjustment": 10.0,
+        "math_confidence": 0.569,
+        "key_findings": [
+          "VaR(95%)=-35.6%，尾部风险大",
+          "市场状态=trending_up，与信号方向一致"
+        ]
+      },
+      "strategy": {
+        "strategy_version": 1,
+        "regime": "trending_up",
+        "adaptive_weights": {
+          "bigorder_anomaly": 0.3196,
+          "quantitative": 0.3516,
+          "technical": 0.3288
+        },
+        "global_win_rate": 0.5,
+        "evolution_count": 0
+      },
+      "status": "pending",
+      "created_at": "2026-06-10 15:15:28",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -86,50 +164,50 @@
       "coin": "STG",
       "direction": "long",
       "grade": "A",
-      "current_price": 0.36,
-      "entry_low": 0.3582,
-      "entry_high": 0.367056,
-      "stop_loss": 0.324719,
-      "take_profit": 0.430562,
+      "current_price": 0.39,
+      "entry_low": 0.38805,
+      "entry_high": 0.397189,
+      "stop_loss": 0.354055,
+      "take_profit": 0.461891,
       "risk_reward_ratio": 2.0,
       "confidence": 95.0,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 18.870571531587093,
-          "direction": "neutral",
+          "score": 74.6040028766252,
+          "direction": "long",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bitget), 买$7K/卖$8K, 净流入$-1K, 388笔大单"
+          "detail": "12h聚合(Binance+Bitget), 买$11K/卖$4K, 净流入$7K, 400笔大单"
         },
         {
           "name": "quantitative",
-          "score": 21.0,
-          "direction": "long",
+          "score": 2.0,
+          "direction": "neutral",
           "weight": 0.3516,
-          "detail": "综合评分21, 强度弱, 置信度50.0%"
+          "detail": "综合评分-2, 强度无, 置信度48.0%"
         },
         {
           "name": "technical",
-          "score": 70.0,
+          "score": 30.0,
           "direction": "long",
           "weight": 0.3288,
-          "detail": "EMA多头排列(9>21>55), ADX=35趋势强+DI多头, RSI=63偏强, MACD金叉+零轴上方, Supertrend多头, 量价背离"
+          "detail": "EMA多头排列(9>21>55), ADX=35趋势强+DI多头, RSI=65超买区, MACD金叉+零轴上方, Supertrend空头, 量价背离"
         }
       ],
       "win_rate": null,
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 0.324719,
+      "invalidation_price": 0.354055,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
         "hurst_interpretation": "数据不足(需≥100)",
         "entropy_predictability": 0.5061,
         "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.556,
-        "monte_carlo_bear_prob": 0.444,
-        "monte_carlo_var95": -55.59,
+        "monte_carlo_bull_prob": 0.578,
+        "monte_carlo_bear_prob": 0.422,
+        "monte_carlo_var95": -55.57,
         "vol_regime": "extreme",
         "vol_percentile": 100.0,
         "market_regime": "trending_up",
@@ -155,86 +233,7 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:38:06",
-      "updated_at": "",
-      "settled_at": null,
-      "settled_price": null,
-      "pnl_pct": null
-    },
-    {
-      "id": null,
-      "coin": "PENGU",
-      "direction": "short",
-      "grade": "S",
-      "current_price": 0.01,
-      "entry_low": 0.009898,
-      "entry_high": 0.01005,
-      "stop_loss": 0.010509,
-      "take_profit": 0.008982,
-      "risk_reward_ratio": 2.0,
-      "confidence": 95.0,
-      "sources": [
-        {
-          "name": "bigorder_anomaly",
-          "score": 61.16716679114458,
-          "direction": "short",
-          "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$18K/卖$34K, 净流入$-16K, 600笔大单"
-        },
-        {
-          "name": "quantitative",
-          "score": 23.0,
-          "direction": "short",
-          "weight": 0.3516,
-          "detail": "综合评分-23, 强度弱, 置信度50.0%"
-        },
-        {
-          "name": "technical",
-          "score": 17.0,
-          "direction": "short",
-          "weight": 0.3288,
-          "detail": "EMA空头排列(9<21<55), ADX=28趋势强+DI多头, RSI=64偏强, MACD柱正值, MACD顶背离, BB上轨(91%), Supertrend空头, 量价齐升"
-        }
-      ],
-      "win_rate": null,
-      "sample_count": null,
-      "avg_profit_pct": null,
-      "position_pct": 9.0,
-      "invalidation_price": 0.010509,
-      "expires_at": null,
-      "math": {
-        "hurst": 0.5,
-        "hurst_interpretation": "数据不足(需≥100)",
-        "entropy_predictability": 0.4451,
-        "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.608,
-        "monte_carlo_bear_prob": 0.392,
-        "monte_carlo_var95": -35.64,
-        "vol_regime": "normal",
-        "vol_percentile": 35.9,
-        "market_regime": "trending_up",
-        "market_regime_confidence": 0.3,
-        "math_score_adjustment": 30.0,
-        "math_confidence": 0.432,
-        "key_findings": [
-          "MC上涨概率61%，方向确认",
-          "VaR(95%)=-35.6%，尾部风险大",
-          "市场状态=trending_up，与信号方向一致"
-        ]
-      },
-      "strategy": {
-        "strategy_version": 1,
-        "regime": "trending_up",
-        "adaptive_weights": {
-          "bigorder_anomaly": 0.3196,
-          "quantitative": 0.3516,
-          "technical": 0.3288
-        },
-        "global_win_rate": 0.5,
-        "evolution_count": 0
-      },
-      "status": "pending",
-      "created_at": "2026-06-10 13:39:07",
+      "created_at": "2026-06-10 15:16:03",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -245,59 +244,59 @@
       "coin": "JTO",
       "direction": "long",
       "grade": "S",
-      "current_price": 0.59,
-      "entry_low": 0.58705,
-      "entry_high": 0.596058,
-      "stop_loss": 0.559712,
-      "take_profit": 0.650577,
+      "current_price": 0.61,
+      "entry_low": 0.60695,
+      "entry_high": 0.616041,
+      "stop_loss": 0.579793,
+      "take_profit": 0.670415,
       "risk_reward_ratio": 2.0,
       "confidence": 95.0,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 80.78331460486922,
+          "score": 55.233958199377206,
           "direction": "long",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$15K/卖$5K, 净流入$10K, 600笔大单"
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$14K/卖$9K, 净流入$6K, 599笔大单"
         },
         {
           "name": "quantitative",
-          "score": 17.0,
+          "score": 19.0,
           "direction": "long",
           "weight": 0.3516,
-          "detail": "综合评分17, 强度弱, 置信度50.0%"
+          "detail": "综合评分19, 强度弱, 置信度50.0%"
         },
         {
           "name": "technical",
           "score": 47.0,
           "direction": "long",
           "weight": 0.3288,
-          "detail": "EMA多头排列(9>21>55), ADX=38趋势强+DI多头, MACD柱负值, BB中部(51%), Supertrend多头, 量价齐升"
+          "detail": "EMA多头排列(9>21>55), ADX=38趋势强+DI多头, MACD柱负值, BB中部(60%), Supertrend多头, 量价齐升"
         }
       ],
       "win_rate": null,
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 9.0,
-      "invalidation_price": 0.559712,
+      "invalidation_price": 0.579793,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
         "hurst_interpretation": "数据不足(需≥100)",
-        "entropy_predictability": 0.2764,
+        "entropy_predictability": 0.2805,
         "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.66,
-        "monte_carlo_bear_prob": 0.34,
-        "monte_carlo_var95": -42.78,
+        "monte_carlo_bull_prob": 0.673,
+        "monte_carlo_bear_prob": 0.327,
+        "monte_carlo_var95": -41.51,
         "vol_regime": "normal",
         "vol_percentile": 46.2,
         "market_regime": "trending_up",
         "market_regime_confidence": 1.0,
         "math_score_adjustment": 30.0,
-        "math_confidence": 0.546,
+        "math_confidence": 0.547,
         "key_findings": [
-          "MC上涨概率66%，方向确认",
-          "VaR(95%)=-42.8%，尾部风险大",
+          "MC上涨概率67%，方向确认",
+          "VaR(95%)=-41.5%，尾部风险大",
           "市场状态=trending_up，与信号方向一致"
         ]
       },
@@ -313,7 +312,7 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:39:11",
+      "created_at": "2026-06-10 15:17:33",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -325,19 +324,19 @@
       "direction": "short",
       "grade": "A",
       "current_price": 0.35,
-      "entry_low": 0.347469,
+      "entry_low": 0.347462,
       "entry_high": 0.35175,
-      "stop_loss": 0.362653,
-      "take_profit": 0.328912,
+      "stop_loss": 0.362691,
+      "take_profit": 0.328848,
       "risk_reward_ratio": 1.7,
       "confidence": 93.5,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 19.353877481693516,
-          "direction": "neutral",
+          "score": 51.488832669862575,
+          "direction": "short",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$66K/卖$56K, 净流入$11K, 597笔大单"
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$46K/卖$71K, 净流入$-25K, 600笔大单"
         },
         {
           "name": "quantitative",
@@ -358,7 +357,7 @@
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 0.362653,
+      "invalidation_price": 0.362691,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
@@ -392,7 +391,7 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:37:47",
+      "created_at": "2026-06-10 15:15:36",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -404,19 +403,19 @@
       "direction": "short",
       "grade": "A",
       "current_price": 0.32,
-      "entry_low": 0.318184,
+      "entry_low": 0.318051,
       "entry_high": 0.3216,
-      "stop_loss": 0.329078,
-      "take_profit": 0.301845,
+      "stop_loss": 0.329746,
+      "take_profit": 0.300509,
       "risk_reward_ratio": 2.0,
       "confidence": 93.5,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 42.00359730739101,
+          "score": 51.140444607064765,
           "direction": "short",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$18K/卖$23K, 净流入$-5K, 600笔大单"
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$11K/卖$17K, 净流入$-6K, 600笔大单"
         },
         {
           "name": "quantitative",
@@ -437,7 +436,7 @@
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 0.329078,
+      "invalidation_price": 0.329746,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
@@ -471,7 +470,7 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:41:24",
+      "created_at": "2026-06-10 15:20:58",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -482,58 +481,58 @@
       "coin": "IO",
       "direction": "long",
       "grade": "A",
-      "current_price": 0.16,
-      "entry_low": 0.1592,
-      "entry_high": 0.161979,
-      "stop_loss": 0.146807,
-      "take_profit": 0.173193,
+      "current_price": 0.17,
+      "entry_low": 0.16915,
+      "entry_high": 0.172184,
+      "stop_loss": 0.155438,
+      "take_profit": 0.184562,
       "risk_reward_ratio": 1.0,
       "confidence": 92.0,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 47.49915303632356,
+          "score": 45.509559855056104,
           "direction": "long",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$46K/卖$32K, 净流入$14K, 597笔大单"
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$55K/卖$40K, 净流入$15K, 600笔大单"
         },
         {
           "name": "quantitative",
-          "score": 8.0,
+          "score": 6.0,
           "direction": "neutral",
           "weight": 0.3377,
-          "detail": "综合评分-8, 强度无, 置信度48.0%"
+          "detail": "综合评分-6, 强度无, 置信度48.0%"
         },
         {
           "name": "technical",
-          "score": 7.0,
+          "score": 12.0,
           "direction": "long",
           "weight": 0.2632,
-          "detail": "短期EMA偏空, ADX=33趋势强+DI多头, MACD柱负值, Supertrend多头"
+          "detail": "短期EMA偏空, ADX=33趋势强+DI多头, MACD柱负值, BB中部(45%), Supertrend多头, 量价齐升"
         }
       ],
       "win_rate": null,
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 0.146807,
+      "invalidation_price": 0.155438,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
         "hurst_interpretation": "数据不足(需≥100)",
-        "entropy_predictability": 0.4973,
+        "entropy_predictability": 0.487,
         "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.526,
-        "monte_carlo_bear_prob": 0.474,
-        "monte_carlo_var95": -56.94,
+        "monte_carlo_bull_prob": 0.546,
+        "monte_carlo_bear_prob": 0.454,
+        "monte_carlo_var95": -56.17,
         "vol_regime": "normal",
         "vol_percentile": 48.7,
         "market_regime": "mean_reverting",
-        "market_regime_confidence": 1.0,
+        "market_regime_confidence": 0.571,
         "math_score_adjustment": -10.0,
-        "math_confidence": 0.58,
+        "math_confidence": 0.492,
         "key_findings": [
-          "VaR(95%)=-56.9%，尾部风险大"
+          "VaR(95%)=-56.2%，尾部风险大"
         ]
       },
       "strategy": {
@@ -548,7 +547,7 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:37:13",
+      "created_at": "2026-06-10 15:16:42",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -560,19 +559,19 @@
       "direction": "short",
       "grade": "A",
       "current_price": 0.03,
-      "entry_low": 0.029747,
+      "entry_low": 0.029752,
       "entry_high": 0.03015,
-      "stop_loss": 0.031263,
-      "take_profit": 0.027895,
+      "stop_loss": 0.031238,
+      "take_profit": 0.027937,
       "risk_reward_ratio": 1.7,
       "confidence": 92.0,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 17.908468102352348,
-          "direction": "neutral",
+          "score": 51.66301051819285,
+          "direction": "short",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bitget), 买$13K/卖$14K, 净流入$-2K, 400笔大单"
+          "detail": "12h聚合(Binance+Bitget), 买$13K/卖$21K, 净流入$-7K, 399笔大单"
         },
         {
           "name": "quantitative",
@@ -593,7 +592,7 @@
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 0.031263,
+      "invalidation_price": 0.031238,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
@@ -625,7 +624,7 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:40:19",
+      "created_at": "2026-06-10 15:18:18",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -637,19 +636,19 @@
       "direction": "short",
       "grade": "A",
       "current_price": 0.02,
-      "entry_low": 0.019585,
+      "entry_low": 0.01959,
       "entry_high": 0.0201,
-      "stop_loss": 0.021659,
-      "take_profit": 0.015162,
+      "stop_loss": 0.02164,
+      "take_profit": 0.015215,
       "risk_reward_ratio": 2.9,
       "confidence": 87.5,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 45.92510334047309,
+          "score": 51.12776975759075,
           "direction": "short",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$17K/卖$23K, 净流入$-6K, 596笔大单"
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$14K/卖$22K, 净流入$-8K, 598笔大单"
         },
         {
           "name": "quantitative",
@@ -670,7 +669,7 @@
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 0.021659,
+      "invalidation_price": 0.02164,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
@@ -704,7 +703,7 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:35:47",
+      "created_at": "2026-06-10 15:13:50",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -712,63 +711,142 @@
     },
     {
       "id": null,
-      "coin": "LAYER",
+      "coin": "WLFI",
       "direction": "short",
       "grade": "A",
-      "current_price": 0.07,
-      "entry_low": 0.06946,
-      "entry_high": 0.07035,
-      "stop_loss": 0.073602,
-      "take_profit": 0.066398,
-      "risk_reward_ratio": 1.0,
+      "current_price": 0.06,
+      "entry_low": 0.059706,
+      "entry_high": 0.060294,
+      "stop_loss": 0.061468,
+      "take_profit": 0.057554,
+      "risk_reward_ratio": 1.7,
       "confidence": 87.5,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 40.47832101321643,
+          "score": 57.23277884704414,
           "direction": "short",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$36K/卖$44K, 净流入$-8K, 600笔大单"
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$57K/卖$99K, 净流入$-43K, 581笔大单"
         },
         {
           "name": "quantitative",
-          "score": 28.75,
+          "score": 19.25,
           "direction": "short",
-          "weight": 0.3377,
-          "detail": "综合评分-29, 强度中等, 置信度56.0%"
+          "weight": 0.3516,
+          "detail": "综合评分-19, 强度弱, 置信度50.0%"
         },
         {
           "name": "technical",
-          "score": 40.0,
+          "score": 17.0,
           "direction": "short",
-          "weight": 0.2632,
-          "detail": "EMA空头排列(9<21<55), RSI=41偏弱, MACD死叉+零轴下方, Supertrend多头"
+          "weight": 0.3288,
+          "detail": "EMA空头排列(9<21<55), ADX=18震荡市, RSI=44偏弱, MACD柱正值, Supertrend多头"
         }
       ],
       "win_rate": null,
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 0.073602,
+      "invalidation_price": 0.061468,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
         "hurst_interpretation": "数据不足(需≥100)",
-        "entropy_predictability": 0.653,
+        "entropy_predictability": 0.2881,
         "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.333,
-        "monte_carlo_bear_prob": 0.667,
-        "monte_carlo_var95": -73.23,
+        "monte_carlo_bull_prob": 0.234,
+        "monte_carlo_bear_prob": 0.766,
+        "monte_carlo_var95": -36.38,
+        "vol_regime": "low",
+        "vol_percentile": 7.7,
+        "market_regime": "trending_down",
+        "market_regime_confidence": 0.583,
+        "math_score_adjustment": -25.0,
+        "math_confidence": 0.465,
+        "key_findings": [
+          "MC上涨概率仅23%，方向存疑",
+          "VaR(95%)=-36.4%，尾部风险大",
+          "波动率低位(P8)，趋势可靠"
+        ]
+      },
+      "strategy": {
+        "strategy_version": 1,
+        "regime": "trending_down",
+        "adaptive_weights": {
+          "bigorder_anomaly": 0.3196,
+          "quantitative": 0.3516,
+          "technical": 0.3288
+        },
+        "global_win_rate": 0.5,
+        "evolution_count": 0
+      },
+      "status": "pending",
+      "created_at": "2026-06-10 15:20:30",
+      "updated_at": "",
+      "settled_at": null,
+      "settled_price": null,
+      "pnl_pct": null
+    },
+    {
+      "id": null,
+      "coin": "WAL",
+      "direction": "short",
+      "grade": "A",
+      "current_price": 0.03,
+      "entry_low": 0.029562,
+      "entry_high": 0.03015,
+      "stop_loss": 0.032919,
+      "take_profit": 0.027081,
+      "risk_reward_ratio": 1.0,
+      "confidence": 87.5,
+      "sources": [
+        {
+          "name": "bigorder_anomaly",
+          "score": 15.133165571236418,
+          "direction": "neutral",
+          "weight": 0.3398,
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$42K/卖$42K, 净流入$-222, 600笔大单"
+        },
+        {
+          "name": "quantitative",
+          "score": 19.0,
+          "direction": "short",
+          "weight": 0.3377,
+          "detail": "综合评分-19, 强度弱, 置信度50.0%"
+        },
+        {
+          "name": "technical",
+          "score": 35.0,
+          "direction": "short",
+          "weight": 0.2632,
+          "detail": "EMA空头排列(9<21<55), ADX=47趋势强+DI空头, RSI=19严重超卖, MACD死叉+零轴下方, BB下轨(0%), Supertrend空头"
+        }
+      ],
+      "win_rate": null,
+      "sample_count": null,
+      "avg_profit_pct": null,
+      "position_pct": 5.6,
+      "invalidation_price": 0.032919,
+      "expires_at": null,
+      "math": {
+        "hurst": 0.5,
+        "hurst_interpretation": "数据不足(需≥100)",
+        "entropy_predictability": 0.5719,
+        "kelly_fraction": 0.125,
+        "monte_carlo_bull_prob": 0.163,
+        "monte_carlo_bear_prob": 0.837,
+        "monte_carlo_var95": -74.6,
         "vol_regime": "normal",
-        "vol_percentile": 46.2,
+        "vol_percentile": 59.0,
         "market_regime": "mean_reverting",
         "market_regime_confidence": 0.571,
         "math_score_adjustment": -25.0,
-        "math_confidence": 0.517,
+        "math_confidence": 0.505,
         "key_findings": [
-          "可预测性65%，信号可靠性高",
-          "MC上涨概率仅33%，方向存疑",
-          "VaR(95%)=-73.2%，尾部风险大"
+          "可预测性57%，信号可靠性高",
+          "MC上涨概率仅16%，方向存疑",
+          "VaR(95%)=-74.6%，尾部风险大"
         ]
       },
       "strategy": {
@@ -783,85 +861,7 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:41:22",
-      "updated_at": "",
-      "settled_at": null,
-      "settled_price": null,
-      "pnl_pct": null
-    },
-    {
-      "id": null,
-      "coin": "BNB",
-      "direction": "short",
-      "grade": "A",
-      "current_price": 588.04,
-      "entry_low": 585.3938,
-      "entry_high": 590.6862,
-      "stop_loss": 601.2709,
-      "take_profit": 565.9885,
-      "risk_reward_ratio": 1.7,
-      "confidence": 86.0,
-      "sources": [
-        {
-          "name": "bigorder_anomaly",
-          "score": 48.09001093766291,
-          "direction": "short",
-          "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$41K/卖$59K, 净流入$-18K, 600笔大单"
-        },
-        {
-          "name": "quantitative",
-          "score": 7.0,
-          "direction": "neutral",
-          "weight": 0.3516,
-          "detail": "综合评分-7, 强度无, 置信度48.0%"
-        },
-        {
-          "name": "technical",
-          "score": 60.0,
-          "direction": "short",
-          "weight": 0.3288,
-          "detail": "短期EMA偏空, ADX=25趋势强+DI空头, RSI=37偏弱, MACD死叉+零轴下方, Supertrend空头"
-        }
-      ],
-      "win_rate": null,
-      "sample_count": null,
-      "avg_profit_pct": null,
-      "position_pct": 5.6,
-      "invalidation_price": 601.2709,
-      "expires_at": null,
-      "math": {
-        "hurst": 0.5,
-        "hurst_interpretation": "数据不足(需≥100)",
-        "entropy_predictability": 0.3217,
-        "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.434,
-        "monte_carlo_bear_prob": 0.566,
-        "monte_carlo_var95": -20.63,
-        "vol_regime": "extreme",
-        "vol_percentile": 100.0,
-        "market_regime": "trending_down",
-        "market_regime_confidence": 0.5,
-        "math_score_adjustment": -30.0,
-        "math_confidence": 0.453,
-        "key_findings": [
-          "VaR(95%)=-20.6%，尾部风险大",
-          "波动率极端(P100)，建议降仓"
-        ]
-      },
-      "strategy": {
-        "strategy_version": 1,
-        "regime": "trending_down",
-        "adaptive_weights": {
-          "bigorder_anomaly": 0.3196,
-          "quantitative": 0.3516,
-          "technical": 0.3288
-        },
-        "global_win_rate": 0.5,
-        "evolution_count": 0
-      },
-      "status": "pending",
-      "created_at": "2026-06-10 13:35:37",
+      "created_at": "2026-06-10 15:21:14",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -872,20 +872,20 @@
       "coin": "SUI",
       "direction": "short",
       "grade": "A",
-      "current_price": 0.74,
-      "entry_low": 0.736614,
-      "entry_high": 0.743386,
-      "stop_loss": 0.756932,
-      "take_profit": 0.71178,
+      "current_price": 0.75,
+      "entry_low": 0.746515,
+      "entry_high": 0.753485,
+      "stop_loss": 0.767425,
+      "take_profit": 0.720959,
       "risk_reward_ratio": 1.7,
       "confidence": 84.5,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 18.550150015882316,
-          "direction": "neutral",
+          "score": 42.409629842693114,
+          "direction": "short",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$32K/卖$37K, 净流入$-5K, 599笔大单"
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$41K/卖$53K, 净流入$-12K, 600笔大单"
         },
         {
           "name": "quantitative",
@@ -899,32 +899,32 @@
           "score": 55.0,
           "direction": "short",
           "weight": 0.3288,
-          "detail": "EMA空头排列(9<21<55), ADX=29趋势强+DI空头, RSI=28超卖区, MACD死叉+零轴下方, Supertrend空头"
+          "detail": "EMA空头排列(9<21<55), ADX=29趋势强+DI空头, RSI=29超卖区, MACD死叉+零轴下方, Supertrend空头"
         }
       ],
       "win_rate": null,
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 0.756932,
+      "invalidation_price": 0.767425,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
         "hurst_interpretation": "数据不足(需≥100)",
-        "entropy_predictability": 0.4266,
+        "entropy_predictability": 0.4373,
         "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.281,
-        "monte_carlo_bear_prob": 0.719,
-        "monte_carlo_var95": -40.73,
+        "monte_carlo_bull_prob": 0.295,
+        "monte_carlo_bear_prob": 0.705,
+        "monte_carlo_var95": -38.97,
         "vol_regime": "normal",
         "vol_percentile": 46.2,
         "market_regime": "trending_down",
         "market_regime_confidence": 1.0,
         "math_score_adjustment": -35.0,
-        "math_confidence": 0.569,
+        "math_confidence": 0.571,
         "key_findings": [
-          "MC上涨概率仅28%，方向存疑",
-          "VaR(95%)=-40.7%，尾部风险大"
+          "MC上涨概率仅30%，方向存疑",
+          "VaR(95%)=-39.0%，尾部风险大"
         ]
       },
       "strategy": {
@@ -939,7 +939,7 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:36:18",
+      "created_at": "2026-06-10 15:14:04",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -950,20 +950,20 @@
       "coin": "DASH",
       "direction": "short",
       "grade": "A",
-      "current_price": 34.48,
-      "entry_low": 34.2443,
-      "entry_high": 34.6524,
-      "stop_loss": 35.6586,
-      "take_profit": 32.5157,
+      "current_price": 34.62,
+      "entry_low": 34.3898,
+      "entry_high": 34.7931,
+      "stop_loss": 35.771,
+      "take_profit": 32.7017,
       "risk_reward_ratio": 1.7,
       "confidence": 84.5,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 67.14765442098741,
+          "score": 42.05854460931564,
           "direction": "short",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance), 买$13K/卖$28K, 净流入$-15K, 200笔大单"
+          "detail": "12h聚合(Binance), 买$17K/卖$22K, 净流入$-5K, 200笔大单"
         },
         {
           "name": "quantitative",
@@ -984,7 +984,7 @@
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 35.6586,
+      "invalidation_price": 35.771,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
@@ -993,7 +993,7 @@
         "kelly_fraction": 0.125,
         "monte_carlo_bull_prob": 0.29,
         "monte_carlo_bear_prob": 0.71,
-        "monte_carlo_var95": -49.75,
+        "monte_carlo_var95": -49.63,
         "vol_regime": "normal",
         "vol_percentile": 53.8,
         "market_regime": "trending_down",
@@ -1002,7 +1002,7 @@
         "math_confidence": 0.557,
         "key_findings": [
           "MC上涨概率仅29%，方向存疑",
-          "VaR(95%)=-49.8%，尾部风险大"
+          "VaR(95%)=-49.6%，尾部风险大"
         ]
       },
       "strategy": {
@@ -1017,7 +1017,85 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:38:21",
+      "created_at": "2026-06-10 15:16:52",
+      "updated_at": "",
+      "settled_at": null,
+      "settled_price": null,
+      "pnl_pct": null
+    },
+    {
+      "id": null,
+      "coin": "FIL",
+      "direction": "short",
+      "grade": "A",
+      "current_price": 0.76,
+      "entry_low": 0.756166,
+      "entry_high": 0.7638,
+      "stop_loss": 0.779172,
+      "take_profit": 0.728047,
+      "risk_reward_ratio": 1.7,
+      "confidence": 84.5,
+      "sources": [
+        {
+          "name": "bigorder_anomaly",
+          "score": 55.09715185215187,
+          "direction": "short",
+          "weight": 0.3398,
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$72K/卖$120K, 净流入$-48K, 600笔大单"
+        },
+        {
+          "name": "quantitative",
+          "score": 0.75,
+          "direction": "neutral",
+          "weight": 0.3516,
+          "detail": "综合评分-1, 强度无, 置信度48.0%"
+        },
+        {
+          "name": "technical",
+          "score": 30.0,
+          "direction": "short",
+          "weight": 0.3288,
+          "detail": "EMA空头排列(9<21<55), ADX=14震荡市, RSI=33超卖区, MACD死叉+零轴下方, BB下轨(2%), Supertrend空头"
+        }
+      ],
+      "win_rate": null,
+      "sample_count": null,
+      "avg_profit_pct": null,
+      "position_pct": 5.6,
+      "invalidation_price": 0.779172,
+      "expires_at": null,
+      "math": {
+        "hurst": 0.5,
+        "hurst_interpretation": "数据不足(需≥100)",
+        "entropy_predictability": 0.2553,
+        "kelly_fraction": 0.125,
+        "monte_carlo_bull_prob": 0.336,
+        "monte_carlo_bear_prob": 0.664,
+        "monte_carlo_var95": -39.98,
+        "vol_regime": "normal",
+        "vol_percentile": 51.3,
+        "market_regime": "trending_down",
+        "market_regime_confidence": 1.0,
+        "math_score_adjustment": -35.0,
+        "math_confidence": 0.543,
+        "key_findings": [
+          "MC上涨概率仅34%，方向存疑",
+          "VaR(95%)=-40.0%，尾部风险大"
+        ]
+      },
+      "strategy": {
+        "strategy_version": 1,
+        "regime": "trending_down",
+        "adaptive_weights": {
+          "bigorder_anomaly": 0.3196,
+          "quantitative": 0.3516,
+          "technical": 0.3288
+        },
+        "global_win_rate": 0.5,
+        "evolution_count": 0
+      },
+      "status": "pending",
+      "created_at": "2026-06-10 15:18:13",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -1031,17 +1109,17 @@
       "current_price": 0.08,
       "entry_low": 0.07964,
       "entry_high": 0.08036,
-      "stop_loss": 0.0818,
-      "take_profit": 0.077,
+      "stop_loss": 0.081802,
+      "take_profit": 0.076997,
       "risk_reward_ratio": 1.7,
       "confidence": 84.5,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 46.93612699148042,
+          "score": 55.0986889454472,
           "direction": "short",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$38K/卖$53K, 净流入$-15K, 600笔大单"
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$48K/卖$81K, 净流入$-32K, 600笔大单"
         },
         {
           "name": "quantitative",
@@ -1062,7 +1140,7 @@
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 0.0818,
+      "invalidation_price": 0.081802,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
@@ -1095,7 +1173,7 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:40:33",
+      "created_at": "2026-06-10 15:18:57",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -1106,20 +1184,20 @@
       "coin": "ICP",
       "direction": "short",
       "grade": "A",
-      "current_price": 2.26,
-      "entry_low": 2.2493,
-      "entry_high": 2.2707,
-      "stop_loss": 2.3135,
-      "take_profit": 2.1708,
+      "current_price": 2.27,
+      "entry_low": 2.2591,
+      "entry_high": 2.2809,
+      "stop_loss": 2.3245,
+      "take_profit": 2.1791,
       "risk_reward_ratio": 1.7,
       "confidence": 84.5,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 66.72136135801122,
+          "score": 50.01690362337728,
           "direction": "short",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$33K/卖$71K, 净流入$-38K, 600笔大单"
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$44K/卖$66K, 净流入$-22K, 600笔大单"
         },
         {
           "name": "quantitative",
@@ -1133,23 +1211,23 @@
           "score": 15.0,
           "direction": "short",
           "weight": 0.3288,
-          "detail": "短期EMA偏空, RSI=37偏弱, MACD死叉+零轴下方, BB下轨(3%), Supertrend多头"
+          "detail": "短期EMA偏空, RSI=37偏弱, MACD死叉+零轴下方, BB下轨(4%), Supertrend多头"
         }
       ],
       "win_rate": null,
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 2.3135,
+      "invalidation_price": 2.3245,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
         "hurst_interpretation": "数据不足(需≥100)",
         "entropy_predictability": 0.2791,
         "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.386,
-        "monte_carlo_bear_prob": 0.614,
-        "monte_carlo_var95": -43.49,
+        "monte_carlo_bull_prob": 0.388,
+        "monte_carlo_bear_prob": 0.612,
+        "monte_carlo_var95": -43.35,
         "vol_regime": "normal",
         "vol_percentile": 66.7,
         "market_regime": "trending_down",
@@ -1158,7 +1236,7 @@
         "math_confidence": 0.547,
         "key_findings": [
           "MC上涨概率仅39%，方向存疑",
-          "VaR(95%)=-43.5%，尾部风险大"
+          "VaR(95%)=-43.4%，尾部风险大"
         ]
       },
       "strategy": {
@@ -1173,7 +1251,86 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:40:26",
+      "created_at": "2026-06-10 15:19:39",
+      "updated_at": "",
+      "settled_at": null,
+      "settled_price": null,
+      "pnl_pct": null
+    },
+    {
+      "id": null,
+      "coin": "DOGE",
+      "direction": "short",
+      "grade": "A",
+      "current_price": 0.08,
+      "entry_low": 0.07964,
+      "entry_high": 0.08036,
+      "stop_loss": 0.0818,
+      "take_profit": 0.077,
+      "risk_reward_ratio": 1.7,
+      "confidence": 80.0,
+      "sources": [
+        {
+          "name": "bigorder_anomaly",
+          "score": 61.71933857377242,
+          "direction": "short",
+          "weight": 0.3398,
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$50K/卖$96K, 净流入$-46K, 600笔大单"
+        },
+        {
+          "name": "quantitative",
+          "score": 8.0,
+          "direction": "neutral",
+          "weight": 0.3516,
+          "detail": "综合评分-8, 强度无, 置信度48.0%"
+        },
+        {
+          "name": "technical",
+          "score": 20.0,
+          "direction": "short",
+          "weight": 0.3288,
+          "detail": "EMA空头排列(9<21<55), ADX=41趋势强+DI空头, RSI=23严重超卖, RSI底背离, MACD死叉+零轴下方, BB下轨(-5%), Supertrend空头"
+        }
+      ],
+      "win_rate": null,
+      "sample_count": null,
+      "avg_profit_pct": null,
+      "position_pct": 5.6,
+      "invalidation_price": 0.0818,
+      "expires_at": null,
+      "math": {
+        "hurst": 0.5,
+        "hurst_interpretation": "数据不足(需≥100)",
+        "entropy_predictability": 0.2414,
+        "kelly_fraction": 0.125,
+        "monte_carlo_bull_prob": 0.301,
+        "monte_carlo_bear_prob": 0.699,
+        "monte_carlo_var95": -27.04,
+        "vol_regime": "normal",
+        "vol_percentile": 51.3,
+        "market_regime": "trending_down",
+        "market_regime_confidence": 1.0,
+        "math_score_adjustment": -50.0,
+        "math_confidence": 0.541,
+        "key_findings": [
+          "可预测性24%过低，噪音主导",
+          "MC上涨概率仅30%，方向存疑",
+          "VaR(95%)=-27.0%，尾部风险大"
+        ]
+      },
+      "strategy": {
+        "strategy_version": 1,
+        "regime": "trending_down",
+        "adaptive_weights": {
+          "bigorder_anomaly": 0.3196,
+          "quantitative": 0.3516,
+          "technical": 0.3288
+        },
+        "global_win_rate": 0.5,
+        "evolution_count": 0
+      },
+      "status": "pending",
+      "created_at": "2026-06-10 15:13:15",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -1194,10 +1351,10 @@
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 15.828299763675659,
-          "direction": "neutral",
+          "score": 50.85732062936654,
+          "direction": "short",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$190K/卖$184K, 净流入$6K, 591笔大单"
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$147K/卖$225K, 净流入$-78K, 600笔大单"
         },
         {
           "name": "quantitative",
@@ -1225,9 +1382,9 @@
         "hurst_interpretation": "数据不足(需≥100)",
         "entropy_predictability": 0.132,
         "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.221,
-        "monte_carlo_bear_prob": 0.779,
-        "monte_carlo_var95": -24.19,
+        "monte_carlo_bull_prob": 0.217,
+        "monte_carlo_bear_prob": 0.783,
+        "monte_carlo_var95": -23.58,
         "vol_regime": "normal",
         "vol_percentile": 74.4,
         "market_regime": "trending_down",
@@ -1237,7 +1394,7 @@
         "key_findings": [
           "可预测性13%过低，噪音主导",
           "MC上涨概率仅22%，方向存疑",
-          "VaR(95%)=-24.2%，尾部风险大"
+          "VaR(95%)=-23.6%，尾部风险大"
         ]
       },
       "strategy": {
@@ -1252,7 +1409,7 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:35:16",
+      "created_at": "2026-06-10 15:13:24",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -1260,63 +1417,63 @@
     },
     {
       "id": null,
-      "coin": "FIL",
+      "coin": "PEPE",
       "direction": "short",
       "grade": "A",
-      "current_price": 0.75,
-      "entry_low": 0.746211,
-      "entry_high": 0.75375,
-      "stop_loss": 0.768943,
-      "take_profit": 0.718429,
+      "current_price": 2.85e-06,
+      "entry_low": 2.836892e-06,
+      "entry_high": 2.863108e-06,
+      "stop_loss": 2.91554e-06,
+      "take_profit": 2.740767e-06,
       "risk_reward_ratio": 1.7,
       "confidence": 80.0,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 44.112239679782014,
+          "score": 56.290416205601815,
           "direction": "short",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$65K/卖$87K, 净流入$-21K, 600笔大单"
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$99K/卖$169K, 净流入$-71K, 600笔大单"
         },
         {
           "name": "quantitative",
-          "score": 0.75,
-          "direction": "neutral",
+          "score": 14.0,
+          "direction": "short",
           "weight": 0.3516,
-          "detail": "综合评分-1, 强度无, 置信度48.0%"
+          "detail": "综合评分-14, 强度弱, 置信度50.0%"
         },
         {
           "name": "technical",
-          "score": 30.0,
+          "score": 25.0,
           "direction": "short",
           "weight": 0.3288,
-          "detail": "EMA空头排列(9<21<55), ADX=14震荡市, RSI=32超卖区, MACD死叉+零轴下方, BB下轨(-0%), Supertrend空头"
+          "detail": "EMA空头排列(9<21<55), ADX=41趋势强+DI空头, RSI=23严重超卖, MACD死叉+零轴下方, Supertrend多头"
         }
       ],
       "win_rate": null,
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 0.768943,
+      "invalidation_price": 2.91554e-06,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
         "hurst_interpretation": "数据不足(需≥100)",
-        "entropy_predictability": 0.2477,
+        "entropy_predictability": 0.1064,
         "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.331,
-        "monte_carlo_bear_prob": 0.669,
-        "monte_carlo_var95": -40.42,
+        "monte_carlo_bull_prob": 0.18,
+        "monte_carlo_bear_prob": 0.82,
+        "monte_carlo_var95": -30.65,
         "vol_regime": "normal",
-        "vol_percentile": 51.3,
+        "vol_percentile": 53.8,
         "market_regime": "trending_down",
         "market_regime_confidence": 1.0,
         "math_score_adjustment": -50.0,
-        "math_confidence": 0.542,
+        "math_confidence": 0.521,
         "key_findings": [
-          "可预测性25%过低，噪音主导",
-          "MC上涨概率仅33%，方向存疑",
-          "VaR(95%)=-40.4%，尾部风险大"
+          "可预测性11%过低，噪音主导",
+          "MC上涨概率仅18%，方向存疑",
+          "VaR(95%)=-30.6%，尾部风险大"
         ]
       },
       "strategy": {
@@ -1331,7 +1488,7 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:38:42",
+      "created_at": "2026-06-10 15:14:59",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -1339,221 +1496,63 @@
     },
     {
       "id": null,
-      "coin": "RENDER",
+      "coin": "ENA",
       "direction": "short",
       "grade": "A",
-      "current_price": 1.58,
-      "entry_low": 1.5718,
-      "entry_high": 1.5879,
-      "stop_loss": 1.6209,
-      "take_profit": 1.5119,
-      "risk_reward_ratio": 1.7,
-      "confidence": 78.5,
-      "sources": [
-        {
-          "name": "bigorder_anomaly",
-          "score": 52.65982624312778,
-          "direction": "short",
-          "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$22K/卖$35K, 净流入$-13K, 600笔大单"
-        },
-        {
-          "name": "quantitative",
-          "score": 8.5,
-          "direction": "neutral",
-          "weight": 0.3516,
-          "detail": "综合评分8, 强度无, 置信度48.0%"
-        },
-        {
-          "name": "technical",
-          "score": 15.0,
-          "direction": "short",
-          "weight": 0.3288,
-          "detail": "短期EMA偏空, RSI=31超卖区, MACD死叉+零轴下方, BB下轨(-2%), Supertrend空头"
-        }
-      ],
-      "win_rate": null,
-      "sample_count": null,
-      "avg_profit_pct": null,
-      "position_pct": 5.6,
-      "invalidation_price": 1.6209,
-      "expires_at": null,
-      "math": {
-        "hurst": 0.5,
-        "hurst_interpretation": "数据不足(需≥100)",
-        "entropy_predictability": 0.2707,
-        "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.268,
-        "monte_carlo_bear_prob": 0.732,
-        "monte_carlo_var95": -37.37,
-        "vol_regime": "extreme",
-        "vol_percentile": 94.9,
-        "market_regime": "trending_down",
-        "market_regime_confidence": 0.5,
-        "math_score_adjustment": -55.0,
-        "math_confidence": 0.446,
-        "key_findings": [
-          "MC上涨概率仅27%，方向存疑",
-          "VaR(95%)=-37.4%，尾部风险大",
-          "波动率极端(P95)，建议降仓"
-        ]
-      },
-      "strategy": {
-        "strategy_version": 1,
-        "regime": "trending_down",
-        "adaptive_weights": {
-          "bigorder_anomaly": 0.3196,
-          "quantitative": 0.3516,
-          "technical": 0.3288
-        },
-        "global_win_rate": 0.5,
-        "evolution_count": 0
-      },
-      "status": "pending",
-      "created_at": "2026-06-10 13:40:37",
-      "updated_at": "",
-      "settled_at": null,
-      "settled_price": null,
-      "pnl_pct": null
-    },
-    {
-      "id": null,
-      "coin": "ZRO",
-      "direction": "short",
-      "grade": "A",
-      "current_price": 0.82,
-      "entry_low": 0.81488,
-      "entry_high": 0.8241,
-      "stop_loss": 0.845599,
-      "take_profit": 0.777336,
-      "risk_reward_ratio": 1.7,
-      "confidence": 78.5,
-      "sources": [
-        {
-          "name": "bigorder_anomaly",
-          "score": 45.59789438646441,
-          "direction": "short",
-          "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$40K/卖$55K, 净流入$-15K, 599笔大单"
-        },
-        {
-          "name": "quantitative",
-          "score": 4.0,
-          "direction": "neutral",
-          "weight": 0.3516,
-          "detail": "综合评分-4, 强度无, 置信度48.0%"
-        },
-        {
-          "name": "technical",
-          "score": 15.0,
-          "direction": "short",
-          "weight": 0.3288,
-          "detail": "EMA空头排列(9<21<55), ADX=33趋势强+DI空头, RSI=20严重超卖, MACD死叉+零轴下方, BB下轨(-6%), Supertrend多头"
-        }
-      ],
-      "win_rate": null,
-      "sample_count": null,
-      "avg_profit_pct": null,
-      "position_pct": 5.6,
-      "invalidation_price": 0.845599,
-      "expires_at": null,
-      "math": {
-        "hurst": 0.5,
-        "hurst_interpretation": "数据不足(需≥100)",
-        "entropy_predictability": 0.2607,
-        "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.028,
-        "monte_carlo_bear_prob": 0.972,
-        "monte_carlo_var95": -50.96,
-        "vol_regime": "extreme",
-        "vol_percentile": 94.9,
-        "market_regime": "trending_down",
-        "market_regime_confidence": 0.5,
-        "math_score_adjustment": -55.0,
-        "math_confidence": 0.444,
-        "key_findings": [
-          "MC上涨概率仅3%，方向存疑",
-          "VaR(95%)=-51.0%，尾部风险大",
-          "波动率极端(P95)，建议降仓"
-        ]
-      },
-      "strategy": {
-        "strategy_version": 1,
-        "regime": "trending_down",
-        "adaptive_weights": {
-          "bigorder_anomaly": 0.3196,
-          "quantitative": 0.3516,
-          "technical": 0.3288
-        },
-        "global_win_rate": 0.5,
-        "evolution_count": 0
-      },
-      "status": "pending",
-      "created_at": "2026-06-10 13:41:17",
-      "updated_at": "",
-      "settled_at": null,
-      "settled_price": null,
-      "pnl_pct": null
-    },
-    {
-      "id": null,
-      "coin": "BTC",
-      "direction": "short",
-      "grade": "A",
-      "current_price": 61540.01,
-      "entry_low": 61263.1,
-      "entry_high": 61816.9,
-      "stop_loss": 62924.7,
-      "take_profit": 59232.3,
+      "current_price": 0.08,
+      "entry_low": 0.079443,
+      "entry_high": 0.0804,
+      "stop_loss": 0.082784,
+      "take_profit": 0.07536,
       "risk_reward_ratio": 1.7,
       "confidence": 74.0,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 56.76894481263405,
+          "score": 45.815725689741626,
           "direction": "short",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$223K/卖$385K, 净流入$-163K, 594笔大单"
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$88K/卖$120K, 净流入$-33K, 599笔大单"
         },
         {
           "name": "quantitative",
-          "score": 8.0,
-          "direction": "neutral",
+          "score": 10.75,
+          "direction": "short",
           "weight": 0.3516,
-          "detail": "综合评分-8, 强度无, 置信度48.0%"
+          "detail": "综合评分-11, 强度弱, 置信度50.0%"
         },
         {
           "name": "technical",
-          "score": 35.0,
+          "score": 25.0,
           "direction": "short",
           "weight": 0.3288,
-          "detail": "EMA空头排列(9<21<55), ADX=39趋势强+DI空头, RSI=21严重超卖, MACD死叉+零轴下方, BB下轨(8%), Supertrend空头"
+          "detail": "EMA空头排列(9<21<55), ADX=17震荡市, RSI=35偏弱, RSI底背离, MACD死叉+零轴下方, MACD底背离, BB下轨(-3%), Supertrend空头"
         }
       ],
-      "win_rate": 66.7,
-      "sample_count": 3,
-      "avg_profit_pct": 2.3,
+      "win_rate": null,
+      "sample_count": null,
+      "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 62924.7,
+      "invalidation_price": 0.082784,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
         "hurst_interpretation": "数据不足(需≥100)",
-        "entropy_predictability": 0.1517,
+        "entropy_predictability": 0.228,
         "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.217,
-        "monte_carlo_bear_prob": 0.783,
-        "monte_carlo_var95": -20.76,
+        "monte_carlo_bull_prob": 0.339,
+        "monte_carlo_bear_prob": 0.661,
+        "monte_carlo_var95": -44.24,
         "vol_regime": "extreme",
         "vol_percentile": 100.0,
         "market_regime": "trending_down",
         "market_regime_confidence": 0.5,
         "math_score_adjustment": -70.0,
-        "math_confidence": 0.428,
+        "math_confidence": 0.439,
         "key_findings": [
-          "可预测性15%过低，噪音主导",
-          "MC上涨概率仅22%，方向存疑",
-          "VaR(95%)=-20.8%，尾部风险大",
+          "可预测性23%过低，噪音主导",
+          "MC上涨概率仅34%，方向存疑",
+          "VaR(95%)=-44.2%，尾部风险大",
           "波动率极端(P100)，建议降仓"
         ]
       },
@@ -1569,87 +1568,7 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:35:28",
-      "updated_at": "",
-      "settled_at": null,
-      "settled_price": null,
-      "pnl_pct": null
-    },
-    {
-      "id": null,
-      "coin": "AVAX",
-      "direction": "short",
-      "grade": "A",
-      "current_price": 6.5,
-      "entry_low": 6.4707,
-      "entry_high": 6.5293,
-      "stop_loss": 6.6463,
-      "take_profit": 6.2562,
-      "risk_reward_ratio": 1.7,
-      "confidence": 74.0,
-      "sources": [
-        {
-          "name": "bigorder_anomaly",
-          "score": 41.09452016204908,
-          "direction": "short",
-          "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$38K/卖$47K, 净流入$-9K, 600笔大单"
-        },
-        {
-          "name": "quantitative",
-          "score": 9.0,
-          "direction": "neutral",
-          "weight": 0.3516,
-          "detail": "综合评分-9, 强度无, 置信度48.0%"
-        },
-        {
-          "name": "technical",
-          "score": 35.0,
-          "direction": "short",
-          "weight": 0.3288,
-          "detail": "EMA空头排列(9<21<55), ADX=35趋势强+DI空头, RSI=12严重超卖, MACD死叉+零轴下方, BB下轨(-2%), Supertrend空头"
-        }
-      ],
-      "win_rate": null,
-      "sample_count": null,
-      "avg_profit_pct": null,
-      "position_pct": 5.6,
-      "invalidation_price": 6.6463,
-      "expires_at": null,
-      "math": {
-        "hurst": 0.5,
-        "hurst_interpretation": "数据不足(需≥100)",
-        "entropy_predictability": 0.2059,
-        "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.099,
-        "monte_carlo_bear_prob": 0.901,
-        "monte_carlo_var95": -30.75,
-        "vol_regime": "extreme",
-        "vol_percentile": 94.9,
-        "market_regime": "trending_down",
-        "market_regime_confidence": 0.5,
-        "math_score_adjustment": -70.0,
-        "math_confidence": 0.436,
-        "key_findings": [
-          "可预测性21%过低，噪音主导",
-          "MC上涨概率仅10%，方向存疑",
-          "VaR(95%)=-30.8%，尾部风险大",
-          "波动率极端(P95)，建议降仓"
-        ]
-      },
-      "strategy": {
-        "strategy_version": 1,
-        "regime": "trending_down",
-        "adaptive_weights": {
-          "bigorder_anomaly": 0.3196,
-          "quantitative": 0.3516,
-          "technical": 0.3288
-        },
-        "global_win_rate": 0.5,
-        "evolution_count": 0
-      },
-      "status": "pending",
-      "created_at": "2026-06-10 13:37:23",
+      "created_at": "2026-06-10 15:14:46",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -1661,19 +1580,19 @@
       "direction": "short",
       "grade": "A",
       "current_price": 0.001628,
-      "entry_low": 0.001619,
+      "entry_low": 0.00162,
       "entry_high": 0.001636,
-      "stop_loss": 0.001671,
-      "take_profit": 0.001556,
+      "stop_loss": 0.001669,
+      "take_profit": 0.00156,
       "risk_reward_ratio": 1.7,
       "confidence": 74.0,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 15.815664587600615,
+          "score": 18.788805496409687,
           "direction": "neutral",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$41K/卖$42K, 净流入$-1K, 600笔大单"
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$51K/卖$59K, 净流入$-8K, 600笔大单"
         },
         {
           "name": "quantitative",
@@ -1694,7 +1613,7 @@
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 0.001671,
+      "invalidation_price": 0.001669,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
@@ -1729,7 +1648,7 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:39:22",
+      "created_at": "2026-06-10 15:17:49",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -1737,64 +1656,64 @@
     },
     {
       "id": null,
-      "coin": "VIRTUAL",
+      "coin": "SEI",
       "direction": "short",
       "grade": "A",
-      "current_price": 0.56,
-      "entry_low": 0.557015,
-      "entry_high": 0.5628,
-      "stop_loss": 0.574926,
-      "take_profit": 0.535124,
+      "current_price": 0.05,
+      "entry_low": 0.049723,
+      "entry_high": 0.05025,
+      "stop_loss": 0.051386,
+      "take_profit": 0.047691,
       "risk_reward_ratio": 1.7,
       "confidence": 74.0,
       "sources": [
         {
           "name": "bigorder_anomaly",
-          "score": 51.740699412159266,
+          "score": 42.17645913154896,
           "direction": "short",
           "weight": 0.3398,
-          "detail": "12h聚合(Binance+Bybit+Bitget), 买$70K/卖$109K, 净流入$-39K, 600笔大单"
+          "detail": "12h聚合(Binance+Bybit+Bitget), 买$20K/卖$25K, 净流入$-5K, 600笔大单"
         },
         {
           "name": "quantitative",
-          "score": 7.25,
-          "direction": "neutral",
+          "score": 10.75,
+          "direction": "short",
           "weight": 0.3516,
-          "detail": "综合评分7, 强度无, 置信度48.0%"
+          "detail": "综合评分-11, 强度弱, 置信度50.0%"
         },
         {
           "name": "technical",
-          "score": 15.0,
+          "score": 10.0,
           "direction": "short",
           "weight": 0.3288,
-          "detail": "EMA空头排列(9<21<55), ADX=19震荡市, RSI=30超卖区, RSI底背离, MACD死叉+零轴下方, BB下轨(0%), Supertrend空头"
+          "detail": "EMA空头排列(9<21<55), RSI=32超卖区, MACD死叉+零轴下方, BB下轨(9%), Supertrend多头"
         }
       ],
       "win_rate": null,
       "sample_count": null,
       "avg_profit_pct": null,
       "position_pct": 5.6,
-      "invalidation_price": 0.574926,
+      "invalidation_price": 0.051386,
       "expires_at": null,
       "math": {
         "hurst": 0.5,
         "hurst_interpretation": "数据不足(需≥100)",
-        "entropy_predictability": 0.1147,
+        "entropy_predictability": 0.1679,
         "kelly_fraction": 0.125,
-        "monte_carlo_bull_prob": 0.308,
-        "monte_carlo_bear_prob": 0.692,
-        "monte_carlo_var95": -38.89,
+        "monte_carlo_bull_prob": 0.379,
+        "monte_carlo_bear_prob": 0.621,
+        "monte_carlo_var95": -35.59,
         "vol_regime": "extreme",
-        "vol_percentile": 100.0,
+        "vol_percentile": 97.4,
         "market_regime": "trending_down",
         "market_regime_confidence": 0.5,
         "math_score_adjustment": -70.0,
-        "math_confidence": 0.422,
+        "math_confidence": 0.43,
         "key_findings": [
-          "可预测性11%过低，噪音主导",
-          "MC上涨概率仅31%，方向存疑",
-          "VaR(95%)=-38.9%，尾部风险大",
-          "波动率极端(P100)，建议降仓"
+          "可预测性17%过低，噪音主导",
+          "MC上涨概率仅38%，方向存疑",
+          "VaR(95%)=-35.6%，尾部风险大",
+          "波动率极端(P97)，建议降仓"
         ]
       },
       "strategy": {
@@ -1809,7 +1728,7 @@
         "evolution_count": 0
       },
       "status": "pending",
-      "created_at": "2026-06-10 13:41:11",
+      "created_at": "2026-06-10 15:22:37",
       "updated_at": "",
       "settled_at": null,
       "settled_price": null,
@@ -1817,29 +1736,1150 @@
     }
   ],
   "displays": [
-    "📊 TON 交易信号卡 | 🟡A级 | 置信度 95%\n├─ 方向：做空\n├─ 当前价格：$1.66\n├─ 进场区间：$1.65 - $1.67\n├─ 止损：$1.71 (+3.0%)\n├─ 止盈：$1.56 (-6.0%)\n├─ 盈亏比：2.0 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(66) + 量化六因子(2) + 技术分析(10)\n├─ 数学推导：Hurst=0.50 | MC 看跌52% | 波动率=normal | 市场=trending_up | Kelly=12.5%\n│  · VaR(95%)=-46.0%，尾部风险大\n│  · 市场状态=trending_up，与信号方向一致\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_up | 全局胜率50%\n└─ 失效条件：突破 $1.71",
-    "📊 STG 交易信号卡 | 🟡A级 | 置信度 95%\n├─ 方向：做多\n├─ 当前价格：$0.3600\n├─ 进场区间：$0.3582 - $0.3671\n├─ 止损：$0.3247 (-9.8%)\n├─ 止盈：$0.4306 (+19.6%)\n├─ 盈亏比：2.0 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(19) + 量化六因子(21) + 技术分析(70)\n├─ 数学推导：Hurst=0.50 | MC 看涨56% | 波动率=extreme | 市场=trending_up | Kelly=12.5%\n│  · 可预测性51%，信号可靠性高\n│  · VaR(95%)=-55.6%，尾部风险大\n│  · 波动率极端(P100)，建议降仓\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_up | 全局胜率50%\n└─ 失效条件：跌破 $0.3247",
-    "📊 PENGU 交易信号卡 | 🔴S级 | 置信度 95%\n├─ 方向：做空\n├─ 当前价格：$0.0100\n├─ 进场区间：$0.009898 - $0.0100\n├─ 止损：$0.0105 (+5.1%)\n├─ 止盈：$0.008982 (-10.2%)\n├─ 盈亏比：2.0 : 1\n├─ 建议仓位：总资金 9%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(61) + 量化六因子(23) + 技术分析(17)\n├─ 数学推导：Hurst=0.50 | MC 看跌39% | 波动率=normal | 市场=trending_up | Kelly=12.5%\n│  · MC上涨概率61%，方向确认\n│  · VaR(95%)=-35.6%，尾部风险大\n│  · 市场状态=trending_up，与信号方向一致\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_up | 全局胜率50%\n└─ 失效条件：突破 $0.0105",
-    "📊 JTO 交易信号卡 | 🔴S级 | 置信度 95%\n├─ 方向：做多\n├─ 当前价格：$0.5900\n├─ 进场区间：$0.5870 - $0.5961\n├─ 止损：$0.5597 (-5.1%)\n├─ 止盈：$0.6506 (+10.3%)\n├─ 盈亏比：2.0 : 1\n├─ 建议仓位：总资金 9%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(81) + 量化六因子(17) + 技术分析(47)\n├─ 数学推导：Hurst=0.50 | MC 看涨66% | 波动率=normal | 市场=trending_up | Kelly=12.5%\n│  · MC上涨概率66%，方向确认\n│  · VaR(95%)=-42.8%，尾部风险大\n│  · 市场状态=trending_up，与信号方向一致\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_up | 全局胜率50%\n└─ 失效条件：跌破 $0.5597",
-    "📊 ONDO 交易信号卡 | 🟡A级 | 置信度 94%\n├─ 方向：做空\n├─ 当前价格：$0.3500\n├─ 进场区间：$0.3475 - $0.3518\n├─ 止损：$0.3627 (+3.6%)\n├─ 止盈：$0.3289 (-6.0%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(19) + 量化六因子(18) + 技术分析(35)\n├─ 数学推导：Hurst=0.50 | MC 看跌39% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · 可预测性22%过低，噪音主导\n│  · MC上涨概率61%，方向确认\n│  · VaR(95%)=-33.9%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.3627",
-    "📊 TIA 交易信号卡 | 🟡A级 | 置信度 94%\n├─ 方向：做空\n├─ 当前价格：$0.3200\n├─ 进场区间：$0.3182 - $0.3216\n├─ 止损：$0.3291 (+2.8%)\n├─ 止盈：$0.3018 (-5.7%)\n├─ 盈亏比：2.0 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(42) + 量化六因子(12) + 技术分析(35)\n├─ 数学推导：Hurst=0.50 | MC 看跌53% | 波动率=normal | 市场=trending_up | Kelly=12.5%\n│  · 可预测性24%过低，噪音主导\n│  · VaR(95%)=-38.3%，尾部风险大\n│  · 市场状态=trending_up，与信号方向一致\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_up | 全局胜率50%\n└─ 失效条件：突破 $0.3291",
-    "📊 IO 交易信号卡 | 🟡A级 | 置信度 92%\n├─ 方向：做多\n├─ 当前价格：$0.1600\n├─ 进场区间：$0.1592 - $0.1620\n├─ 止损：$0.1468 (-8.2%)\n├─ 止盈：$0.1732 (+8.2%)\n├─ 盈亏比：1.0 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(47) + 量化六因子(8) + 技术分析(7)\n├─ 数学推导：Hurst=0.50 | MC 看涨53% | 波动率=normal | 市场=mean_reverting | Kelly=12.5%\n│  · VaR(95%)=-56.9%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | mean_reverting | 全局胜率50%\n└─ 失效条件：跌破 $0.1468",
-    "📊 BIO 交易信号卡 | 🟡A级 | 置信度 92%\n├─ 方向：做空\n├─ 当前价格：$0.0300\n├─ 进场区间：$0.0297 - $0.0301\n├─ 止损：$0.0313 (+4.2%)\n├─ 止盈：$0.0279 (-7.0%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(18) + 量化六因子(33) + 技术分析(45)\n├─ 数学推导：Hurst=0.50 | MC 看跌50% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · VaR(95%)=-65.4%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.0313",
-    "📊 SAHARA 交易信号卡 | 🟡A级 | 置信度 88%\n├─ 方向：做空\n├─ 当前价格：$0.0200\n├─ 进场区间：$0.0196 - $0.0201\n├─ 止损：$0.0217 (+8.3%)\n├─ 止盈：$0.0152 (-24.2%)\n├─ 盈亏比：2.9 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(46) + 量化六因子(2) + 技术分析(10)\n├─ 数学推导：Hurst=0.50 | MC 看跌63% | 波动率=low | 市场=quiet | Kelly=12.5%\n│  · MC上涨概率仅37%，方向存疑\n│  · VaR(95%)=-68.7%，尾部风险大\n│  · 波动率低位(P18)，趋势可靠\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | quiet | 全局胜率50%\n└─ 失效条件：突破 $0.0217",
-    "📊 LAYER 交易信号卡 | 🟡A级 | 置信度 88%\n├─ 方向：做空\n├─ 当前价格：$0.0700\n├─ 进场区间：$0.0695 - $0.0703\n├─ 止损：$0.0736 (+5.1%)\n├─ 止盈：$0.0664 (-5.1%)\n├─ 盈亏比：1.0 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(40) + 量化六因子(29) + 技术分析(40)\n├─ 数学推导：Hurst=0.50 | MC 看跌67% | 波动率=normal | 市场=mean_reverting | Kelly=12.5%\n│  · 可预测性65%，信号可靠性高\n│  · MC上涨概率仅33%，方向存疑\n│  · VaR(95%)=-73.2%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | mean_reverting | 全局胜率50%\n└─ 失效条件：突破 $0.0736",
-    "📊 BNB 交易信号卡 | 🟡A级 | 置信度 86%\n├─ 方向：做空\n├─ 当前价格：$588.04\n├─ 进场区间：$585.39 - $590.69\n├─ 止损：$601.27 (+2.2%)\n├─ 止盈：$565.99 (-3.7%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(48) + 量化六因子(7) + 技术分析(60)\n├─ 数学推导：Hurst=0.50 | MC 看跌57% | 波动率=extreme | 市场=trending_down | Kelly=12.5%\n│  · VaR(95%)=-20.6%，尾部风险大\n│  · 波动率极端(P100)，建议降仓\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $601.27",
-    "📊 SUI 交易信号卡 | 🟡A级 | 置信度 84%\n├─ 方向：做空\n├─ 当前价格：$0.7400\n├─ 进场区间：$0.7366 - $0.7434\n├─ 止损：$0.7569 (+2.3%)\n├─ 止盈：$0.7118 (-3.8%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(19) + 量化六因子(27) + 技术分析(55)\n├─ 数学推导：Hurst=0.50 | MC 看跌72% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · MC上涨概率仅28%，方向存疑\n│  · VaR(95%)=-40.7%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.7569",
-    "📊 DASH 交易信号卡 | 🟡A级 | 置信度 84%\n├─ 方向：做空\n├─ 当前价格：$34.48\n├─ 进场区间：$34.24 - $34.65\n├─ 止损：$35.66 (+3.4%)\n├─ 止盈：$32.52 (-5.7%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(67) + 量化六因子(17) + 技术分析(35)\n├─ 数学推导：Hurst=0.50 | MC 看跌71% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · MC上涨概率仅29%，方向存疑\n│  · VaR(95%)=-49.8%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $35.66",
-    "📊 ARB 交易信号卡 | 🟡A级 | 置信度 84%\n├─ 方向：做空\n├─ 当前价格：$0.0800\n├─ 进场区间：$0.0796 - $0.0804\n├─ 止损：$0.0818 (+2.2%)\n├─ 止盈：$0.0770 (-3.7%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(47) + 量化六因子(11) + 技术分析(20)\n├─ 数学推导：Hurst=0.50 | MC 看跌84% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · MC上涨概率仅16%，方向存疑\n│  · VaR(95%)=-38.9%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.0818",
-    "📊 ICP 交易信号卡 | 🟡A级 | 置信度 84%\n├─ 方向：做空\n├─ 当前价格：$2.26\n├─ 进场区间：$2.25 - $2.27\n├─ 止损：$2.31 (+2.4%)\n├─ 止盈：$2.17 (-3.9%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(67) + 量化六因子(10) + 技术分析(15)\n├─ 数学推导：Hurst=0.50 | MC 看跌61% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · MC上涨概率仅39%，方向存疑\n│  · VaR(95%)=-43.5%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $2.31",
-    "📊 XRP 交易信号卡 | 🟡A级 | 置信度 80%\n├─ 方向：做空\n├─ 当前价格：$1.12\n├─ 进场区间：$1.11 - $1.12\n├─ 止损：$1.15 (+2.2%)\n├─ 止盈：$1.08 (-3.7%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(16) + 量化六因子(16) + 技术分析(45)\n├─ 数学推导：Hurst=0.50 | MC 看跌78% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · 可预测性13%过低，噪音主导\n│  · MC上涨概率仅22%，方向存疑\n│  · VaR(95%)=-24.2%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $1.15",
-    "📊 FIL 交易信号卡 | 🟡A级 | 置信度 80%\n├─ 方向：做空\n├─ 当前价格：$0.7500\n├─ 进场区间：$0.7462 - $0.7538\n├─ 止损：$0.7689 (+2.5%)\n├─ 止盈：$0.7184 (-4.2%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(44) + 量化六因子(1) + 技术分析(30)\n├─ 数学推导：Hurst=0.50 | MC 看跌67% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · 可预测性25%过低，噪音主导\n│  · MC上涨概率仅33%，方向存疑\n│  · VaR(95%)=-40.4%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.7689",
-    "📊 RENDER 交易信号卡 | 🟡A级 | 置信度 78%\n├─ 方向：做空\n├─ 当前价格：$1.58\n├─ 进场区间：$1.57 - $1.59\n├─ 止损：$1.62 (+2.6%)\n├─ 止盈：$1.51 (-4.3%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(53) + 量化六因子(8) + 技术分析(15)\n├─ 数学推导：Hurst=0.50 | MC 看跌73% | 波动率=extreme | 市场=trending_down | Kelly=12.5%\n│  · MC上涨概率仅27%，方向存疑\n│  · VaR(95%)=-37.4%，尾部风险大\n│  · 波动率极端(P95)，建议降仓\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $1.62",
-    "📊 ZRO 交易信号卡 | 🟡A级 | 置信度 78%\n├─ 方向：做空\n├─ 当前价格：$0.8200\n├─ 进场区间：$0.8149 - $0.8241\n├─ 止损：$0.8456 (+3.1%)\n├─ 止盈：$0.7773 (-5.2%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(46) + 量化六因子(4) + 技术分析(15)\n├─ 数学推导：Hurst=0.50 | MC 看跌97% | 波动率=extreme | 市场=trending_down | Kelly=12.5%\n│  · MC上涨概率仅3%，方向存疑\n│  · VaR(95%)=-51.0%，尾部风险大\n│  · 波动率极端(P95)，建议降仓\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.8456",
-    "📊 BTC 交易信号卡 | 🟡A级 | 置信度 74%\n├─ 方向：做空\n├─ 当前价格：$61,540\n├─ 进场区间：$61,263 - $61,817\n├─ 止损：$62,925 (+2.3%)\n├─ 止盈：$59,232 (-3.7%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(57) + 量化六因子(8) + 技术分析(35)\n├─ 数学推导：Hurst=0.50 | MC 看跌78% | 波动率=extreme | 市场=trending_down | Kelly=12.5%\n│  · 可预测性15%过低，噪音主导\n│  · MC上涨概率仅22%，方向存疑\n│  · VaR(95%)=-20.8%，尾部风险大\n├─ 历史胜率：67%（近30天 3 次）\n├─ 平均盈利：+2.3%\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $62,925",
-    "📊 AVAX 交易信号卡 | 🟡A级 | 置信度 74%\n├─ 方向：做空\n├─ 当前价格：$6.50\n├─ 进场区间：$6.47 - $6.53\n├─ 止损：$6.65 (+2.3%)\n├─ 止盈：$6.26 (-3.8%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(41) + 量化六因子(9) + 技术分析(35)\n├─ 数学推导：Hurst=0.50 | MC 看跌90% | 波动率=extreme | 市场=trending_down | Kelly=12.5%\n│  · 可预测性21%过低，噪音主导\n│  · MC上涨概率仅10%，方向存疑\n│  · VaR(95%)=-30.8%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $6.65",
-    "📊 PUMP 交易信号卡 | 🟡A级 | 置信度 74%\n├─ 方向：做空\n├─ 当前价格：$0.001628\n├─ 进场区间：$0.001619 - $0.001636\n├─ 止损：$0.001671 (+2.6%)\n├─ 止盈：$0.001556 (-4.4%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(16) + 量化六因子(18) + 技术分析(40)\n├─ 数学推导：Hurst=0.50 | MC 看跌68% | 波动率=extreme | 市场=trending_down | Kelly=12.5%\n│  · 可预测性17%过低，噪音主导\n│  · MC上涨概率仅32%，方向存疑\n│  · VaR(95%)=-34.7%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.001671",
-    "📊 VIRTUAL 交易信号卡 | 🟡A级 | 置信度 74%\n├─ 方向：做空\n├─ 当前价格：$0.5600\n├─ 进场区间：$0.5570 - $0.5628\n├─ 止损：$0.5749 (+2.7%)\n├─ 止盈：$0.5351 (-4.4%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(52) + 量化六因子(7) + 技术分析(15)\n├─ 数学推导：Hurst=0.50 | MC 看跌69% | 波动率=extreme | 市场=trending_down | Kelly=12.5%\n│  · 可预测性11%过低，噪音主导\n│  · MC上涨概率仅31%，方向存疑\n│  · VaR(95%)=-38.9%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.5749"
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 TON 交易信号卡 | 🟡A级 | 置信度 95%\n├─ 方向：做空\n├─ 当前价格：$1.67\n├─ 进场区间：$1.66 - $1.68\n├─ 止损：$1.72 (+2.9%)\n├─ 止盈：$1.57 (-5.9%)\n├─ 盈亏比：2.0 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(61) + 量化六因子(2) + 技术分析(10)\n├─ 数学推导：Hurst=0.50 | MC 看跌51% | 波动率=normal | 市场=trending_up | Kelly=12.5%\n│  · VaR(95%)=-45.8%，尾部风险大\n│  · 市场状态=trending_up，与信号方向一致\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_up | 全局胜率50%\n└─ 失效条件：突破 $1.72",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "TON",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 95.0,
+          "currentPrice": 1.67,
+          "entryZone": [
+            1.6602,
+            1.6783
+          ],
+          "stopLoss": 1.7191,
+          "takeProfit": 1.5718,
+          "riskReward": 2.0,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 1.7191,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 61
+            },
+            {
+              "name": "quantitative",
+              "score": 2
+            },
+            {
+              "name": "technical",
+              "score": 10
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.486,
+          "volatility": "normal",
+          "marketRegime": "trending_up"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_up",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 SENT 交易信号卡 | 🟡A级 | 置信度 95%\n├─ 方向：做空\n├─ 当前价格：$0.0200\n├─ 进场区间：$0.0196 - $0.0201\n├─ 止损：$0.0219 (+9.6%)\n├─ 止盈：$0.0162 (-19.1%)\n├─ 盈亏比：2.0 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(46) + 量化六因子(25) + 技术分析(52)\n├─ 数学推导：Hurst=0.50 | MC 看跌46% | 波动率=normal | 市场=trending_up | Kelly=12.5%\n│  · VaR(95%)=-35.6%，尾部风险大\n│  · 市场状态=trending_up，与信号方向一致\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_up | 全局胜率50%\n└─ 失效条件：突破 $0.0219",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "SENT",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 95.0,
+          "currentPrice": 0.02,
+          "entryZone": [
+            0.019617,
+            0.0201
+          ],
+          "stopLoss": 0.021915,
+          "takeProfit": 0.01617,
+          "riskReward": 2.0,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.021915,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 46
+            },
+            {
+              "name": "quantitative",
+              "score": 25
+            },
+            {
+              "name": "technical",
+              "score": 52
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.535,
+          "volatility": "normal",
+          "marketRegime": "trending_up"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_up",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 STG 交易信号卡 | 🟡A级 | 置信度 95%\n├─ 方向：做多\n├─ 当前价格：$0.3900\n├─ 进场区间：$0.3881 - $0.3972\n├─ 止损：$0.3541 (-9.2%)\n├─ 止盈：$0.4619 (+18.4%)\n├─ 盈亏比：2.0 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(75) + 量化六因子(2) + 技术分析(30)\n├─ 数学推导：Hurst=0.50 | MC 看涨58% | 波动率=extreme | 市场=trending_up | Kelly=12.5%\n│  · 可预测性51%，信号可靠性高\n│  · VaR(95%)=-55.6%，尾部风险大\n│  · 波动率极端(P100)，建议降仓\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_up | 全局胜率50%\n└─ 失效条件：跌破 $0.3541",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "STG",
+          "direction": "long",
+          "grade": "A",
+          "confidence": 95.0,
+          "currentPrice": 0.39,
+          "entryZone": [
+            0.38805,
+            0.397189
+          ],
+          "stopLoss": 0.354055,
+          "takeProfit": 0.461891,
+          "riskReward": 2.0,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.354055,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 75
+            },
+            {
+              "name": "quantitative",
+              "score": 2
+            },
+            {
+              "name": "technical",
+              "score": 30
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.578,
+          "volatility": "extreme",
+          "marketRegime": "trending_up"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_up",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 JTO 交易信号卡 | 🔴S级 | 置信度 95%\n├─ 方向：做多\n├─ 当前价格：$0.6100\n├─ 进场区间：$0.6069 - $0.6160\n├─ 止损：$0.5798 (-5.0%)\n├─ 止盈：$0.6704 (+9.9%)\n├─ 盈亏比：2.0 : 1\n├─ 建议仓位：总资金 9%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(55) + 量化六因子(19) + 技术分析(47)\n├─ 数学推导：Hurst=0.50 | MC 看涨67% | 波动率=normal | 市场=trending_up | Kelly=12.5%\n│  · MC上涨概率67%，方向确认\n│  · VaR(95%)=-41.5%，尾部风险大\n│  · 市场状态=trending_up，与信号方向一致\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_up | 全局胜率50%\n└─ 失效条件：跌破 $0.5798",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "JTO",
+          "direction": "long",
+          "grade": "S",
+          "confidence": 95.0,
+          "currentPrice": 0.61,
+          "entryZone": [
+            0.60695,
+            0.616041
+          ],
+          "stopLoss": 0.579793,
+          "takeProfit": 0.670415,
+          "riskReward": 2.0,
+          "positionPct": 9,
+          "kellyPct": 12.5,
+          "invalidation": 0.579793,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 55
+            },
+            {
+              "name": "quantitative",
+              "score": 19
+            },
+            {
+              "name": "technical",
+              "score": 47
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.673,
+          "volatility": "normal",
+          "marketRegime": "trending_up"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_up",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 ONDO 交易信号卡 | 🟡A级 | 置信度 94%\n├─ 方向：做空\n├─ 当前价格：$0.3500\n├─ 进场区间：$0.3475 - $0.3518\n├─ 止损：$0.3627 (+3.6%)\n├─ 止盈：$0.3288 (-6.0%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(51) + 量化六因子(18) + 技术分析(35)\n├─ 数学推导：Hurst=0.50 | MC 看跌39% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · 可预测性22%过低，噪音主导\n│  · MC上涨概率61%，方向确认\n│  · VaR(95%)=-33.9%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.3627",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "ONDO",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 93.5,
+          "currentPrice": 0.35,
+          "entryZone": [
+            0.347462,
+            0.35175
+          ],
+          "stopLoss": 0.362691,
+          "takeProfit": 0.328848,
+          "riskReward": 1.7,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.362691,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 51
+            },
+            {
+              "name": "quantitative",
+              "score": 18
+            },
+            {
+              "name": "technical",
+              "score": 35
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.612,
+          "volatility": "normal",
+          "marketRegime": "trending_down"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_down",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 TIA 交易信号卡 | 🟡A级 | 置信度 94%\n├─ 方向：做空\n├─ 当前价格：$0.3200\n├─ 进场区间：$0.3181 - $0.3216\n├─ 止损：$0.3297 (+3.0%)\n├─ 止盈：$0.3005 (-6.1%)\n├─ 盈亏比：2.0 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(51) + 量化六因子(12) + 技术分析(35)\n├─ 数学推导：Hurst=0.50 | MC 看跌53% | 波动率=normal | 市场=trending_up | Kelly=12.5%\n│  · 可预测性24%过低，噪音主导\n│  · VaR(95%)=-38.3%，尾部风险大\n│  · 市场状态=trending_up，与信号方向一致\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_up | 全局胜率50%\n└─ 失效条件：突破 $0.3297",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "TIA",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 93.5,
+          "currentPrice": 0.32,
+          "entryZone": [
+            0.318051,
+            0.3216
+          ],
+          "stopLoss": 0.329746,
+          "takeProfit": 0.300509,
+          "riskReward": 2.0,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.329746,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 51
+            },
+            {
+              "name": "quantitative",
+              "score": 12
+            },
+            {
+              "name": "technical",
+              "score": 35
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.474,
+          "volatility": "normal",
+          "marketRegime": "trending_up"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_up",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 IO 交易信号卡 | 🟡A级 | 置信度 92%\n├─ 方向：做多\n├─ 当前价格：$0.1700\n├─ 进场区间：$0.1691 - $0.1722\n├─ 止损：$0.1554 (-8.6%)\n├─ 止盈：$0.1846 (+8.6%)\n├─ 盈亏比：1.0 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(46) + 量化六因子(6) + 技术分析(12)\n├─ 数学推导：Hurst=0.50 | MC 看涨55% | 波动率=normal | 市场=mean_reverting | Kelly=12.5%\n│  · VaR(95%)=-56.2%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | mean_reverting | 全局胜率50%\n└─ 失效条件：跌破 $0.1554",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "IO",
+          "direction": "long",
+          "grade": "A",
+          "confidence": 92.0,
+          "currentPrice": 0.17,
+          "entryZone": [
+            0.16915,
+            0.172184
+          ],
+          "stopLoss": 0.155438,
+          "takeProfit": 0.184562,
+          "riskReward": 1.0,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.155438,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 46
+            },
+            {
+              "name": "quantitative",
+              "score": 6
+            },
+            {
+              "name": "technical",
+              "score": 12
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.546,
+          "volatility": "normal",
+          "marketRegime": "mean_reverting"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "mean_reverting",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 BIO 交易信号卡 | 🟡A级 | 置信度 92%\n├─ 方向：做空\n├─ 当前价格：$0.0300\n├─ 进场区间：$0.0298 - $0.0301\n├─ 止损：$0.0312 (+4.1%)\n├─ 止盈：$0.0279 (-6.9%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(52) + 量化六因子(33) + 技术分析(45)\n├─ 数学推导：Hurst=0.50 | MC 看跌50% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · VaR(95%)=-65.4%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.0312",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "BIO",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 92.0,
+          "currentPrice": 0.03,
+          "entryZone": [
+            0.029752,
+            0.03015
+          ],
+          "stopLoss": 0.031238,
+          "takeProfit": 0.027937,
+          "riskReward": 1.7,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.031238,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 52
+            },
+            {
+              "name": "quantitative",
+              "score": 33
+            },
+            {
+              "name": "technical",
+              "score": 45
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.504,
+          "volatility": "normal",
+          "marketRegime": "trending_down"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_down",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 SAHARA 交易信号卡 | 🟡A级 | 置信度 88%\n├─ 方向：做空\n├─ 当前价格：$0.0200\n├─ 进场区间：$0.0196 - $0.0201\n├─ 止损：$0.0216 (+8.2%)\n├─ 止盈：$0.0152 (-23.9%)\n├─ 盈亏比：2.9 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(51) + 量化六因子(2) + 技术分析(10)\n├─ 数学推导：Hurst=0.50 | MC 看跌63% | 波动率=low | 市场=quiet | Kelly=12.5%\n│  · MC上涨概率仅37%，方向存疑\n│  · VaR(95%)=-68.7%，尾部风险大\n│  · 波动率低位(P18)，趋势可靠\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | quiet | 全局胜率50%\n└─ 失效条件：突破 $0.0216",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "SAHARA",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 87.5,
+          "currentPrice": 0.02,
+          "entryZone": [
+            0.01959,
+            0.0201
+          ],
+          "stopLoss": 0.02164,
+          "takeProfit": 0.015215,
+          "riskReward": 2.9,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.02164,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 51
+            },
+            {
+              "name": "quantitative",
+              "score": 2
+            },
+            {
+              "name": "technical",
+              "score": 10
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.37,
+          "volatility": "low",
+          "marketRegime": "quiet"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "quiet",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 WLFI 交易信号卡 | 🟡A级 | 置信度 88%\n├─ 方向：做空\n├─ 当前价格：$0.0600\n├─ 进场区间：$0.0597 - $0.0603\n├─ 止损：$0.0615 (+2.4%)\n├─ 止盈：$0.0576 (-4.1%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(57) + 量化六因子(19) + 技术分析(17)\n├─ 数学推导：Hurst=0.50 | MC 看跌77% | 波动率=low | 市场=trending_down | Kelly=12.5%\n│  · MC上涨概率仅23%，方向存疑\n│  · VaR(95%)=-36.4%，尾部风险大\n│  · 波动率低位(P8)，趋势可靠\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.0615",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "WLFI",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 87.5,
+          "currentPrice": 0.06,
+          "entryZone": [
+            0.059706,
+            0.060294
+          ],
+          "stopLoss": 0.061468,
+          "takeProfit": 0.057554,
+          "riskReward": 1.7,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.061468,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 57
+            },
+            {
+              "name": "quantitative",
+              "score": 19
+            },
+            {
+              "name": "technical",
+              "score": 17
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.234,
+          "volatility": "low",
+          "marketRegime": "trending_down"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_down",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 WAL 交易信号卡 | 🟡A级 | 置信度 88%\n├─ 方向：做空\n├─ 当前价格：$0.0300\n├─ 进场区间：$0.0296 - $0.0301\n├─ 止损：$0.0329 (+9.7%)\n├─ 止盈：$0.0271 (-9.7%)\n├─ 盈亏比：1.0 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(15) + 量化六因子(19) + 技术分析(35)\n├─ 数学推导：Hurst=0.50 | MC 看跌84% | 波动率=normal | 市场=mean_reverting | Kelly=12.5%\n│  · 可预测性57%，信号可靠性高\n│  · MC上涨概率仅16%，方向存疑\n│  · VaR(95%)=-74.6%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | mean_reverting | 全局胜率50%\n└─ 失效条件：突破 $0.0329",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "WAL",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 87.5,
+          "currentPrice": 0.03,
+          "entryZone": [
+            0.029562,
+            0.03015
+          ],
+          "stopLoss": 0.032919,
+          "takeProfit": 0.027081,
+          "riskReward": 1.0,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.032919,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 15
+            },
+            {
+              "name": "quantitative",
+              "score": 19
+            },
+            {
+              "name": "technical",
+              "score": 35
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.163,
+          "volatility": "normal",
+          "marketRegime": "mean_reverting"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "mean_reverting",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 SUI 交易信号卡 | 🟡A级 | 置信度 84%\n├─ 方向：做空\n├─ 当前价格：$0.7500\n├─ 进场区间：$0.7465 - $0.7535\n├─ 止损：$0.7674 (+2.3%)\n├─ 止盈：$0.7210 (-3.9%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(42) + 量化六因子(27) + 技术分析(55)\n├─ 数学推导：Hurst=0.50 | MC 看跌70% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · MC上涨概率仅30%，方向存疑\n│  · VaR(95%)=-39.0%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.7674",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "SUI",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 84.5,
+          "currentPrice": 0.75,
+          "entryZone": [
+            0.746515,
+            0.753485
+          ],
+          "stopLoss": 0.767425,
+          "takeProfit": 0.720959,
+          "riskReward": 1.7,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.767425,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 42
+            },
+            {
+              "name": "quantitative",
+              "score": 27
+            },
+            {
+              "name": "technical",
+              "score": 55
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.295,
+          "volatility": "normal",
+          "marketRegime": "trending_down"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_down",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 DASH 交易信号卡 | 🟡A级 | 置信度 84%\n├─ 方向：做空\n├─ 当前价格：$34.62\n├─ 进场区间：$34.39 - $34.79\n├─ 止损：$35.77 (+3.3%)\n├─ 止盈：$32.70 (-5.5%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(42) + 量化六因子(17) + 技术分析(35)\n├─ 数学推导：Hurst=0.50 | MC 看跌71% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · MC上涨概率仅29%，方向存疑\n│  · VaR(95%)=-49.6%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $35.77",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "DASH",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 84.5,
+          "currentPrice": 34.62,
+          "entryZone": [
+            34.3898,
+            34.7931
+          ],
+          "stopLoss": 35.771,
+          "takeProfit": 32.7017,
+          "riskReward": 1.7,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 35.771,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 42
+            },
+            {
+              "name": "quantitative",
+              "score": 17
+            },
+            {
+              "name": "technical",
+              "score": 35
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.29,
+          "volatility": "normal",
+          "marketRegime": "trending_down"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_down",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 FIL 交易信号卡 | 🟡A级 | 置信度 84%\n├─ 方向：做空\n├─ 当前价格：$0.7600\n├─ 进场区间：$0.7562 - $0.7638\n├─ 止损：$0.7792 (+2.5%)\n├─ 止盈：$0.7280 (-4.2%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(55) + 量化六因子(1) + 技术分析(30)\n├─ 数学推导：Hurst=0.50 | MC 看跌66% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · MC上涨概率仅34%，方向存疑\n│  · VaR(95%)=-40.0%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.7792",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "FIL",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 84.5,
+          "currentPrice": 0.76,
+          "entryZone": [
+            0.756166,
+            0.7638
+          ],
+          "stopLoss": 0.779172,
+          "takeProfit": 0.728047,
+          "riskReward": 1.7,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.779172,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 55
+            },
+            {
+              "name": "quantitative",
+              "score": 1
+            },
+            {
+              "name": "technical",
+              "score": 30
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.336,
+          "volatility": "normal",
+          "marketRegime": "trending_down"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_down",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 ARB 交易信号卡 | 🟡A级 | 置信度 84%\n├─ 方向：做空\n├─ 当前价格：$0.0800\n├─ 进场区间：$0.0796 - $0.0804\n├─ 止损：$0.0818 (+2.3%)\n├─ 止盈：$0.0770 (-3.8%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(55) + 量化六因子(11) + 技术分析(20)\n├─ 数学推导：Hurst=0.50 | MC 看跌84% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · MC上涨概率仅16%，方向存疑\n│  · VaR(95%)=-38.9%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.0818",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "ARB",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 84.5,
+          "currentPrice": 0.08,
+          "entryZone": [
+            0.07964,
+            0.08036
+          ],
+          "stopLoss": 0.081802,
+          "takeProfit": 0.076997,
+          "riskReward": 1.7,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.081802,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 55
+            },
+            {
+              "name": "quantitative",
+              "score": 11
+            },
+            {
+              "name": "technical",
+              "score": 20
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.157,
+          "volatility": "normal",
+          "marketRegime": "trending_down"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_down",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 ICP 交易信号卡 | 🟡A级 | 置信度 84%\n├─ 方向：做空\n├─ 当前价格：$2.27\n├─ 进场区间：$2.26 - $2.28\n├─ 止损：$2.32 (+2.4%)\n├─ 止盈：$2.18 (-4.0%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(50) + 量化六因子(10) + 技术分析(15)\n├─ 数学推导：Hurst=0.50 | MC 看跌61% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · MC上涨概率仅39%，方向存疑\n│  · VaR(95%)=-43.4%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $2.32",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "ICP",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 84.5,
+          "currentPrice": 2.27,
+          "entryZone": [
+            2.2591,
+            2.2809
+          ],
+          "stopLoss": 2.3245,
+          "takeProfit": 2.1791,
+          "riskReward": 1.7,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 2.3245,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 50
+            },
+            {
+              "name": "quantitative",
+              "score": 10
+            },
+            {
+              "name": "technical",
+              "score": 15
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.388,
+          "volatility": "normal",
+          "marketRegime": "trending_down"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_down",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 DOGE 交易信号卡 | 🟡A级 | 置信度 80%\n├─ 方向：做空\n├─ 当前价格：$0.0800\n├─ 进场区间：$0.0796 - $0.0804\n├─ 止损：$0.0818 (+2.2%)\n├─ 止盈：$0.0770 (-3.7%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(62) + 量化六因子(8) + 技术分析(20)\n├─ 数学推导：Hurst=0.50 | MC 看跌70% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · 可预测性24%过低，噪音主导\n│  · MC上涨概率仅30%，方向存疑\n│  · VaR(95%)=-27.0%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.0818",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "DOGE",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 80.0,
+          "currentPrice": 0.08,
+          "entryZone": [
+            0.07964,
+            0.08036
+          ],
+          "stopLoss": 0.0818,
+          "takeProfit": 0.077,
+          "riskReward": 1.7,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.0818,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 62
+            },
+            {
+              "name": "quantitative",
+              "score": 8
+            },
+            {
+              "name": "technical",
+              "score": 20
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.301,
+          "volatility": "normal",
+          "marketRegime": "trending_down"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_down",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 XRP 交易信号卡 | 🟡A级 | 置信度 80%\n├─ 方向：做空\n├─ 当前价格：$1.12\n├─ 进场区间：$1.11 - $1.12\n├─ 止损：$1.15 (+2.2%)\n├─ 止盈：$1.08 (-3.7%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(51) + 量化六因子(16) + 技术分析(45)\n├─ 数学推导：Hurst=0.50 | MC 看跌78% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · 可预测性13%过低，噪音主导\n│  · MC上涨概率仅22%，方向存疑\n│  · VaR(95%)=-23.6%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $1.15",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "XRP",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 80.0,
+          "currentPrice": 1.12,
+          "entryZone": [
+            1.115,
+            1.125
+          ],
+          "stopLoss": 1.1452,
+          "takeProfit": 1.078,
+          "riskReward": 1.7,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 1.1452,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 51
+            },
+            {
+              "name": "quantitative",
+              "score": 16
+            },
+            {
+              "name": "technical",
+              "score": 45
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.217,
+          "volatility": "normal",
+          "marketRegime": "trending_down"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_down",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 PEPE 交易信号卡 | 🟡A级 | 置信度 80%\n├─ 方向：做空\n├─ 当前价格：$0.00000285\n├─ 进场区间：$0.000002836892 - $0.000002863108\n├─ 止损：$0.00000291554 (+2.3%)\n├─ 止盈：$0.000002740767 (-3.8%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(56) + 量化六因子(14) + 技术分析(25)\n├─ 数学推导：Hurst=0.50 | MC 看跌82% | 波动率=normal | 市场=trending_down | Kelly=12.5%\n│  · 可预测性11%过低，噪音主导\n│  · MC上涨概率仅18%，方向存疑\n│  · VaR(95%)=-30.6%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.00000291554",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "PEPE",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 80.0,
+          "currentPrice": 2.85e-06,
+          "entryZone": [
+            2.836892e-06,
+            2.863108e-06
+          ],
+          "stopLoss": 2.91554e-06,
+          "takeProfit": 2.740767e-06,
+          "riskReward": 1.7,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 2.91554e-06,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 56
+            },
+            {
+              "name": "quantitative",
+              "score": 14
+            },
+            {
+              "name": "technical",
+              "score": 25
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.18,
+          "volatility": "normal",
+          "marketRegime": "trending_down"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_down",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 ENA 交易信号卡 | 🟡A级 | 置信度 74%\n├─ 方向：做空\n├─ 当前价格：$0.0800\n├─ 进场区间：$0.0794 - $0.0804\n├─ 止损：$0.0828 (+3.5%)\n├─ 止盈：$0.0754 (-5.8%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(46) + 量化六因子(11) + 技术分析(25)\n├─ 数学推导：Hurst=0.50 | MC 看跌66% | 波动率=extreme | 市场=trending_down | Kelly=12.5%\n│  · 可预测性23%过低，噪音主导\n│  · MC上涨概率仅34%，方向存疑\n│  · VaR(95%)=-44.2%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.0828",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "ENA",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 74.0,
+          "currentPrice": 0.08,
+          "entryZone": [
+            0.079443,
+            0.0804
+          ],
+          "stopLoss": 0.082784,
+          "takeProfit": 0.07536,
+          "riskReward": 1.7,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.082784,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 46
+            },
+            {
+              "name": "quantitative",
+              "score": 11
+            },
+            {
+              "name": "technical",
+              "score": 25
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.339,
+          "volatility": "extreme",
+          "marketRegime": "trending_down"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_down",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 PUMP 交易信号卡 | 🟡A级 | 置信度 74%\n├─ 方向：做空\n├─ 当前价格：$0.001628\n├─ 进场区间：$0.00162 - $0.001636\n├─ 止损：$0.001669 (+2.5%)\n├─ 止盈：$0.00156 (-4.2%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(19) + 量化六因子(18) + 技术分析(40)\n├─ 数学推导：Hurst=0.50 | MC 看跌68% | 波动率=extreme | 市场=trending_down | Kelly=12.5%\n│  · 可预测性17%过低，噪音主导\n│  · MC上涨概率仅32%，方向存疑\n│  · VaR(95%)=-34.7%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.001669",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "PUMP",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 74.0,
+          "currentPrice": 0.001628,
+          "entryZone": [
+            0.00162,
+            0.001636
+          ],
+          "stopLoss": 0.001669,
+          "takeProfit": 0.00156,
+          "riskReward": 1.7,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.001669,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 19
+            },
+            {
+              "name": "quantitative",
+              "score": 18
+            },
+            {
+              "name": "technical",
+              "score": 40
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.322,
+          "volatility": "extreme",
+          "marketRegime": "trending_down"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_down",
+          "globalWinRate": 0.5
+        }
+      }
+    },
+    {
+      "type": "signalCard",
+      "data": {
+        "displayText": "📊 SEI 交易信号卡 | 🟡A级 | 置信度 74%\n├─ 方向：做空\n├─ 当前价格：$0.0500\n├─ 进场区间：$0.0497 - $0.0503\n├─ 止损：$0.0514 (+2.8%)\n├─ 止盈：$0.0477 (-4.6%)\n├─ 盈亏比：1.7 : 1\n├─ 建议仓位：总资金 6%（经风险调整后的实际仓位）\n├─ Kelly 仓位：12.5%（理论最优仓位，建议仓位取其半值防回撤）\n├─ 依据：大单异动(42) + 量化六因子(11) + 技术分析(10)\n├─ 数学推导：Hurst=0.50 | MC 看跌62% | 波动率=extreme | 市场=trending_down | Kelly=12.5%\n│  · 可预测性17%过低，噪音主导\n│  · MC上涨概率仅38%，方向存疑\n│  · VaR(95%)=-35.6%，尾部风险大\n├─ 历史胜率：--（近30天 -- 次）\n├─ 平均盈利：--\n├─ 策略v1 | trending_down | 全局胜率50%\n└─ 失效条件：突破 $0.0514",
+        "kellyPct": 12.5,
+        "card": {
+          "coin": "SEI",
+          "direction": "short",
+          "grade": "A",
+          "confidence": 74.0,
+          "currentPrice": 0.05,
+          "entryZone": [
+            0.049723,
+            0.05025
+          ],
+          "stopLoss": 0.051386,
+          "takeProfit": 0.047691,
+          "riskReward": 1.7,
+          "positionPct": 6,
+          "kellyPct": 12.5,
+          "invalidation": 0.051386,
+          "sources": [
+            {
+              "name": "bigorder_anomaly",
+              "score": 42
+            },
+            {
+              "name": "quantitative",
+              "score": 11
+            },
+            {
+              "name": "technical",
+              "score": 10
+            }
+          ],
+          "winRate": null,
+          "sampleCount": null,
+          "avgProfit": null
+        },
+        "math": {
+          "hurst": 0.5,
+          "mcBullProb": 0.379,
+          "volatility": "extreme",
+          "marketRegime": "trending_down"
+        },
+        "strategy": {
+          "version": 1,
+          "regime": "trending_down",
+          "globalWinRate": 0.5
+        }
+      }
+    }
   ],
-  "cached_at": "2026-06-10 13:41:52"
+  "cached_at": "2026-06-10 15:22:53"
 }

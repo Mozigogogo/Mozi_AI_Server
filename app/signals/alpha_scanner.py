@@ -109,9 +109,11 @@ def get_bigorder_12h_signal(coin: str, weight: float) -> Optional[SignalSource]:
 
 
 def _scan_single(coin: str) -> ScanResult:
-    """扫描单个币种（同步，在线程池中执行）"""
+    """扫描单个币种（同步，在线程池中执行，总耗时上限 90s）"""
+    import concurrent.futures
     t0 = time.time()
-    try:
+
+    def _do_scan():
         from app.services.data_service import (
             get_header_data,
             get_kline_data_for_period,
@@ -171,27 +173,19 @@ def _scan_single(coin: str) -> ScanResult:
                 card.avg_profit_pct = local_wr["avg_profit_pct"]
                 bt = local_wr
             else:
-                # 2. 本地无数据，尝试从 DB 查
-                from app.signals.settlement import get_accumulated_winrate
-                acc = get_accumulated_winrate(coin=coin, grade=card.grade)
-                if acc and acc["sample_count"] >= 3:
-                    card.win_rate = acc["win_rate"]
-                    card.sample_count = acc["sample_count"]
-                    card.avg_profit_pct = acc["avg_profit_pct"]
-                    bt = acc
-                else:
-                    # 3. DB 也没数据，降级到回测
-                    bt_result = backtest_signal(coin, card.direction, card.grade)
-                    if bt_result:
-                        card.win_rate = bt_result["win_rate"]
-                        card.sample_count = bt_result["sample_count"]
-                        card.avg_profit_pct = bt_result["avg_profit_pct"]
-                        bt = bt_result
+                # 2. 本地无数据，跳过 DB/回测（避免远程连接拖慢扫描）
+                pass
         except Exception:
             pass
 
         return ScanResult(coin=coin, signal_card=card, backtest=bt, elapsed=time.time() - t0)
 
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_do_scan)
+            return future.result(timeout=90)
+    except concurrent.futures.TimeoutError:
+        return ScanResult(coin=coin, error="scan timeout (90s)", elapsed=time.time() - t0)
     except Exception as e:
         return ScanResult(coin=coin, error=str(e), elapsed=time.time() - t0)
 

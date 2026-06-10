@@ -281,7 +281,15 @@ async def _bigorder_background_scan(consumer, scorer, llm_analyzer):
             scan_coins = get_discovery_coins()
             if not scan_coins:
                 continue
-            signals = await asyncio.get_event_loop().run_in_executor(None, scorer.score_all, scan_coins)
+            # 超时保护：评分最多 2 分钟
+            try:
+                signals = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, scorer.score_all, scan_coins),
+                    timeout=120,
+                )
+            except asyncio.TimeoutError:
+                print("BigOrder 后台扫描: score_all 超时(2min)，跳过本轮")
+                continue
             for signal in signals:
                 if signal.score.level.value == "none":
                     continue
@@ -293,11 +301,13 @@ async def _bigorder_background_scan(consumer, scorer, llm_analyzer):
                 if last and abs(current[0] - last[0]) < 10 and current[1] == last[1]:
                     continue  # 数据没变，复用上次 LLM 分析
                 try:
-                    signal = await llm_analyzer.analyze_and_enrich(signal)
+                    signal = await asyncio.wait_for(llm_analyzer.analyze_and_enrich(signal), timeout=30)
                     if signal.llm_analysis:
                         coin_key = f"signal:coin:{signal.coin}"
                         consumer.client.hset(coin_key, "llm_analysis", signal.llm_analysis)
-                except:
+                except asyncio.TimeoutError:
+                    pass
+                except Exception:
                     pass
         except asyncio.CancelledError:
             break
@@ -312,7 +322,14 @@ async def _signal_settlement_task():
         try:
             await asyncio.sleep(600)  # 10 分钟
             from app.signals.settlement import settle_pending_cards
-            result = await asyncio.get_event_loop().run_in_executor(None, settle_pending_cards)
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, settle_pending_cards),
+                    timeout=120,
+                )
+            except asyncio.TimeoutError:
+                print("信号卡结算超时(2min)，跳过本轮")
+                continue
             if result["settled"] > 0:
                 print(f"Signal Cards: 结算 {result['settled']} 张 (TP={result['hit_tp']} SL={result['hit_sl']} 过期={result['expired']})")
         except asyncio.CancelledError:
@@ -332,7 +349,12 @@ async def _market_scan_task():
             from app.signals.settlement import save_scan_batch, save_signal_card
 
             t0 = _time.time()
-            results = await scan_all_coins(concurrency=10)
+            # 超时保护：扫描最多 5 分钟，防止卡死
+            try:
+                results = await asyncio.wait_for(scan_all_coins(concurrency=10), timeout=300)
+            except asyncio.TimeoutError:
+                print("全市场扫描超时(5min)，跳过本轮")
+                continue
             elapsed = _time.time() - t0
 
             signals = [r for r in results if r.signal_card is not None]
@@ -350,7 +372,14 @@ async def _market_scan_task():
             if saved:
                 print(f"Signal Cards: {saved} 张写入 signal_card_history")
 
-            await asyncio.get_event_loop().run_in_executor(None, save_scan_batch, results, elapsed)
+            # 超时保护：存库最多 30 秒
+            try:
+                await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, save_scan_batch, results, elapsed),
+                    timeout=30,
+                )
+            except asyncio.TimeoutError:
+                print("扫描结果存库超时(30s)，已写本地文件兜底")
         except asyncio.CancelledError:
             break
         except Exception as e:
