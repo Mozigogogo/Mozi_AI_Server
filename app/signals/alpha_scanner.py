@@ -109,11 +109,9 @@ def get_bigorder_12h_signal(coin: str, weight: float) -> Optional[SignalSource]:
 
 
 def _scan_single(coin: str) -> ScanResult:
-    """扫描单个币种（同步，在线程池中执行，总耗时上限 90s）"""
-    import concurrent.futures
+    """扫描单个币种（同步，在线程池中执行）"""
     t0 = time.time()
-
-    def _do_scan():
+    try:
         from app.services.data_service import (
             get_header_data,
             get_kline_data_for_period,
@@ -129,6 +127,10 @@ def _scan_single(coin: str) -> ScanResult:
         ohlcv = _parse_kline(kline_data, volume_data)
         if not ohlcv:
             return ScanResult(coin=coin, elapsed=time.time() - t0)
+
+        # 单币种超 30s 直接返回（防止慢请求拖垮整体）
+        if time.time() - t0 > 30:
+            return ScanResult(coin=coin, error="slow data fetch", elapsed=time.time() - t0)
 
         entry_ohlcv = _parse_kline(hourly_data, min_bars=15)
         raw_data = {
@@ -164,7 +166,7 @@ def _scan_single(coin: str) -> ScanResult:
 
         bt = None
         try:
-            # 1. 优先读本地 strategy_state.json（秒返回，永不超时）
+            # 只读本地 strategy_state.json（秒返回，避免远程 DB 连接拖慢扫描）
             from app.signals.adaptive_strategy import get_strategy_engine
             local_wr = get_strategy_engine().get_coin_winrate(coin)
             if local_wr and local_wr["sample_count"] >= 3:
@@ -172,20 +174,11 @@ def _scan_single(coin: str) -> ScanResult:
                 card.sample_count = local_wr["sample_count"]
                 card.avg_profit_pct = local_wr["avg_profit_pct"]
                 bt = local_wr
-            else:
-                # 2. 本地无数据，跳过 DB/回测（避免远程连接拖慢扫描）
-                pass
         except Exception:
             pass
 
         return ScanResult(coin=coin, signal_card=card, backtest=bt, elapsed=time.time() - t0)
 
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(_do_scan)
-            return future.result(timeout=90)
-    except concurrent.futures.TimeoutError:
-        return ScanResult(coin=coin, error="scan timeout (90s)", elapsed=time.time() - t0)
     except Exception as e:
         return ScanResult(coin=coin, error=str(e), elapsed=time.time() - t0)
 

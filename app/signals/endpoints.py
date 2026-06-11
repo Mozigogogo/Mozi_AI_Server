@@ -163,13 +163,33 @@ async def scan_top_coins(
                 "note": "缓存已过期，后台正在刷新",
             }
 
-    # 无缓存或强制刷新：现场扫描
+    # 无缓存或强制刷新：现场扫描（5分钟超时保护）
     t0 = time.time()
-    results = await scan_all_coins(concurrency=10)
+    try:
+        results = await asyncio.wait_for(scan_all_coins(concurrency=10), timeout=300)
+    except asyncio.TimeoutError:
+        return JSONResponse(status_code=504, content={"error": "扫描超时(5min)，请稍后重试"})
     elapsed = time.time() - t0
 
-    # 存库
-    await asyncio.get_event_loop().run_in_executor(None, save_scan_batch, results, elapsed)
+    # 信号卡写入 signal_card_history（供结算和复盘）
+    signal_results = [r for r in results if r.signal_card is not None]
+    saved = 0
+    for r in signal_results:
+        try:
+            record_id = save_signal_card(r.signal_card)
+            if record_id:
+                saved += 1
+        except Exception:
+            pass
+
+    # 扫描结果写入 scan_cache（30秒超时）
+    try:
+        await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(None, save_scan_batch, results, elapsed),
+            timeout=30,
+        )
+    except asyncio.TimeoutError:
+        pass
 
     signals = [r for r in results if r.signal_card is not None][:limit]
 
@@ -466,89 +486,23 @@ async def query_history(
     limit: int = Query(50, ge=1, le=200, description="返回条数"),
 ):
     """
-    查询信号卡历史记录（含结算结果）
-
-    每条记录包含：生成时的信号参数 + 结算状态 + 实际盈亏
+    查询信号卡历史记录（含结算结果，通过远程代理）
     """
-    import pymysql
-    from app.signals.settlement import _get_conn
-
-    conn = None
     try:
-        conn = _get_conn()
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-        where_parts = ["created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)"]
-        params: list = [days]
-
-        if coin:
-            where_parts.append("coin = %s")
-            params.append(coin.upper())
-        if grade:
-            where_parts.append("grade = %s")
-            params.append(grade.upper())
-        if status:
-            where_parts.append("status = %s")
-            params.append(status)
-        if direction:
-            where_parts.append("direction = %s")
-            params.append(direction)
-
-        where = " AND ".join(where_parts)
-
-        # 总数
-        cursor.execute(f"SELECT COUNT(*) as cnt FROM signal_card_history WHERE {where}", params)
-        total = cursor.fetchone()["cnt"]
-
-        # 分页数据
-        cursor.execute(
-            f"""
-            SELECT id, coin, direction, grade,
-                   entry_low, entry_high, stop_loss, take_profit,
-                   current_price, confidence, risk_reward_ratio,
-                   status, settled_price, pnl_pct,
-                   created_at, settled_at
-            FROM signal_card_history
-            WHERE {where}
-            ORDER BY created_at DESC
-            LIMIT %s
-            """,
-            params + [limit],
+        from app.signals.settlement import _proxy_get
+        result = await asyncio.get_running_loop().run_in_executor(
+            None, _proxy_get, "/api/history",
+            {"coin": coin, "grade": grade, "status": status, "direction": direction, "days": days, "limit": limit},
         )
-        rows = cursor.fetchall()
-        cursor.close()
-
-        # 格式化
-        cards = []
-        for r in rows:
-            cards.append({
-                "id": r["id"],
-                "coin": r["coin"],
-                "direction": r["direction"],
-                "grade": r["grade"],
-                "entry_zone": [float(r["entry_low"] or 0), float(r["entry_high"] or 0)],
-                "stop_loss": float(r["stop_loss"] or 0),
-                "take_profit": float(r["take_profit"] or 0),
-                "price": float(r["current_price"] or 0),
-                "confidence": float(r["confidence"] or 0),
-                "risk_reward": float(r["risk_reward_ratio"] or 0),
-                "status": r["status"],
-                "settled_price": float(r["settled_price"] or 0) if r["settled_price"] else None,
-                "pnl_pct": float(r["pnl_pct"] or 0) if r["pnl_pct"] else None,
-                "created_at": r["created_at"].strftime("%Y-%m-%d %H:%M") if r["created_at"] else None,
-                "settled_at": r["settled_at"].strftime("%Y-%m-%d %H:%M") if r["settled_at"] else None,
-            })
+        if not result.get("ok"):
+            return JSONResponse(status_code=500, content={"error": result.get("error", "query failed")})
 
         return {
             "status": "success",
             "filters": {"coin": coin, "grade": grade, "status": status, "direction": direction, "days": days},
-            "total": total,
-            "count": len(cards),
-            "cards": cards,
+            "total": result.get("total", 0),
+            "count": result.get("count", 0),
+            "cards": result.get("cards", []),
         }
-
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
-    finally:
-        if conn:
-            conn.close()

@@ -214,90 +214,37 @@ def _tool_query_scan_results(limit: int) -> dict:
 
 
 def _tool_query_history(coin: str = None, status: str = None, days: int = 7, limit: int = 20) -> dict:
-    """查询信号卡历史记录"""
-    import pymysql
-    from app.signals.settlement import _get_conn
-
+    """查询信号卡历史记录（通过远程代理）"""
     try:
-        conn = _get_conn()
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        from app.signals.settlement import _proxy_get
+        result = _proxy_get("/api/history", {
+            "coin": coin, "status": status, "days": days, "limit": limit,
+        })
+        if not result.get("ok"):
+            return {"error": result.get("error", "query failed")}
 
-        where_parts = ["created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)"]
-        params: list = [days]
-
-        if coin:
-            where_parts.append("coin = %s")
-            params.append(coin.upper())
-        if status:
-            where_parts.append("status = %s")
-            params.append(status)
-
-        where = " AND ".join(where_parts)
-
-        # 汇总
-        cursor.execute(
-            f"""
-            SELECT COUNT(*) as total,
-                   SUM(status = 'pending') as pending,
-                   SUM(status = 'hit_tp') as wins,
-                   SUM(status = 'hit_sl') as losses,
-                   SUM(status = 'expired') as expired,
-                   ROUND(AVG(CASE WHEN status IN ('hit_tp','hit_sl','expired') THEN pnl_pct END), 2) as avg_pnl
-            FROM signal_card_history
-            WHERE {where}
-            """,
-            params,
-        )
-        summary = cursor.fetchone()
-
-        # 明细
-        cursor.execute(
-            f"""
-            SELECT id, coin, direction, grade, current_price, stop_loss, take_profit,
-                   confidence, risk_reward_ratio, status, settled_price, pnl_pct,
-                   created_at, settled_at
-            FROM signal_card_history
-            WHERE {where}
-            ORDER BY created_at DESC
-            LIMIT %s
-            """,
-            params + [limit],
-        )
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
-
-        cards = []
-        for r in rows:
-            cards.append({
-                "coin": r["coin"],
-                "direction": r["direction"],
-                "grade": r["grade"],
-                "price": float(r["current_price"] or 0),
-                "confidence": float(r["confidence"] or 0),
-                "status": r["status"],
-                "pnl_pct": float(r["pnl_pct"]) if r["pnl_pct"] is not None else None,
-                "created_at": r["created_at"].strftime("%m-%d %H:%M") if r["created_at"] else "",
-                "settled_at": r["settled_at"].strftime("%m-%d %H:%M") if r["settled_at"] else "",
-            })
-
-        total = int(summary["total"] or 0)
-        wins = int(summary["wins"] or 0)
-        losses = int(summary["losses"] or 0)
-        expired = int(summary["expired"] or 0)
+        cards = result.get("cards", [])
+        total = result.get("total", 0)
+        wins = sum(1 for c in cards if c["status"] == "hit_tp")
+        losses = sum(1 for c in cards if c["status"] == "hit_sl")
+        expired = sum(1 for c in cards if c["status"] == "expired")
+        pending = sum(1 for c in cards if c["status"] == "pending")
         settled = wins + losses + expired
         win_rate = round(wins / settled * 100, 1) if settled > 0 else None
+
+        pnls = [c["pnl_pct"] for c in cards if c.get("pnl_pct") is not None]
+        avg_pnl = round(sum(pnls) / len(pnls), 2) if pnls else None
 
         return {
             "summary": {
                 "total": total,
                 "settled": settled,
-                "pending": int(summary["pending"] or 0),
+                "pending": pending,
                 "wins": wins,
                 "losses": losses,
                 "expired": expired,
                 "win_rate": win_rate,
-                "avg_pnl": float(summary["avg_pnl"]) if summary["avg_pnl"] is not None else None,
+                "avg_pnl": avg_pnl,
             },
             "filters": {"coin": coin, "status": status, "days": days},
             "cards": cards,

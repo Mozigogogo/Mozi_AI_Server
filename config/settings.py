@@ -93,6 +93,10 @@ class Settings(BaseSettings):
     signal_scan_interval: int = 1800  # 信号卡全市场扫描间隔（秒），30分钟
     history_window_count: int = 288
     score_threshold_strong: int = 70
+
+    # ── 远程数据代理 ──
+    data_proxy_url: str = Field(default="http://43.134.86.135:8001", validation_alias="DATA_PROXY_URL")
+    data_proxy_key: str = Field(default="signal_proxy_2026", validation_alias="DATA_PROXY_KEY")
     score_threshold_medium: int = 50
     flow_window_seconds: int = 300
     price_window_seconds: int = 900

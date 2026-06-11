@@ -21,7 +21,7 @@ _cache_lock = threading.Lock()
 _inflight: Dict[str, threading.Event] = {}  # {url: Event} 去重并发请求
 _inflight_lock = threading.Lock()
 _CACHE_TTL = 30  # 默认缓存30秒
-_api_semaphore = threading.Semaphore(3)  # 限制最多3个并发API请求
+_api_semaphore = threading.Semaphore(10)  # 限制最多10个并发API请求（匹配扫描并发数）
 
 def get_db_pool():
     """获取 MySQL 连接（简化版本，避免连接池兼容性问题）"""
