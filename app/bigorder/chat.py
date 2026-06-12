@@ -11,6 +11,11 @@ from app.bigorder.models import ChatRequest, SignalLevel
 import app.bigorder.deps as bigorder_deps
 from app.core.llm_client import get_llm_client
 from config.settings import settings
+from app.utils.sse_protocol import (
+    sse_start, sse_chat_delta, sse_suggestions,
+    sse_tool_debug, sse_done, sse_error, render,
+    ERR_LLM_TIMEOUT, ERR_TOOL_TIMEOUT, ERR_INTERNAL,
+)
 
 router = APIRouter()
 
@@ -450,15 +455,15 @@ def _query_history(coin: Optional[str], days: int, level: Optional[str], limit: 
 
 
 @router.post("/chat")
-async def chat(request: Request):
+async def chat(request: ChatRequest):
     """对话式 SSE 流式接口"""
     if not bigorder_deps.is_redis_available():
         status = bigorder_deps.get_status()
         return JSONResponse(status_code=503, content=status)
 
-    body = await request.json()
-    user_message = body.get("message", "")
-    coin_hint = body.get("coin")
+    rid = request.request_id
+    user_message = request.message
+    coin_hint = request.coin
 
     client = get_llm_client()
     model = settings.bigorder_deepseek_model
@@ -474,7 +479,8 @@ async def chat(request: Request):
             {"role": "user", "content": user_content},
         ]
 
-        yield {"event": "thinking", "data": json.dumps({"status": "Analyzing..."}, ensure_ascii=False)}
+        yield render(sse_start(rid, request.conversation_id))
+        yield render(sse_tool_debug(rid, "thinking", {"status": "Analyzing..."}))
 
         # ---- Step 1: 非流式调用，让 LLM 选 tool ----
         try:
@@ -489,15 +495,15 @@ async def chat(request: Request):
                 timeout=30.0
             )
         except Exception as e:
-            yield {"event": "error", "data": json.dumps({"error": str(e)}, ensure_ascii=False)}
+            yield render(sse_error(rid, ERR_LLM_TIMEOUT, str(e)))
             return
 
         msg = route_resp.choices[0].message
 
         # 无 tool_call -> 直接输出 LLM 回答
         if not msg.tool_calls:
-            yield {"event": "content", "data": json.dumps({"text": msg.content or ""}, ensure_ascii=False)}
-            yield {"event": "done", "data": "{}"}
+            yield render(sse_chat_delta(rid, msg.content or ""))
+            yield render(sse_done(rid))
             return
 
         # ---- Step 2: 执行 tool ----
@@ -508,7 +514,7 @@ async def chat(request: Request):
         except json.JSONDecodeError:
             tool_args = {}
 
-        yield {"event": "tool_call", "data": json.dumps({"tool": tool_name, "args": tool_args}, ensure_ascii=False)}
+        yield render(sse_tool_debug(rid, "tool_call", {"tool": tool_name, "args": tool_args}))
 
         loop = asyncio.get_running_loop()
         timeout = _TOOL_TIMEOUTS.get(tool_name, 10)
@@ -520,7 +526,7 @@ async def chat(request: Request):
         except asyncio.TimeoutError:
             tool_result = {"error": "Query timed out"}
 
-        yield {"event": "tool_result", "data": json.dumps({"tool": tool_name, "result": tool_result}, ensure_ascii=False, default=str)}
+        yield render(sse_tool_debug(rid, "tool_result", {"tool": tool_name, "result": tool_result}))
 
         # ---- Step 3: 流式输出最终回答 ----
         assistant_msg = {"role": "assistant", "tool_calls": [tc.model_dump()]}
@@ -535,7 +541,6 @@ async def chat(request: Request):
             "content": json.dumps(tool_result, ensure_ascii=False, default=str),
         })
 
-        # 英文用户：重构 messages，去掉 tool_call 历史，避免 DeepSeek 继续调 tool
         user_lang = _detect_language(user_message)
         if user_lang == "en":
             messages = [
@@ -567,17 +572,15 @@ async def chat(request: Request):
             async for chunk in final_resp:
                 delta = chunk.choices[0].delta
                 if delta.content:
-                    yield {"event": "content", "data": json.dumps({"text": delta.content}, ensure_ascii=False)}
+                    yield render(sse_chat_delta(rid, delta.content))
         except Exception as e:
-            yield {"event": "error", "data": json.dumps({"error": str(e)}, ensure_ascii=False)}
+            yield render(sse_error(rid, ERR_INTERNAL, str(e)))
 
         # 生成推荐问题
         suggestions = _get_suggestions(tool_name, user_message, coin_hint)
         if suggestions:
-            yield {"event": "suggestions", "data": json.dumps(
-                {"type": "suggestions", "suggestions": suggestions}, ensure_ascii=False
-            )}
+            yield render(sse_suggestions(rid, [s["suggestion"] for s in suggestions]))
 
-        yield {"event": "done", "data": "{}"}
+        yield render(sse_done(rid))
 
     return EventSourceResponse(event_generator())

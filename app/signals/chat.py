@@ -9,8 +9,22 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.core.llm_client import get_llm_client
 from config.settings import settings
+from app.utils.sse_protocol import (
+    sse_start, sse_chat_delta, sse_signal_card, sse_suggestions,
+    sse_tool_debug, sse_done, sse_error, render,
+    ERR_LLM_TIMEOUT, ERR_TOOL_TIMEOUT, ERR_INTERNAL,
+)
+from pydantic import BaseModel, Field
 
 router = APIRouter()
+
+
+class SignalChatRequest(BaseModel):
+    request_id: str = Field(..., max_length=100)
+    user_id: str = Field(..., max_length=100)
+    message: str
+    coin: Optional[str] = None
+    conversation_id: Optional[str] = None
 
 SYSTEM_PROMPT = """You are the "Signal Alpha" quantitative analyst, specializing in cryptocurrency signal card analysis and trading recommendations.
 
@@ -306,11 +320,11 @@ def _get_suggestions(tool_name: str, user_message: str, coin_hint: str = None) -
 
 
 @router.post("/chat")
-async def chat(request: Request):
+async def chat(request: SignalChatRequest):
     """信号卡对话式 SSE 流式接口"""
-    body = await request.json()
-    user_message = body.get("message", "")
-    coin_hint = body.get("coin")
+    rid = request.request_id
+    user_message = request.message
+    coin_hint = request.coin
 
     client = get_llm_client()
     model = settings.bigorder_deepseek_model
@@ -327,7 +341,8 @@ async def chat(request: Request):
             {"role": "user", "content": user_content},
         ]
 
-        yield {"event": "thinking", "data": json.dumps({"status": "Analyzing..."}, ensure_ascii=False)}
+        yield render(sse_start(rid, request.conversation_id))
+        yield render(sse_tool_debug(rid, "thinking", {"status": "Analyzing..."}))
 
         # ---- Step 1: LLM 选 tool ----
         try:
@@ -342,14 +357,14 @@ async def chat(request: Request):
                 timeout=30.0
             )
         except Exception as e:
-            yield {"event": "error", "data": json.dumps({"error": str(e)}, ensure_ascii=False)}
+            yield render(sse_error(rid, ERR_LLM_TIMEOUT, str(e)))
             return
 
         msg = route_resp.choices[0].message
 
         if not msg.tool_calls:
-            yield {"event": "content", "data": json.dumps({"text": msg.content or ""}, ensure_ascii=False)}
-            yield {"event": "done", "data": "{}"}
+            yield render(sse_chat_delta(rid, msg.content or ""))
+            yield render(sse_done(rid))
             return
 
         # ---- Step 2: 执行 tool ----
@@ -360,7 +375,7 @@ async def chat(request: Request):
         except json.JSONDecodeError:
             tool_args = {}
 
-        yield {"event": "tool_call", "data": json.dumps({"tool": tool_name, "args": tool_args}, ensure_ascii=False)}
+        yield render(sse_tool_debug(rid, "tool_call", {"tool": tool_name, "args": tool_args}))
 
         loop = asyncio.get_running_loop()
         timeout = _TOOL_TIMEOUTS.get(tool_name, 30)
@@ -377,15 +392,13 @@ async def chat(request: Request):
         if tool_name == "analyze_coin" and isinstance(tool_result, dict):
             card_event = tool_result.get("signal_card")
             if card_event:
-                yield {"event": "signal_card", "data": json.dumps(card_event, ensure_ascii=False, default=str)}
+                yield render(sse_signal_card(rid, card_event))
 
-        yield {"event": "tool_result", "data": json.dumps({"tool": tool_name}, ensure_ascii=False)}
+        yield render(sse_tool_debug(rid, "tool_result", {"tool": tool_name}))
 
         # ---- Step 3: 流式输出文字解读 ----
 
-        # 构建上下文：去掉 tool_call 历史，避免 DeepSeek 继续调 tool
         analysis_context = tool_result.copy() if isinstance(tool_result, dict) else tool_result
-        # 不重复传信号卡数据给 LLM（已经推给前端了），只传分析摘要
         if "signal_card" in analysis_context:
             card = analysis_context["signal_card"]
             analysis_context["signal_summary"] = {
@@ -433,18 +446,16 @@ async def chat(request: Request):
             async for chunk in final_resp:
                 delta = chunk.choices[0].delta
                 if delta.content:
-                    yield {"event": "content", "data": json.dumps({"text": delta.content}, ensure_ascii=False)}
+                    yield render(sse_chat_delta(rid, delta.content))
         except Exception as e:
-            yield {"event": "error", "data": json.dumps({"error": str(e)}, ensure_ascii=False)}
+            yield render(sse_error(rid, ERR_INTERNAL, str(e)))
 
         # 推荐问题
         coin = tool_args.get("coin", coin_hint)
         suggestions = _get_suggestions(tool_name, user_message, coin)
         if suggestions:
-            yield {"event": "suggestions", "data": json.dumps(
-                {"type": "suggestions", "suggestions": suggestions}, ensure_ascii=False
-            )}
+            yield render(sse_suggestions(rid, suggestions))
 
-        yield {"event": "done", "data": "{}"}
+        yield render(sse_done(rid))
 
     return EventSourceResponse(event_generator())

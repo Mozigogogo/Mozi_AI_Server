@@ -11,6 +11,8 @@ class Language(str, Enum):
 
 class AnalyzeRequest(BaseModel):
     """分析请求模型"""
+    request_id: str = Field(..., description="客户端生成，SSE 全程透传", max_length=100)
+    user_id: str = Field(..., description="用户 ID", max_length=100)
     symbol: Optional[str] = Field(
         default=None,
         description="可选。币种符号（如 BTC）；不传则由问题文本或会话记忆推断",
@@ -49,6 +51,8 @@ class AnalyzeRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     """聊天请求模型"""
+    request_id: str = Field(..., description="客户端生成，SSE 全程透传", max_length=100)
+    user_id: str = Field(..., description="用户 ID", max_length=100)
     message: str = Field(
         ...,
         description="用户消息",

@@ -87,5 +87,8 @@ class ExchangeCompare(BaseModel):
 
 class ChatRequest(BaseModel):
     """对话请求"""
+    request_id: str
+    user_id: str
     message: str
     coin: Optional[str] = None
+    conversation_id: Optional[str] = None
