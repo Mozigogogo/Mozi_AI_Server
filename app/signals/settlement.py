@@ -29,11 +29,16 @@ _USE_PROXY = os.environ.get("USE_DATA_PROXY", "false").lower() == "true"
 
 def _get_conn():
     import pymysql
-    host = os.environ.get("BIGORDER_MYSQL_HOST") or settings.bigorder_mysql_host or settings.mysql_host
-    port = int(os.environ.get("BIGORDER_MYSQL_PORT") or 0) or settings.bigorder_mysql_port or settings.mysql_port
-    user = os.environ.get("BIGORDER_MYSQL_USER") or settings.bigorder_mysql_user or settings.mysql_user
-    pwd = os.environ.get("BIGORDER_MYSQL_PASSWORD") or settings.bigorder_mysql_password or settings.mysql_password
-    db = os.environ.get("BIGORDER_MYSQL_DATABASE") or settings.bigorder_mysql_database or settings.mysql_database
+    import os as _os
+    # 调试：列出所有 MYSQL 相关环境变量
+    _mysql_env = {k: v[:15] + "..." if "PASS" in k else v
+                  for k, v in _os.environ.items() if "MYSQL" in k.upper()}
+    print(f"[settlement DEBUG] MYSQL env vars: {_mysql_env}")
+    host = _os.environ.get("BIGORDER_MYSQL_HOST") or settings.bigorder_mysql_host or settings.mysql_host
+    port = int(_os.environ.get("BIGORDER_MYSQL_PORT") or 0) or settings.bigorder_mysql_port or settings.mysql_port
+    user = _os.environ.get("BIGORDER_MYSQL_USER") or settings.bigorder_mysql_user or settings.mysql_user
+    pwd = _os.environ.get("BIGORDER_MYSQL_PASSWORD") or settings.bigorder_mysql_password or settings.mysql_password
+    db = _os.environ.get("BIGORDER_MYSQL_DATABASE") or settings.bigorder_mysql_database or settings.mysql_database
     print(f"[settlement] MySQL连接: {host}:{port}/{db}")
     return pymysql.connect(
         host=host, port=port, user=user, password=pwd, database=db,
