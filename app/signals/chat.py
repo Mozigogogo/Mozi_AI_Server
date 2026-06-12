@@ -214,17 +214,45 @@ def _tool_query_scan_results(limit: int) -> dict:
 
 
 def _tool_query_history(coin: str = None, status: str = None, days: int = 7, limit: int = 20) -> dict:
-    """查询信号卡历史记录（通过远程代理）"""
+    """查询信号卡历史记录（自动选择直连/代理模式）"""
     try:
-        from app.signals.settlement import _proxy_get
-        result = _proxy_get("/api/history", {
-            "coin": coin, "status": status, "days": days, "limit": limit,
-        })
-        if not result.get("ok"):
-            return {"error": result.get("error", "query failed")}
+        from app.signals.settlement import _USE_PROXY, _proxy_get, _get_conn
+        import pymysql
 
-        cards = result.get("cards", [])
-        total = result.get("total", 0)
+        if _USE_PROXY:
+            result = _proxy_get("/api/history", {
+                "coin": coin, "status": status, "days": days, "limit": limit,
+            })
+            if not result.get("ok"):
+                return {"error": result.get("error", "query failed")}
+            cards = result.get("cards", [])
+            total = result.get("total", 0)
+        else:
+            conn = _get_conn()
+            cursor = conn.cursor(pymysql.cursors.DictCursor)
+            where_parts = ["created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)"]
+            params: list = [days]
+            if coin:
+                where_parts.append("coin = %s"); params.append(coin.upper())
+            if status:
+                where_parts.append("status = %s"); params.append(status)
+            where = " AND ".join(where_parts)
+            cursor.execute(f"SELECT id, coin, direction, grade, current_price, stop_loss, take_profit, confidence, risk_reward_ratio, status, settled_price, pnl_pct, created_at, settled_at FROM signal_card_history WHERE {where} ORDER BY created_at DESC LIMIT %s", params + [limit])
+            rows = cursor.fetchall()
+            cursor.execute(f"SELECT COUNT(*) as total FROM signal_card_history WHERE {where}", params)
+            total = cursor.fetchone()["total"]
+            cursor.close()
+            conn.close()
+            cards = []
+            for r in rows:
+                cards.append({
+                    "coin": r["coin"], "direction": r["direction"], "grade": r["grade"],
+                    "price": float(r["current_price"] or 0), "confidence": float(r["confidence"] or 0),
+                    "status": r["status"],
+                    "pnl_pct": float(r["pnl_pct"]) if r["pnl_pct"] is not None else None,
+                    "created_at": r["created_at"].strftime("%m-%d %H:%M") if r["created_at"] else "",
+                    "settled_at": r["settled_at"].strftime("%m-%d %H:%M") if r["settled_at"] else "",
+                })
         wins = sum(1 for c in cards if c["status"] == "hit_tp")
         losses = sum(1 for c in cards if c["status"] == "hit_sl")
         expired = sum(1 for c in cards if c["status"] == "expired")
