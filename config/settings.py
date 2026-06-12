@@ -85,6 +85,32 @@ class Settings(BaseSettings):
     bigorder_mysql_password: str = ""
     bigorder_mysql_database: str = "exchange"
 
+    @field_validator("bigorder_mysql_host", mode="before")
+    @classmethod
+    def bigorder_mysql_host_env(cls, v):
+        return _env("BIGORDER_MYSQL_HOST") or v or ""
+
+    @field_validator("bigorder_mysql_port", mode="before")
+    @classmethod
+    def bigorder_mysql_port_env(cls, v):
+        raw = _env("BIGORDER_MYSQL_PORT")
+        return int(raw) if raw is not None else v or 3306
+
+    @field_validator("bigorder_mysql_user", mode="before")
+    @classmethod
+    def bigorder_mysql_user_env(cls, v):
+        return _env("BIGORDER_MYSQL_USER") or v or ""
+
+    @field_validator("bigorder_mysql_password", mode="before")
+    @classmethod
+    def bigorder_mysql_password_env(cls, v):
+        return _env("BIGORDER_MYSQL_PASSWORD") or v or ""
+
+    @field_validator("bigorder_mysql_database", mode="before")
+    @classmethod
+    def bigorder_mysql_database_env(cls, v):
+        return _env("BIGORDER_MYSQL_DATABASE") or v or "exchange"
+
     # ── Bigorder LLM（独立模型） ──
     bigorder_deepseek_model: str = "deepseek-v4-flash"
 
