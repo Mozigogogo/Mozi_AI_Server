@@ -280,12 +280,13 @@ def _get_suggestions(tool_name: str, user_message: str, coin_hint: str = None) -
 
 def _get_bigorder_mysql_config():
     """获取 bigorder 专属 MySQL 配置"""
+    from app.signals.settlement import _env_get
     return {
-        "host": settings.bigorder_mysql_host or settings.mysql_host,
-        "port": settings.bigorder_mysql_port or settings.mysql_port,
-        "user": settings.bigorder_mysql_user or settings.mysql_user,
-        "password": settings.bigorder_mysql_password or settings.mysql_password,
-        "database": settings.bigorder_mysql_database or settings.mysql_database,
+        "host": _env_get("BIGORDER_MYSQL_HOST") or settings.bigorder_mysql_host or settings.mysql_host,
+        "port": int(_env_get("BIGORDER_MYSQL_PORT") or 0) or settings.bigorder_mysql_port or settings.mysql_port,
+        "user": _env_get("BIGORDER_MYSQL_USER") or settings.bigorder_mysql_user or settings.mysql_user,
+        "password": _env_get("BIGORDER_MYSQL_PASSWORD") or settings.bigorder_mysql_password or settings.mysql_password,
+        "database": _env_get("BIGORDER_MYSQL_DATABASE") or settings.bigorder_mysql_database or settings.mysql_database,
     }
 
 
