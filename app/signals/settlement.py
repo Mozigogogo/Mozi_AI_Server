@@ -27,18 +27,26 @@ _USE_PROXY = os.environ.get("USE_DATA_PROXY", "false").lower() == "true"
 
 # ── 直连 MySQL 模式（Railway 生产环境）──────────────────────────────────────
 
+def _env_get(key: str) -> str:
+    """从 os.environ 取值，兼容 key 前后有空格的情况"""
+    val = os.environ.get(key)
+    if val is not None:
+        return val.strip()
+    # Railway 可能在 key 前加了空格，遍历查找
+    for k, v in os.environ.items():
+        if k.strip() == key:
+            return v.strip()
+    return ""
+
+
 def _get_conn():
     import pymysql
-    import os as _os
-    # 调试：列出所有 MYSQL 相关环境变量
-    _mysql_env = {k: v[:15] + "..." if "PASS" in k else v
-                  for k, v in _os.environ.items() if "MYSQL" in k.upper()}
-    print(f"[settlement DEBUG] MYSQL env vars: {_mysql_env}")
-    host = _os.environ.get("BIGORDER_MYSQL_HOST") or settings.bigorder_mysql_host or settings.mysql_host
-    port = int(_os.environ.get("BIGORDER_MYSQL_PORT") or 0) or settings.bigorder_mysql_port or settings.mysql_port
-    user = _os.environ.get("BIGORDER_MYSQL_USER") or settings.bigorder_mysql_user or settings.mysql_user
-    pwd = _os.environ.get("BIGORDER_MYSQL_PASSWORD") or settings.bigorder_mysql_password or settings.mysql_password
-    db = _os.environ.get("BIGORDER_MYSQL_DATABASE") or settings.bigorder_mysql_database or settings.mysql_database
+    host = _env_get("BIGORDER_MYSQL_HOST") or settings.bigorder_mysql_host or settings.mysql_host
+    port_raw = _env_get("BIGORDER_MYSQL_PORT")
+    port = int(port_raw) if port_raw else (settings.bigorder_mysql_port or settings.mysql_port)
+    user = _env_get("BIGORDER_MYSQL_USER") or settings.bigorder_mysql_user or settings.mysql_user
+    pwd = _env_get("BIGORDER_MYSQL_PASSWORD") or settings.bigorder_mysql_password or settings.mysql_password
+    db = _env_get("BIGORDER_MYSQL_DATABASE") or settings.bigorder_mysql_database or settings.mysql_database
     print(f"[settlement] MySQL连接: {host}:{port}/{db}")
     return pymysql.connect(
         host=host, port=port, user=user, password=pwd, database=db,
