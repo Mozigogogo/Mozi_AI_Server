@@ -543,11 +543,7 @@ async def query_history(
                 })
             return {"total": total, "count": len(cards), "cards": cards}
         except Exception as e:
-            # 附上连接信息方便调试
-            import os as _os
-            env_info = {k: v[:15] + "..." if "PASS" in k else v
-                        for k, v in _os.environ.items() if "MYSQL" in k.upper()}
-            return {"error": str(e), "debug_env": env_info}
+            return {"error": str(e)}
         finally:
             if conn:
                 conn.close()
@@ -563,19 +559,3 @@ async def query_history(
         }
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
-
-
-@router.get("/debug/mysql")
-async def debug_mysql_env():
-    """临时调试：查看 Railway 上的 MySQL 环境变量"""
-    import os
-    mysql_vars = {k: (v[:10] + "..." if "PASSWORD" in k and v else v)
-                  for k, v in os.environ.items() if "MYSQL" in k or "mysql" in k.lower()}
-    from app.signals.settlement import _get_conn
-    try:
-        conn = await asyncio.get_running_loop().run_in_executor(None, _get_conn)
-        conn.close()
-        conn_status = "OK"
-    except Exception as e:
-        conn_status = str(e)
-    return {"env_vars": mysql_vars, "connection_test": conn_status}

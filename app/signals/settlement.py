@@ -47,7 +47,6 @@ def _get_conn():
     user = _env_get("BIGORDER_MYSQL_USER") or settings.bigorder_mysql_user or settings.mysql_user
     pwd = _env_get("BIGORDER_MYSQL_PASSWORD") or settings.bigorder_mysql_password or settings.mysql_password
     db = _env_get("BIGORDER_MYSQL_DATABASE") or settings.bigorder_mysql_database or settings.mysql_database
-    print(f"[settlement] MySQL连接: {host}:{port}/{db}")
     return pymysql.connect(
         host=host, port=port, user=user, password=pwd, database=db,
         charset="utf8mb4", connect_timeout=5, read_timeout=15,
