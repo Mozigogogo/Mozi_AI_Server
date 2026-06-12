@@ -485,24 +485,77 @@ async def query_history(
     days: int = Query(7, ge=1, le=90, description="回看天数"),
     limit: int = Query(50, ge=1, le=200, description="返回条数"),
 ):
-    """
-    查询信号卡历史记录（含结算结果，通过远程代理）
-    """
-    try:
-        from app.signals.settlement import _proxy_get
-        result = await asyncio.get_running_loop().run_in_executor(
-            None, _proxy_get, "/api/history",
-            {"coin": coin, "grade": grade, "status": status, "direction": direction, "days": days, "limit": limit},
-        )
-        if not result.get("ok"):
-            return JSONResponse(status_code=500, content={"error": result.get("error", "query failed")})
+    """查询信号卡历史记录（含结算结果，自动选择直连/代理模式）"""
+    def _query():
+        from app.signals.settlement import _USE_PROXY, _proxy_get, _get_conn
+        import pymysql.cursors
 
+        if _USE_PROXY:
+            result = _proxy_get("/api/history",
+                {"coin": coin, "grade": grade, "status": status, "direction": direction, "days": days, "limit": limit})
+            if not result.get("ok"):
+                return {"error": result.get("error", "query failed")}
+            return {"total": result.get("total", 0), "count": result.get("count", 0), "cards": result.get("cards", [])}
+
+        conn = None
+        try:
+            conn = _get_conn()
+            cursor = conn.cursor(pymysql.cursors.DictCursor)
+            where_parts = ["created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)"]
+            params: list = [days]
+            if coin:
+                where_parts.append("coin = %s"); params.append(coin.upper())
+            if grade:
+                where_parts.append("grade = %s"); params.append(grade.upper())
+            if status:
+                where_parts.append("status = %s"); params.append(status)
+            if direction:
+                where_parts.append("direction = %s"); params.append(direction)
+            where = " AND ".join(where_parts)
+
+            cursor.execute(f"SELECT COUNT(*) as cnt FROM signal_card_history WHERE {where}", params)
+            total = cursor.fetchone()["cnt"]
+
+            cursor.execute(
+                f"""SELECT id, coin, direction, grade,
+                           entry_low, entry_high, stop_loss, take_profit,
+                           current_price, confidence, risk_reward_ratio,
+                           status, settled_price, pnl_pct, created_at, settled_at
+                    FROM signal_card_history WHERE {where}
+                    ORDER BY created_at DESC LIMIT %s""",
+                params + [limit])
+            rows = cursor.fetchall()
+            cursor.close()
+
+            cards = []
+            for r in rows:
+                cards.append({
+                    "id": r["id"], "coin": r["coin"], "direction": r["direction"], "grade": r["grade"],
+                    "entry_zone": [float(r["entry_low"] or 0), float(r["entry_high"] or 0)],
+                    "stop_loss": float(r["stop_loss"] or 0), "take_profit": float(r["take_profit"] or 0),
+                    "price": float(r["current_price"] or 0), "confidence": float(r["confidence"] or 0),
+                    "risk_reward": float(r["risk_reward_ratio"] or 0),
+                    "status": r["status"],
+                    "settled_price": float(r["settled_price"] or 0) if r["settled_price"] else None,
+                    "pnl_pct": float(r["pnl_pct"] or 0) if r["pnl_pct"] else None,
+                    "created_at": r["created_at"].strftime("%Y-%m-%d %H:%M") if r["created_at"] else None,
+                    "settled_at": r["settled_at"].strftime("%Y-%m-%d %H:%M") if r["settled_at"] else None,
+                })
+            return {"total": total, "count": len(cards), "cards": cards}
+        except Exception as e:
+            return {"error": str(e)}
+        finally:
+            if conn:
+                conn.close()
+
+    try:
+        result = await asyncio.get_running_loop().run_in_executor(None, _query)
+        if "error" in result:
+            return JSONResponse(status_code=500, content={"error": result["error"]})
         return {
             "status": "success",
             "filters": {"coin": coin, "grade": grade, "status": status, "direction": direction, "days": days},
-            "total": result.get("total", 0),
-            "count": result.get("count", 0),
-            "cards": result.get("cards", []),
+            "total": result["total"], "count": result["count"], "cards": result["cards"],
         }
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
