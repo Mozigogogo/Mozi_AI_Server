@@ -271,7 +271,7 @@ def _settle_pending_direct() -> Dict[str, int]:
                       confidence, created_at
                FROM signal_card_history
                WHERE status = 'pending' AND created_at <= DATE_SUB(NOW(), INTERVAL 1 HOUR)
-               ORDER BY created_at ASC LIMIT 100""")
+               ORDER BY created_at ASC LIMIT 500""")
         pending = cursor.fetchall()
         cursor.close()
         if not pending:

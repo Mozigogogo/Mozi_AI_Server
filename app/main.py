@@ -317,18 +317,18 @@ async def _bigorder_background_scan(consumer, scorer, llm_analyzer):
 
 
 async def _signal_settlement_task():
-    """信号卡后台结算任务 — 每 10 分钟扫一次 pending 卡，用真实价格结算"""
+    """信号卡后台结算任务 — 每 5 分钟扫一次 pending 卡，用真实价格结算"""
     while True:
         try:
-            await asyncio.sleep(600)  # 10 分钟
+            await asyncio.sleep(300)  # 5 分钟
             from app.signals.settlement import settle_pending_cards
             try:
                 result = await asyncio.wait_for(
                     asyncio.get_event_loop().run_in_executor(None, settle_pending_cards),
-                    timeout=120,
+                    timeout=280,
                 )
             except asyncio.TimeoutError:
-                print("信号卡结算超时(2min)，跳过本轮")
+                print("信号卡结算超时(280s)，跳过本轮")
                 continue
             if result["settled"] > 0:
                 print(f"Signal Cards: 结算 {result['settled']} 张 (TP={result['hit_tp']} SL={result['hit_sl']} 过期={result['expired']})")

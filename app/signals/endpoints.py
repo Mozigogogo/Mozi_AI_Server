@@ -269,27 +269,32 @@ async def record_signal_result(
 async def detailed_backtest(
     coin: str,
     direction: str = Query("long", description="方向: long/short"),
+    grade: str = Query("A", description="等级: S/A/B/C，默认 A"),
     walk_forward: bool = Query(True, description="是否执行Walk-Forward验证"),
 ):
     """
     详细回测报告
 
     包含：胜率、夏普比率、索提诺比率、最大回撤、统计显著性、Walk-Forward验证
+
+    数据源：signal_card_history 真实结算结果（同币种+同方向+同等级）
     """
     coin = coin.upper()
+    grade = grade.upper()
 
     # 基础回测
-    bt_result = backtest_signal(coin, direction, "A")
+    bt_result = backtest_signal(coin, direction, grade)
 
     result = {
         "coin": coin,
         "direction": direction,
+        "grade": grade,
         "backtest": bt_result,
     }
 
     # Walk-Forward 验证
     if walk_forward:
-        wf_result = walk_forward_validation(coin, direction)
+        wf_result = walk_forward_validation(coin, direction, grade)
         result["walk_forward"] = wf_result
 
     return {"status": "success", "data": result}

@@ -1,69 +1,38 @@
 """
-交易信号卡 - 历史胜率回测（真实价格 + Walk-Forward 验证版）
+交易信号卡 - 历史胜率回测
 
-升级点：
-1. 使用真实K线价格做回测（不再用买卖比估算）
-2. Walk-Forward 验证（滚动窗口训练+测试）
-3. 夏普比率 / 索提诺比率 / 最大回撤
-4. 因子归因分析（哪些因子贡献了胜率）
-5. 统计显著性检验
+数据源优先级：
+1. signal_card_history 真实结算结果（推荐，跟给用户的卡同源）
+   - status 字段由 settle_pending_cards 任务用 24h 真实 K 线后验填充
+   - 24h 内触发 TP/SL → hit_tp/hit_sl；24h 未触发 → expired
+2. anomaly_history + 后续异动价（legacy fallback，样本稀疏）
+3. 买卖比估算（最低优先级 fallback）
+
+统计指标：胜率 / 夏普 / 索提诺 / 最大回撤 / 统计显著性
 """
+import os
 from typing import Optional, Dict, Any, List
 from config.settings import settings
 
 
+def _env_get(key: str) -> str:
+    """从 os.environ 取值，兼容 Railway env var key 前后空格"""
+    val = os.environ.get(key)
+    if val is not None:
+        return val.strip()
+    for k, v in os.environ.items():
+        if k.strip() == key:
+            return v.strip()
+    return ""
+
+
 def _get_connection():
-    """获取数据库连接"""
-    import pymysql
-    return pymysql.connect(
-        host=settings.bigorder_mysql_host or settings.mysql_host,
-        port=settings.bigorder_mysql_port or settings.mysql_port,
-        user=settings.bigorder_mysql_user or settings.mysql_user,
-        password=settings.bigorder_mysql_password or settings.mysql_password,
-        database=settings.bigorder_mysql_database or settings.mysql_database,
-        charset="utf8mb4",
-        connect_timeout=5,
-        read_timeout=15,
-    )
+    """获取数据库连接 — 复用 settlement._get_conn 保证 Railway 环境变量兼容性"""
+    from app.signals.settlement import _get_conn
+    return _get_conn()
 
 
-def _fetch_price_after(
-    coin: str,
-    start_ts: str,
-    hours: int,
-    conn,
-) -> Optional[float]:
-    """
-    从数据库获取指定时间后的价格
-
-    优先从 K 线表获取，如果没有则尝试从 anomaly_history 的后续记录推算
-    """
-    import pymysql.cursors
-    cursor = conn.cursor(pymysql.cursors.DictCursor)
-
-    # 尝试从 anomaly_history 获取更晚时间点的价格
-    try:
-        cursor.execute(
-            """
-            SELECT latest_price, created_at
-            FROM anomaly_history
-            WHERE coin = %s
-              AND created_at > %s
-            ORDER BY created_at ASC
-            LIMIT 1
-            """,
-            (coin.upper(), start_ts),
-        )
-        row = cursor.fetchone()
-        if row and row.get("latest_price"):
-            cursor.close()
-            return float(row["latest_price"])
-    except Exception:
-        pass
-
-    cursor.close()
-    return None
-
+# ── 主入口 ────────────────────────────────────────────────────────────────────
 
 def backtest_signal(
     coin: str,
@@ -74,27 +43,136 @@ def backtest_signal(
     lookback_days: int = 30,
 ) -> Optional[Dict[str, Any]]:
     """
-    回测类似信号的历史胜率（真实价格版）
+    回测信号卡历史胜率
 
-    流程：
-    1. 从 anomaly_history 获取历史强信号
-    2. 按方向筛选
-    3. 对每个信号，查找后续价格变化（真实价格）
-    4. 判断是否触发止盈/止损
-    5. 统计胜率、夏普比率、最大回撤
+    优先用 signal_card_history 真实结算结果（跟给用户的卡同源策略 + 同源 TP/SL）；
+    样本不足时 fallback 到 anomaly_history legacy 回测。
 
     Returns:
         {
-            "win_rate": 68.0,
-            "sample_count": 45,
-            "avg_profit_pct": 3.2,
+            "win_rate": 62.5,            # 宽松胜率（含 expired 盈利）
+            "strict_win_rate": 68.0,     # 严格胜率（仅看触发 TP/SL 的卡）
+            "sample_count": 48,
+            "avg_profit_pct": 2.3,
             "sharpe_ratio": 1.5,
             "sortino_ratio": 2.1,
             "max_drawdown_pct": -8.5,
-            "timeframes": {...},
-            "statistical_significance": {...}
+            "breakdown": {"hit_tp": 20, "hit_sl": 10, "expired": 18},
+            "source": "signal_card_history"
         }
     """
+    result = backtest_from_signal_history(coin, direction, signal_grade, lookback_days)
+    if result:
+        return result
+
+    return _backtest_from_anomaly_legacy(
+        coin, direction, signal_grade,
+        stop_loss_pct, take_profit_pct, lookback_days,
+    )
+
+
+# ── 数据源 1：signal_card_history（推荐） ─────────────────────────────────────
+
+def backtest_from_signal_history(
+    coin: str,
+    direction: str,
+    signal_grade: Optional[str],
+    lookback_days: int = 30,
+    min_sample: int = 10,
+) -> Optional[Dict[str, Any]]:
+    """
+    基于 signal_card_history 真实结算结果的回测
+
+    每条记录都是「真实生成的信号卡 + 真实 TP/SL + 24h K 线后验结果」，
+    跟给用户的卡完全同源。
+
+    Returns None 当样本不足 min_sample（保持向后兼容：调用方显示「数据积累中」）
+    """
+    conn = None
+    try:
+        conn = _get_connection()
+        import pymysql.cursors
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+
+        where_parts = [
+            "coin = %s",
+            "direction = %s",
+            "status IN ('hit_tp', 'hit_sl', 'expired')",
+            "created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)",
+        ]
+        params: list = [coin.upper(), direction, lookback_days]
+        if signal_grade:
+            where_parts.append("grade = %s")
+            params.append(signal_grade)
+        where = " AND ".join(where_parts)
+
+        cursor.execute(
+            f"""SELECT id, grade, direction, current_price, stop_loss, take_profit,
+                      status, pnl_pct, created_at, settled_at
+               FROM signal_card_history
+               WHERE {where}
+               ORDER BY created_at DESC
+               LIMIT 500""",
+            params,
+        )
+        cards = cursor.fetchall()
+        cursor.close()
+
+        if len(cards) < min_sample:
+            return None
+
+        hit_tp = [c for c in cards if c["status"] == "hit_tp"]
+        hit_sl = [c for c in cards if c["status"] == "hit_sl"]
+        expired = [c for c in cards if c["status"] == "expired"]
+
+        # 严格胜率：触发止盈 / (止盈+止损)
+        triggered = len(hit_tp) + len(hit_sl)
+        strict_win_rate = (len(hit_tp) / triggered * 100) if triggered > 0 else 0.0
+
+        # 宽松胜率：(止盈 + expired 但盈利) / 总数
+        wins = len(hit_tp) + sum(1 for c in expired if (c.get("pnl_pct") or 0) > 0)
+        loose_win_rate = wins / len(cards) * 100
+
+        pnls = [float(c.get("pnl_pct") or 0) for c in cards]
+        avg_profit = sum(pnls) / len(pnls)
+
+        return {
+            "win_rate": round(loose_win_rate, 1),
+            "strict_win_rate": round(strict_win_rate, 1),
+            "sample_count": len(cards),
+            "avg_profit_pct": round(avg_profit, 2),
+            "sharpe_ratio": round(_sharpe_ratio(pnls), 2),
+            "sortino_ratio": round(_sortino_ratio(pnls), 2),
+            "max_drawdown_pct": round(_max_drawdown(pnls), 2),
+            "breakdown": {
+                "hit_tp": len(hit_tp),
+                "hit_sl": len(hit_sl),
+                "expired": len(expired),
+            },
+            "timeframes": {"24h": round(loose_win_rate, 1)},
+            "statistical_significance": _test_significance(pnls),
+            "source": "signal_card_history",
+        }
+
+    except Exception as e:
+        print(f"signal_history 回测失败: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+
+# ── 数据源 2：anomaly_history（legacy fallback） ──────────────────────────────
+
+def _backtest_from_anomaly_legacy(
+    coin: str,
+    direction: str,
+    signal_grade: str,
+    stop_loss_pct: float,
+    take_profit_pct: float,
+    lookback_days: int,
+) -> Optional[Dict[str, Any]]:
+    """legacy 回测：anomaly_history + 后续异动价（样本稀疏，仅作 fallback）"""
     conn = None
     try:
         conn = _get_connection()
@@ -122,7 +200,6 @@ def backtest_signal(
         if not signals:
             return _fallback_backtest(coin, direction, lookback_days, conn)
 
-        # 按方向分组
         if direction == "long":
             matched = [s for s in signals if (s.get("net_flow") or 0) > 0]
         else:
@@ -131,62 +208,46 @@ def backtest_signal(
         if len(matched) < 3:
             return _fallback_backtest(coin, direction, lookback_days, conn)
 
-        # ── 真实价格回测 ──────────────────────────────────────
         trades: List[Dict] = []
-
         for i, sig in enumerate(matched):
             entry_price = sig.get("latest_price")
             entry_time = str(sig.get("created_at", ""))
-
             if not entry_price or entry_price <= 0:
                 continue
 
-            # 查找后续价格
-            next_price_4h = None
-            next_price_12h = None
-            next_price_24h = None
-
-            # 用后续信号的价格作为真实价格
+            next_price_4h = next_price_12h = next_price_24h = None
             for j in range(i + 1, min(i + 6, len(signals))):
                 future = signals[j]
                 future_time = str(future.get("created_at", ""))
                 future_price = future.get("latest_price")
-
                 if not future_price or future_price <= 0:
                     continue
-
                 time_diff_hours = _hours_between(entry_time, future_time)
                 if time_diff_hours is None:
                     continue
-
                 if next_price_4h is None and time_diff_hours >= 2:
                     next_price_4h = (future_price, time_diff_hours)
                 if next_price_12h is None and time_diff_hours >= 8:
                     next_price_12h = (future_price, time_diff_hours)
                 if next_price_24h is None and time_diff_hours >= 16:
                     next_price_24h = (future_price, time_diff_hours)
-
                 if next_price_24h:
                     break
 
-            # 使用最近可用价格计算盈亏
             best_price = None
             for price_info in [next_price_4h, next_price_12h, next_price_24h]:
                 if price_info:
                     best_price = price_info[0]
                     break
-
             if not best_price:
                 continue
 
             pnl_pct = (best_price - entry_price) / entry_price * 100
-
-            # 止盈止损判断
             if direction == "long":
                 hit_tp = pnl_pct >= take_profit_pct
                 hit_sl = pnl_pct <= -stop_loss_pct
             else:
-                pnl_pct = -pnl_pct  # 做空反向计算
+                pnl_pct = -pnl_pct
                 hit_tp = pnl_pct >= take_profit_pct
                 hit_sl = pnl_pct <= -stop_loss_pct
 
@@ -199,51 +260,29 @@ def backtest_signal(
 
             trades.append({
                 "pnl_pct": realized_pnl,
-                "raw_pnl": pnl_pct,
                 "win": realized_pnl > 0,
-                "entry_price": entry_price,
-                "exit_price": best_price,
             })
 
         if not trades:
             return _fallback_backtest(coin, direction, lookback_days, conn)
 
-        # ── 统计指标 ──────────────────────────────────────────
         wins = [t for t in trades if t["win"]]
-        losses = [t for t in trades if not t["win"]]
         win_rate = len(wins) / len(trades) * 100
         avg_profit = sum(t["pnl_pct"] for t in trades) / len(trades)
-
-        # 夏普比率（年化）
         returns = [t["pnl_pct"] for t in trades]
-        sharpe = _sharpe_ratio(returns)
-
-        # 索提诺比率（只惩罚下行波动）
-        sortino = _sortino_ratio(returns)
-
-        # 最大回撤
-        max_dd = _max_drawdown(returns)
-
-        # 时间维度胜率
-        tf_win_rates = {}
-        for tf_name, tf_threshold in [("4h", 2), ("12h", 8), ("24h", 16)]:
-            tf_trades = [t for t in trades]
-            if tf_trades:
-                tf_wr = sum(1 for t in tf_trades if t["win"]) / len(tf_trades) * 100
-                tf_win_rates[tf_name] = round(tf_wr, 1)
-
-        # 统计显著性
-        sig_result = _test_significance(returns)
 
         return {
             "win_rate": round(win_rate, 1),
+            "strict_win_rate": round(win_rate, 1),
             "sample_count": len(trades),
             "avg_profit_pct": round(avg_profit, 2),
-            "sharpe_ratio": round(sharpe, 2),
-            "sortino_ratio": round(sortino, 2),
-            "max_drawdown_pct": round(max_dd, 2),
-            "timeframes": tf_win_rates,
-            "statistical_significance": sig_result,
+            "sharpe_ratio": round(_sharpe_ratio(returns), 2),
+            "sortino_ratio": round(_sortino_ratio(returns), 2),
+            "max_drawdown_pct": round(_max_drawdown(returns), 2),
+            "breakdown": {"hit_tp": len(wins), "hit_sl": len(trades) - len(wins), "expired": 0},
+            "timeframes": {"24h": round(win_rate, 1)},
+            "statistical_significance": _test_significance(returns),
+            "source": "anomaly_history_legacy",
         }
 
     except Exception as e:
@@ -267,7 +306,6 @@ def _fallback_backtest(
     try:
         import pymysql.cursors
         cursor = conn.cursor(pymysql.cursors.DictCursor)
-
         cursor.execute(
             """
             SELECT coin, total_score, level, net_flow,
@@ -301,17 +339,14 @@ def _fallback_backtest(
             buy = s.get("buy_amount", 0) or 0
             sell = s.get("sell_amount", 0) or 0
             total_vol = buy + sell
-
             if total_vol <= 0:
                 continue
-
             if direction == "long":
                 ratio = buy / total_vol
                 expected_win = ratio > 0.6
             else:
                 ratio = sell / total_vol
                 expected_win = ratio > 0.6
-
             if expected_win:
                 correct += 1
                 total_pnl += abs(net) / total_vol * 100
@@ -323,36 +358,36 @@ def _fallback_backtest(
 
         return {
             "win_rate": round(win_rate, 1),
+            "strict_win_rate": round(win_rate, 1),
             "sample_count": len(matched),
             "avg_profit_pct": round(avg_profit, 2),
             "sharpe_ratio": 0.0,
             "sortino_ratio": 0.0,
             "max_drawdown_pct": 0.0,
-            "timeframes": {"4h": round(win_rate * 0.9, 1), "12h": round(win_rate * 0.95, 1), "24h": round(win_rate, 1)},
+            "breakdown": {"hit_tp": correct, "hit_sl": len(matched) - correct, "expired": 0},
+            "timeframes": {"24h": round(win_rate, 1)},
             "statistical_significance": None,
+            "source": "buy_sell_ratio_estimate",
         }
 
     except Exception:
         return None
 
 
+# ── Walk-Forward 验证 ─────────────────────────────────────────────────────────
+
 def walk_forward_validation(
     coin: str,
     direction: str,
-    train_window: int = 20,
-    test_window: int = 10,
+    signal_grade: Optional[str] = None,
+    train_ratio: float = 0.7,
     lookback_days: int = 90,
 ) -> Optional[Dict[str, Any]]:
     """
-    Walk-Forward 验证 — 滚动窗口训练+测试
+    Walk-Forward 验证 — 基于 signal_card_history 真实结算
 
-    模拟真实交易场景：
-    1. 用 train_window 天的数据训练/校准
-    2. 用 test_window 天的数据验证
-    3. 滚动向前
-    4. 统计 out-of-sample 表现
-
-    这比简单回测更能反映策略的真实表现
+    按时间排序，前 train_ratio 比例作为 in-sample，剩余作为 out-of-sample。
+    比较 in-sample 和 out-of-sample 胜率差异，差异越小策略越稳健。
     """
     conn = None
     try:
@@ -360,87 +395,67 @@ def walk_forward_validation(
         import pymysql.cursors
         cursor = conn.cursor(pymysql.cursors.DictCursor)
 
+        where_parts = [
+            "coin = %s",
+            "direction = %s",
+            "status IN ('hit_tp', 'hit_sl', 'expired')",
+            "created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)",
+        ]
+        params: list = [coin.upper(), direction, lookback_days]
+        if signal_grade:
+            where_parts.append("grade = %s")
+            params.append(signal_grade)
+        where = " AND ".join(where_parts)
+
         cursor.execute(
-            """
-            SELECT coin, total_score, level, net_flow,
-                   buy_amount, sell_amount, latest_price,
-                   created_at
-            FROM anomaly_history
-            WHERE coin = %s
-              AND created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)
-            ORDER BY created_at ASC
-            LIMIT 500
-            """,
-            (coin.upper(), lookback_days),
+            f"""SELECT status, pnl_pct, created_at
+               FROM signal_card_history
+               WHERE {where}
+               ORDER BY created_at ASC
+               LIMIT 500""",
+            params,
         )
-        signals = cursor.fetchall()
+        cards = cursor.fetchall()
         cursor.close()
 
-        if len(signals) < 10:
+        if len(cards) < 10:
             return None
 
-        # 按方向过滤
-        if direction == "long":
-            all_signals = [s for s in signals if (s.get("net_flow") or 0) > 0]
-        else:
-            all_signals = [s for s in signals if (s.get("net_flow") or 0) < 0]
-
-        if len(all_signals) < 5:
+        split = int(len(cards) * train_ratio)
+        in_sample = cards[:split]
+        out_sample = cards[split:]
+        if not out_sample:
             return None
 
-        # 滚动窗口验证
-        oos_trades = []
-        window_size = train_window + test_window
+        def _wr(slice_cards):
+            if not slice_cards:
+                return 0.0
+            wins = sum(1 for c in slice_cards
+                       if c["status"] == "hit_tp"
+                       or (c["status"] == "expired" and (c.get("pnl_pct") or 0) > 0))
+            return wins / len(slice_cards) * 100
 
-        for start in range(0, len(signals) - window_size, test_window):
-            train = signals[start: start + train_window]
-            test = signals[start + train_window: start + window_size]
-
-            # 训练窗口：计算最优买卖比阈值
-            train_wr = _compute_signal_win_rate(train, direction)
-
-            # 测试窗口：用训练得到的阈值评估
-            for sig in test:
-                entry_price = sig.get("latest_price")
-                if not entry_price or entry_price <= 0:
-                    continue
-
-                net = sig.get("net_flow", 0) or 0
-                buy = sig.get("buy_amount", 0) or 0
-                sell = sig.get("sell_amount", 0) or 0
-
-                if direction == "long" and net <= 0:
-                    continue
-                if direction == "short" and net >= 0:
-                    continue
-
-                total_vol = buy + sell
-                if total_vol <= 0:
-                    continue
-
-                ratio = buy / total_vol if direction == "long" else sell / total_vol
-
-                # 使用训练窗口的胜率作为阈值
-                if ratio > 0.6:
-                    oos_trades.append(1)  # 假设命中
-                else:
-                    oos_trades.append(0)  # 假设未命中
-
-        if not oos_trades:
-            return None
-
-        oos_win_rate = sum(oos_trades) / len(oos_trades) * 100
+        in_wr = _wr(in_sample)
+        oos_wr = _wr(out_sample)
+        gap = abs(in_wr - oos_wr)
+        robustness = max(0.0, 100.0 - gap)
+        is_robust = gap < 15
 
         return {
             "method": "walk_forward",
-            "train_window_days": train_window,
-            "test_window_days": test_window,
-            "oos_win_rate": round(oos_win_rate, 1),
-            "oos_sample_count": len(oos_trades),
+            "train_ratio": train_ratio,
+            "in_sample_win_rate": round(in_wr, 1),
+            "out_sample_win_rate": round(oos_wr, 1),
+            "in_sample_count": len(in_sample),
+            "out_sample_count": len(out_sample),
+            "robustness_score": round(robustness, 1),
+            "is_robust": is_robust,
             "interpretation": (
-                f"Walk-Forward验证OOS胜率{oos_win_rate:.0f}%(n={len(oos_trades)})"
-                if oos_trades else "数据不足"
+                f"Walk-Forward OOS 胜率 {oos_wr:.1f}% (n={len(out_sample)})，"
+                f"与 in-sample 差距 {gap:.1f}pp，"
+                f"{'稳健' if is_robust else '存在过拟合风险'}"
             ),
+            "source": "signal_card_history",
         }
 
     except Exception:
@@ -450,34 +465,9 @@ def walk_forward_validation(
             conn.close()
 
 
-def _compute_signal_win_rate(signals, direction: str) -> float:
-    """计算信号窗口内的胜率估计"""
-    if direction == "long":
-        matched = [s for s in signals if (s.get("net_flow") or 0) > 0]
-    else:
-        matched = [s for s in signals if (s.get("net_flow") or 0) < 0]
-
-    if not matched:
-        return 0.5
-
-    wins = 0
-    for s in matched:
-        buy = s.get("buy_amount", 0) or 0
-        sell = s.get("sell_amount", 0) or 0
-        total = buy + sell
-        if total <= 0:
-            continue
-        ratio = buy / total if direction == "long" else sell / total
-        if ratio > 0.6:
-            wins += 1
-
-    return wins / len(matched) if matched else 0.5
-
-
 # ── 统计工具函数 ─────────────────────────────────────────────────────────────
 
 def _hours_between(ts1: str, ts2: str) -> Optional[float]:
-    """计算两个时间字符串之间的小时差"""
     try:
         from datetime import datetime
         fmt = "%Y-%m-%d %H:%M:%S"
@@ -485,7 +475,6 @@ def _hours_between(ts1: str, ts2: str) -> Optional[float]:
             ts1 = ts1.replace("T", " ")[:19]
         if "T" in ts2:
             ts2 = ts2.replace("T", " ")[:19]
-
         dt1 = datetime.strptime(ts1[:19], fmt)
         dt2 = datetime.strptime(ts2[:19], fmt)
         return (dt2 - dt1).total_seconds() / 3600
@@ -494,54 +483,40 @@ def _hours_between(ts1: str, ts2: str) -> Optional[float]:
 
 
 def _sharpe_ratio(returns: List[float], annualize: bool = True) -> float:
-    """夏普比率 = (均值 - 无风险利率) / 标准差"""
     if len(returns) < 2:
         return 0.0
     import math
     mean_r = sum(returns) / len(returns)
     var_r = sum((r - mean_r) ** 2 for r in returns) / (len(returns) - 1)
     std_r = math.sqrt(var_r) if var_r > 0 else 1e-10
-
-    # 无风险利率按年化 4% 近似，每笔交易 ≈ 0.01%
     rf_per_trade = 0.01
     sharpe = (mean_r - rf_per_trade) / std_r
-
     if annualize:
-        # 假设每笔交易约 24 小时，一年约 365 笔
         sharpe *= math.sqrt(365)
-
     return sharpe
 
 
 def _sortino_ratio(returns: List[float], annualize: bool = True) -> float:
-    """索提诺比率 — 只惩罚下行波动"""
     if len(returns) < 2:
         return 0.0
     import math
     mean_r = sum(returns) / len(returns)
-    target = 0.0  # 目标收益率
-
+    target = 0.0
     downside = [min(r - target, 0) ** 2 for r in returns]
     downside_var = sum(downside) / len(downside)
     downside_std = math.sqrt(downside_var) if downside_var > 0 else 1e-10
-
     sortino = (mean_r - 0.01) / downside_std
-
     if annualize:
         sortino *= math.sqrt(365)
-
     return sortino
 
 
 def _max_drawdown(returns: List[float]) -> float:
-    """最大回撤"""
     if not returns:
         return 0.0
-
     cumulative = 100.0
     peak = cumulative
     max_dd = 0.0
-
     for r in returns:
         cumulative *= (1 + r / 100)
         if cumulative > peak:
@@ -549,21 +524,21 @@ def _max_drawdown(returns: List[float]) -> float:
         dd = (cumulative - peak) / peak * 100
         if dd < max_dd:
             max_dd = dd
-
     return max_dd
 
 
 def _test_significance(returns: List[float]) -> Optional[Dict[str, Any]]:
-    """使用数学引擎进行统计显著性检验"""
     if len(returns) < 5:
         return None
-
-    from app.signals.math_engine import statistical_significance
-    result = statistical_significance(returns)
-    return {
-        "z_score": result.z_score,
-        "p_value": result.p_value,
-        "is_significant": result.is_significant,
-        "effect_size": result.effect_size,
-        "interpretation": result.interpretation,
-    }
+    try:
+        from app.signals.math_engine import statistical_significance
+        result = statistical_significance(returns)
+        return {
+            "z_score": result.z_score,
+            "p_value": result.p_value,
+            "is_significant": result.is_significant,
+            "effect_size": result.effect_size,
+            "interpretation": result.interpretation,
+        }
+    except Exception:
+        return None
