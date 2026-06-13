@@ -515,9 +515,16 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
         grade = SignalGrade.C if relaxed else SignalGrade.B
 
     # ── 价格计算 ──────────────────────────────────────────────
-    price = realtime_price or (ohlcv["closes"][-1] if ohlcv.get("closes") else 0)
+    ohlcv_close = ohlcv.get("closes", [-1])[-1] if ohlcv.get("closes") else 0
+    price = realtime_price or ohlcv_close
     if price <= 0:
         return None
+
+    # 价格合理性校验：实时价偏离 K 线收盘价超过 50% → 回退到收盘价（防止数据源异常）
+    if realtime_price and ohlcv_close > 0:
+        deviation = abs(realtime_price - ohlcv_close) / ohlcv_close
+        if deviation > 0.5:
+            price = ohlcv_close
 
     # ATR：小时线可用时优先用于短线进出场，否则回退到主周期（日线）
     from app.skills.analysis_skills.indicators import atr as calc_atr
