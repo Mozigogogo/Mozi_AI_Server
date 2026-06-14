@@ -446,13 +446,9 @@ def _fetch_hourly_klines(coin: str, since: datetime) -> List[dict]:
         for i, bar in enumerate(values):
             if not isinstance(bar, (list, tuple)) or len(bar) < 4:
                 continue
-            dt_str = dates[i] if i < len(dates) else ""
-            dt_str = str(dt_str).replace("-", "/").replace("T", " ")[:16]
-            try:
-                bar_time = datetime.strptime(dt_str, "%Y/%m/%d %H:%M")
-            except (ValueError, TypeError):
-                continue
-            if bar_time <= since:
+            dt_str = str(dates[i]) if i < len(dates) else ""
+            bar_time = _parse_kline_ts(dt_str)
+            if bar_time is None or bar_time <= since:
                 continue
             result.append({"time": bar_time, "open": float(bar[0]), "high": float(bar[1]),
                            "low": float(bar[2]), "close": float(bar[3])})
@@ -460,6 +456,28 @@ def _fetch_hourly_klines(coin: str, since: datetime) -> List[dict]:
     except Exception as e:
         print(f"拉取K线失败({coin}): {e}")
         return []
+
+
+def _parse_kline_ts(dt_str: str):
+    """解析 K 线时间戳，兼容多种格式：
+    - "2026/06/13 06"     (mozi API 实际返回：日期+小时，无分钟)
+    - "2026-06-13 06"
+    - "2026/06/13 06:00"
+    - "2026-06-13T06:00:00"
+    """
+    if not dt_str:
+        return None
+    from datetime import datetime
+    s = dt_str.replace("-", "/").replace("T", " ").strip()
+    # 无分钟格式补 :00
+    if len(s) == 13 and s[4] == "/" and s[7] == "/" and s[10] == " ":
+        s += ":00"
+    for fmt in ("%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y/%m/%d %H"):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    return None
 
 
 def get_accumulated_winrate(coin: str = None, grade: str = None, days: int = 30) -> Optional[Dict[str, Any]]:

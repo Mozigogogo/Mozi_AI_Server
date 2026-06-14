@@ -447,6 +447,70 @@ async def trigger_settle():
     return {"status": "success", "data": result}
 
 
+@router.post("/settle/reset")
+async def reset_and_settle(
+    hours: float = Query(2.0, description="重置该小时数内所有 expired/pending 卡，强制重跑 settle"),
+):
+    """诊断用：把 N 小时内的卡重置为 pending，立刻调用 settle 重跑
+
+    用于验证 settle 任务是否真的能用 K 线正确处理（修复 bug 后验证）
+    """
+    from app.signals.settlement import _get_conn, _settle_one_direct, _USE_PROXY
+    import pymysql.cursors
+    if _USE_PROXY:
+        return {"status": "error", "message": "本地代理模式不支持 reset，请在 Railway 调用"}
+
+    conn = None
+    try:
+        conn = _get_conn()
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cursor.execute(
+            """UPDATE signal_card_history
+               SET status='pending', settled_price=NULL, pnl_pct=NULL, settled_at=NULL
+               WHERE created_at >= DATE_SUB(NOW(), INTERVAL %s HOUR)
+                 AND status IN ('expired', 'hit_tp', 'hit_sl')""",
+            (hours,),
+        )
+        reset_count = cursor.rowcount
+        cursor.close()
+        conn.commit()
+
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cursor.execute(
+            """SELECT id, coin, direction, stop_loss, take_profit, current_price,
+                      confidence, created_at
+               FROM signal_card_history
+               WHERE status = 'pending' AND created_at <= DATE_SUB(NOW(), INTERVAL 1 HOUR)
+               ORDER BY created_at ASC LIMIT 50""",
+        )
+        cards = cursor.fetchall()
+        cursor.close()
+
+        stats = {"settled": 0, "hit_tp": 0, "hit_sl": 0, "expired": 0, "skipped": 0}
+        samples = []
+        for card in cards:
+            result = _settle_one_direct(conn, card)
+            if result:
+                status, pnl, coin = result
+                stats[status] = stats.get(status, 0) + 1
+                stats["settled"] += 1
+                if len(samples) < 5:
+                    samples.append({"id": card["id"], "coin": coin, "status": status, "pnl": pnl,
+                                    "entry": float(card["current_price"]),
+                                    "sl": float(card["stop_loss"]),
+                                    "tp": float(card["take_profit"])})
+            else:
+                stats["skipped"] += 1
+
+        return {"status": "success", "reset_count": reset_count, "stats": stats, "samples": samples}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    finally:
+        if conn:
+            conn.close()
+    return {"status": "success", "data": result}
+
+
 # ── 胜率 & 历史接口 ──────────────────────────────────────────────────────────
 
 @router.get("/winrate")
