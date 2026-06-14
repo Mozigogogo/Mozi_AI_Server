@@ -81,78 +81,35 @@ def backtest_from_signal_history(
     min_sample: int = 10,
 ) -> Optional[Dict[str, Any]]:
     """
-    基于 signal_card_history 真实结算结果的回测
+    基于 signal_card_history 真实结算结果的回测（含维度 fallback）
+
+    Fallback 优先级（第一性原理：coin > direction > grade）：
+      1. coin+direction+grade, sample≥30  → confidence_level="high"
+      2. coin+direction, sample≥30         → confidence_level="mid"
+      3. coin+direction, sample≥min_sample → confidence_level="low"
+      4. otherwise                         → None
 
     每条记录都是「真实生成的信号卡 + 真实 TP/SL + 24h K 线后验结果」，
     跟给用户的卡完全同源。
-
-    Returns None 当样本不足 min_sample（保持向后兼容：调用方显示「数据积累中」）
     """
     conn = None
     try:
         conn = _get_connection()
-        import pymysql.cursors
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
 
-        where_parts = [
-            "coin = %s",
-            "direction = %s",
-            "status IN ('hit_tp', 'hit_sl', 'expired')",
-            "created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)",
-        ]
-        params: list = [coin.upper(), direction, lookback_days]
+        # Tier 1: 同币+同向+同等级
         if signal_grade:
-            where_parts.append("grade = %s")
-            params.append(signal_grade)
-        where = " AND ".join(where_parts)
+            cards = _query_settled_cards(conn, coin, direction, signal_grade, lookback_days)
+            if len(cards) >= 30:
+                return _build_result(cards, confidence_level="high", grade_filter=signal_grade)
 
-        cursor.execute(
-            f"""SELECT id, grade, direction, current_price, stop_loss, take_profit,
-                      status, pnl_pct, created_at, settled_at
-               FROM signal_card_history
-               WHERE {where}
-               ORDER BY created_at DESC
-               LIMIT 500""",
-            params,
-        )
-        cards = cursor.fetchall()
-        cursor.close()
+        # Tier 2/3: 同币+同向（合并等级）
+        cards = _query_settled_cards(conn, coin, direction, None, lookback_days)
+        if len(cards) >= 30:
+            return _build_result(cards, confidence_level="mid", grade_filter=None)
+        if len(cards) >= min_sample:
+            return _build_result(cards, confidence_level="low", grade_filter=None)
 
-        if len(cards) < min_sample:
-            return None
-
-        hit_tp = [c for c in cards if c["status"] == "hit_tp"]
-        hit_sl = [c for c in cards if c["status"] == "hit_sl"]
-        expired = [c for c in cards if c["status"] == "expired"]
-
-        # 严格胜率：触发止盈 / (止盈+止损)
-        triggered = len(hit_tp) + len(hit_sl)
-        strict_win_rate = (len(hit_tp) / triggered * 100) if triggered > 0 else 0.0
-
-        # 宽松胜率：(止盈 + expired 但盈利) / 总数
-        wins = len(hit_tp) + sum(1 for c in expired if (c.get("pnl_pct") or 0) > 0)
-        loose_win_rate = wins / len(cards) * 100
-
-        pnls = [float(c.get("pnl_pct") or 0) for c in cards]
-        avg_profit = sum(pnls) / len(pnls)
-
-        return {
-            "win_rate": round(loose_win_rate, 1),
-            "strict_win_rate": round(strict_win_rate, 1),
-            "sample_count": len(cards),
-            "avg_profit_pct": round(avg_profit, 2),
-            "sharpe_ratio": round(_sharpe_ratio(pnls), 2),
-            "sortino_ratio": round(_sortino_ratio(pnls), 2),
-            "max_drawdown_pct": round(_max_drawdown(pnls), 2),
-            "breakdown": {
-                "hit_tp": len(hit_tp),
-                "hit_sl": len(hit_sl),
-                "expired": len(expired),
-            },
-            "timeframes": {"24h": round(loose_win_rate, 1)},
-            "statistical_significance": _test_significance(pnls),
-            "source": "signal_card_history",
-        }
+        return None
 
     except Exception as e:
         print(f"signal_history 回测失败: {e}")
@@ -160,6 +117,70 @@ def backtest_from_signal_history(
     finally:
         if conn:
             conn.close()
+
+
+def _query_settled_cards(conn, coin: str, direction: str, grade: Optional[str], lookback_days: int) -> List[dict]:
+    """查询已结算卡（hit_tp/hit_sl/expired），按 coin+direction[+grade] 过滤"""
+    import pymysql.cursors
+    cursor = conn.cursor(pymysql.cursors.DictCursor)
+    where_parts = [
+        "coin = %s",
+        "direction = %s",
+        "status IN ('hit_tp', 'hit_sl', 'expired')",
+        "created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)",
+    ]
+    params: list = [coin.upper(), direction, lookback_days]
+    if grade:
+        where_parts.append("grade = %s")
+        params.append(grade)
+    cursor.execute(
+        f"""SELECT id, grade, direction, current_price, stop_loss, take_profit,
+                  status, pnl_pct, created_at, settled_at
+           FROM signal_card_history
+           WHERE {" AND ".join(where_parts)}
+           ORDER BY created_at DESC
+           LIMIT 500""",
+        params,
+    )
+    rows = cursor.fetchall()
+    cursor.close()
+    return rows
+
+
+def _build_result(cards: List[dict], confidence_level: str, grade_filter: Optional[str]) -> Dict[str, Any]:
+    """从已结算卡列表构建回测结果"""
+    hit_tp = [c for c in cards if c["status"] == "hit_tp"]
+    hit_sl = [c for c in cards if c["status"] == "hit_sl"]
+    expired = [c for c in cards if c["status"] == "expired"]
+
+    triggered = len(hit_tp) + len(hit_sl)
+    strict_win_rate = (len(hit_tp) / triggered * 100) if triggered > 0 else 0.0
+
+    wins = len(hit_tp) + sum(1 for c in expired if (c.get("pnl_pct") or 0) > 0)
+    loose_win_rate = wins / len(cards) * 100
+
+    pnls = [float(c.get("pnl_pct") or 0) for c in cards]
+    avg_profit = sum(pnls) / len(pnls)
+
+    return {
+        "win_rate": round(loose_win_rate, 1),
+        "strict_win_rate": round(strict_win_rate, 1),
+        "sample_count": len(cards),
+        "avg_profit_pct": round(avg_profit, 2),
+        "sharpe_ratio": round(_sharpe_ratio(pnls), 2),
+        "sortino_ratio": round(_sortino_ratio(pnls), 2),
+        "max_drawdown_pct": round(_max_drawdown(pnls), 2),
+        "breakdown": {
+            "hit_tp": len(hit_tp),
+            "hit_sl": len(hit_sl),
+            "expired": len(expired),
+        },
+        "timeframes": {"24h": round(loose_win_rate, 1)},
+        "statistical_significance": _test_significance(pnls),
+        "confidence_level": confidence_level,
+        "grade_filter": grade_filter,
+        "source": "signal_card_history",
+    }
 
 
 # ── 数据源 2：anomaly_history（legacy fallback） ──────────────────────────────
@@ -386,40 +407,36 @@ def walk_forward_validation(
     """
     Walk-Forward 验证 — 基于 signal_card_history 真实结算
 
+    Fallback 与 backtest_from_signal_history 一致：
+      1. coin+direction+grade, sample≥30 → high
+      2. coin+direction, sample≥10 → mid
+      3. otherwise → None
+
     按时间排序，前 train_ratio 比例作为 in-sample，剩余作为 out-of-sample。
-    比较 in-sample 和 out-of-sample 胜率差异，差异越小策略越稳健。
     """
     conn = None
     try:
         conn = _get_connection()
-        import pymysql.cursors
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        cards: List[dict] = []
+        confidence_level = None
 
-        where_parts = [
-            "coin = %s",
-            "direction = %s",
-            "status IN ('hit_tp', 'hit_sl', 'expired')",
-            "created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)",
-        ]
-        params: list = [coin.upper(), direction, lookback_days]
+        # Tier 1: 同币+同向+同等级
         if signal_grade:
-            where_parts.append("grade = %s")
-            params.append(signal_grade)
-        where = " AND ".join(where_parts)
+            cards = _query_settled_cards(conn, coin, direction, signal_grade, lookback_days)
+            if len(cards) >= 30:
+                confidence_level = "high"
 
-        cursor.execute(
-            f"""SELECT status, pnl_pct, created_at
-               FROM signal_card_history
-               WHERE {where}
-               ORDER BY created_at ASC
-               LIMIT 500""",
-            params,
-        )
-        cards = cursor.fetchall()
-        cursor.close()
+        # Tier 2: 同币+同向
+        if not confidence_level:
+            cards = _query_settled_cards(conn, coin, direction, None, lookback_days)
+            if len(cards) >= 10:
+                confidence_level = "mid"
 
-        if len(cards) < 10:
+        if not confidence_level or len(cards) < 10:
             return None
+
+        # 按时间正序排列
+        cards.sort(key=lambda c: c.get("created_at"))
 
         split = int(len(cards) * train_ratio)
         in_sample = cards[:split]
@@ -450,6 +467,7 @@ def walk_forward_validation(
             "out_sample_count": len(out_sample),
             "robustness_score": round(robustness, 1),
             "is_robust": is_robust,
+            "confidence_level": confidence_level,
             "interpretation": (
                 f"Walk-Forward OOS 胜率 {oos_wr:.1f}% (n={len(out_sample)})，"
                 f"与 in-sample 差距 {gap:.1f}pp，"
