@@ -447,6 +447,7 @@ def _fetch_hourly_klines(coin: str, since: datetime) -> List[dict]:
             if not isinstance(bar, (list, tuple)) or len(bar) < 4:
                 continue
             dt_str = dates[i] if i < len(dates) else ""
+            dt_str = str(dt_str).replace("-", "/").replace("T", " ")[:16]
             try:
                 bar_time = datetime.strptime(dt_str, "%Y/%m/%d %H:%M")
             except (ValueError, TypeError):
