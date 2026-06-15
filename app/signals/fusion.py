@@ -419,7 +419,7 @@ def _technical_source(ohlcv: dict, weight: float, lang: str = "zh") -> Optional[
     )
 
 
-def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, lang: str = "zh") -> Optional[SignalCard]:
+def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, lang: str = "zh", use_v2: bool = False) -> Optional[SignalCard]:
     """
     多维信号融合，生成交易信号卡
 
@@ -451,8 +451,36 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
     # ── 收集信号源 ──────────────────────────────────────────────
     sources: List[SignalSource] = []
 
-    # 大单信号：优先用 Alpha 扫描传入的12h聚合，否则读实时快照
-    bigorder_src = raw_data.get("bigorder_12h") or _bigorder_source(coin, adaptive_weights.get("bigorder_anomaly", 0.35), lang)
+    # 大单信号：v2 模式用时间衰减版（自适应 T½ + 吸筹 override），否则用 12h 聚合
+    bigorder_src = None
+    if use_v2:
+        try:
+            from app.signals.alpha_scanner import get_bigorder_decay_signal, detect_accumulation_pattern
+            decay_src = get_bigorder_decay_signal(
+                coin, adaptive_weights.get("bigorder_anomaly", 0.35),
+                vol_regime=regime,
+                dual_window=(regime == "extreme"),
+            )
+            if decay_src:
+                # 吸筹 pattern 命中时强制 LONG（覆盖简单 net_flow 判断）
+                try:
+                    accumulation = detect_accumulation_pattern(coin)
+                    if accumulation:
+                        decay_src.direction = SignalDirection.LONG
+                        decay_src.detail += (
+                            f" | 吸筹 pattern 触发 LONG override"
+                            f" (top5买{accumulation['top5_buy_ratio'] * 100:.0f}%/"
+                            f"散户卖{accumulation['small_sell_ratio'] * 100:.0f}%)"
+                        )
+                except Exception:
+                    pass
+                bigorder_src = decay_src
+        except Exception:
+            pass  # v2 失败兜底走 legacy
+
+    if not bigorder_src:
+        # legacy: 优先用 Alpha 扫描传入的12h聚合，否则读实时快照
+        bigorder_src = raw_data.get("bigorder_12h") or _bigorder_source(coin, adaptive_weights.get("bigorder_anomaly", 0.35), lang)
     if bigorder_src:
         sources.append(bigorder_src)
 

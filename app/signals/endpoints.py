@@ -35,6 +35,7 @@ _pushed_signals: dict = {}
 async def generate_signal(
     coin: str,
     kline_type: int = Query(2, description="K线类型: 1=小时 2=天 3=周"),
+    v2: bool = Query(False, description="启用 v2 新逻辑（时间衰减大单 + 吸筹 pattern）"),
 ):
     """为指定币种生成交易信号卡（含数学推导 + 自适应策略）"""
     coin = coin.upper()
@@ -77,7 +78,7 @@ async def generate_signal(
 
     # 融合生成信号卡
     signal_card = await asyncio.get_running_loop().run_in_executor(
-        None, fuse_signals, coin, ohlcv, raw_data
+        None, fuse_signals, coin, ohlcv, raw_data, False, "zh", v2
     )
 
     if not signal_card:
@@ -263,6 +264,84 @@ async def record_signal_result(
     engine = get_strategy_engine()
     engine.record_signal_result(source_name, pnl_pct, direction_correct)
     return {"status": "success", "message": "结果已记录，权重已更新"}
+
+
+@router.get("/debug/v2/{coin}")
+async def debug_v2_signal(coin: str):
+    """
+    用 v2 新逻辑（时间衰减大单 + 吸筹 pattern）算单币种信号，**仅供调试对比**，
+    不写 history，不影响生产。返回新旧两版结果对照。
+    """
+    def _compute():
+        from app.signals.alpha_scanner import (
+            get_bigorder_12h_signal, get_bigorder_decay_signal,
+            detect_accumulation_pattern,
+        )
+        from app.signals.fusion import _bigorder_source, _quantitative_source, _technical_source, _extract_realtime_price
+        from app.skills.analysis_skills.quantitative import _parse_kline
+        from app.skills.analysis_skills.math_derivation import run_math_derivation
+        from app.services.data_service import (
+            get_header_data, get_kline_data_for_period, get_multi_timeframe_klines, get_trade_volume,
+        )
+
+        coin_u = coin.upper()
+        header = get_header_data(coin_u)
+        timeframes = get_multi_timeframe_klines(coin_u, (1, 2, 3, 4))
+        volume_data = get_trade_volume(coin_u)
+        daily_data = timeframes.get("daily_60d") or timeframes.get("daily_30d") or {}
+        ohlcv = _parse_kline(daily_data, volume_data)
+        closes = ohlcv.get("closes", []) if ohlcv else []
+
+        # vol_regime 计算
+        vol_regime = "normal"
+        if len(closes) >= 40:
+            mr = run_math_derivation(closes, direction="long")
+            if mr and mr.regime:
+                vol_regime = mr.regime.regime
+
+        dual = (vol_regime == "extreme")
+        current_price = _extract_realtime_price({"header": header})
+
+        # 三个大单版本同时算
+        legacy = _bigorder_source(coin_u, 0.35, "zh")
+        legacy_12h = get_bigorder_12h_signal(coin_u, 0.35)
+        decay = get_bigorder_decay_signal(coin_u, 0.35, vol_regime, dual_window=dual)
+        accumulation = detect_accumulation_pattern(coin_u)
+
+        quant = _quantitative_source(coin_u, 0.35, "zh")
+        tech = _technical_source(ohlcv, 0.30, "zh") if ohlcv else None
+
+        def _src_dict(s):
+            if not s:
+                return None
+            return {
+                "name": s.name, "score": round(s.score, 1),
+                "direction": s.direction.value if hasattr(s.direction, "value") else s.direction,
+                "weight": s.weight, "detail": s.detail,
+            }
+
+        return {
+            "coin": coin_u,
+            "current_price": current_price,
+            "vol_regime": vol_regime,
+            "dual_window_enabled": dual,
+            "bigorder_legacy": _src_dict(legacy),
+            "bigorder_legacy_12h": _src_dict(legacy_12h),
+            "bigorder_v2_decay": _src_dict(decay),
+            "accumulation_v2": accumulation,
+            "quantitative": _src_dict(quant),
+            "technical": _src_dict(tech),
+        }
+
+    try:
+        result = await asyncio.get_running_loop().run_in_executor(None, _compute)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        import traceback
+        return JSONResponse(status_code=500, content={
+            "error": str(e),
+            "trace": traceback.format_exc().split("\n")[-5:],
+        })
 
 
 @router.get("/backtest/{coin}")
