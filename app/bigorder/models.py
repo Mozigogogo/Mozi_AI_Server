@@ -90,5 +90,4 @@ class ChatRequest(BaseModel):
     request_id: str
     user_id: str
     message: str
-    coin: Optional[str] = None
     conversation_id: Optional[str] = None
