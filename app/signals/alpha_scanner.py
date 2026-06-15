@@ -292,6 +292,105 @@ def _score_decay_window(
 
 
 
+# ── A3: 吸筹 pattern 检测（独立 flag，与时间衰减正交）────────────────────────────
+# 流动性门槛：避免低流动性币种（5 笔拆单就触发）误识别
+_ACCUM_MIN_TOTAL_TICKS = 20         # 至少 20 笔大单
+_ACCUM_MIN_TOTAL_AMOUNT_USD = 100_000  # 至少 $100K 总成交
+_ACCUM_MAX_TOP5_CONCENTRATION = 0.6  # top5 集中度上限（>0.6 疑似单一账户拆单）
+_ACCUM_TOP5_BUY_RATIO_THRESHOLD = 0.7  # top5 中买入金额占比 > 70%
+_ACCUM_SMALL_SELL_RATIO_THRESHOLD = 0.5  # top5 之外的卖单占非-top5 总额 > 50%
+
+
+def detect_accumulation_pattern(coin: str) -> Optional[Dict[str, Any]]:
+    """
+    识别「机构吸筹 + 散户出货」pattern。
+
+    特征：
+      - Top 5 大单以买入为主（大资金在吸货）
+      - Top 5 之外的小单以卖出为主（散户在恐慌/获利了结）
+      - 这种组合在简单 net_flow 计算下会被打成 SHORT（卖压金额大），
+        但实际是底部反转信号。
+
+    流动性 3 层过滤（防止低流动性币种或拆单误判）：
+      1. total_ticks >= 20
+      2. total_amount >= $100K
+      3. top5 集中度 <= 60%（高度集中 = 疑似拆单）
+
+    Returns:
+        通过门槛且命中 pattern 时返回 dict，否则 None。
+        dict 含 pattern/top5_buy_ratio/small_sell_ratio/concentration。
+    """
+    consumer = bigorder_deps.consumer if hasattr(bigorder_deps, "consumer") else None
+    if not consumer:
+        return None
+
+    all_ticks: List[Any] = []
+    active_exchanges: List[str] = []
+
+    for exchange in app_settings.exchanges:
+        try:
+            buy_ticks, sell_ticks = consumer.fetch_ticks(exchange, coin, 43200)
+            for t in buy_ticks:
+                t._side = "buy"
+                all_ticks.append(t)
+            for t in sell_ticks:
+                t._side = "sell"
+                all_ticks.append(t)
+            if buy_ticks or sell_ticks:
+                active_exchanges.append(exchange)
+        except Exception:
+            continue
+
+    total_ticks = len(all_ticks)
+    if total_ticks < _ACCUM_MIN_TOTAL_TICKS:
+        return None
+
+    # 标记 side（安全：可能没有 _side 属性时通过其他方式判断）
+    for t in all_ticks:
+        if not hasattr(t, "_side"):
+            # 回退到 TickData 的 side 字段（如果有）
+            t._side = getattr(t, "side", "buy")
+
+    total_amount = sum(t.amount for t in all_ticks)
+    if total_amount < _ACCUM_MIN_TOTAL_AMOUNT_USD:
+        return None
+
+    # Top 5 大单
+    sorted_ticks = sorted(all_ticks, key=lambda t: t.amount, reverse=True)
+    top5 = sorted_ticks[:5]
+    top5_amount = sum(t.amount for t in top5)
+
+    concentration = top5_amount / total_amount if total_amount > 0 else 0
+    if concentration > _ACCUM_MAX_TOP5_CONCENTRATION:
+        # 高度集中，疑似拆单（单一账户分批）
+        return None
+
+    # 计算 top5 买卖金额比例
+    top5_buy = sum(t.amount for t in top5 if t._side == "buy")
+    top5_buy_ratio = top5_buy / top5_amount if top5_amount > 0 else 0
+
+    # top5 之外的小单（散户成交）
+    rest_ticks = sorted_ticks[5:]
+    rest_amount = sum(t.amount for t in rest_ticks)
+    rest_sell = sum(t.amount for t in rest_ticks if t._side == "sell")
+    small_sell_ratio = rest_sell / rest_amount if rest_amount > 0 else 0
+
+    if (
+        top5_buy_ratio >= _ACCUM_TOP5_BUY_RATIO_THRESHOLD
+        and small_sell_ratio >= _ACCUM_SMALL_SELL_RATIO_THRESHOLD
+    ):
+        return {
+            "pattern": "accumulation",
+            "top5_buy_ratio": round(top5_buy_ratio, 3),
+            "small_sell_ratio": round(small_sell_ratio, 3),
+            "concentration": round(concentration, 3),
+            "total_ticks": total_ticks,
+            "total_amount_usd": round(total_amount, 0),
+            "exchanges": active_exchanges[:3],
+        }
+    return None
+
+
 def _scan_single(coin: str) -> ScanResult:
     """扫描单个币种（同步，在线程池中执行）"""
     t0 = time.time()
