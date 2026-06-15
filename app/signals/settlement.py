@@ -616,6 +616,31 @@ def save_scan_batch(results: list, scan_time: float):
         print(f"扫描结果写本地文件失败: {e}")
 
 
+def _safe_json_loads(raw):
+    """防御性 json.loads — 处理被多次 stringify 的数据
+
+    MySQL TEXT 字段如果被多次 json.dumps 或手动 JSON.stringify，
+    会变成 "[{\\"data\\"...}]" 这种带转义的字符串。
+    本函数自动剥层直到拿到 list/dict，或返回 []。
+    """
+    if not raw:
+        return []
+    if isinstance(raw, (list, dict)):
+        return raw
+    if not isinstance(raw, str):
+        return raw
+    try:
+        result = json.loads(raw)
+        # 防御多层 stringify：剥到不是字符串为止
+        safety = 0
+        while isinstance(result, str) and safety < 5:
+            result = json.loads(result)
+            safety += 1
+        return result
+    except Exception:
+        return []
+
+
 def get_latest_scan(max_age_seconds: int = 1800) -> Optional[Dict[str, Any]]:
     if _USE_PROXY:
         result = _proxy_get("/api/latest_scan", {"max_age_seconds": max_age_seconds})
@@ -638,8 +663,8 @@ def get_latest_scan(max_age_seconds: int = 1800) -> Optional[Dict[str, Any]]:
                 return {
                     "total_coins": row["total_coins"], "signal_count": row["signal_count"],
                     "scan_time": row["scan_time"],
-                    "signals": json.loads(row["results_json"]) if row["results_json"] else [],
-                    "displays": json.loads(row["displays_json"]) if row["displays_json"] else [],
+                    "signals": _safe_json_loads(row["results_json"]),
+                    "displays": _safe_json_loads(row["displays_json"]),
                     "cached_at": cached_at.strftime("%Y-%m-%d %H:%M:%S") if cached_at else "",
                     "is_stale": age > max_age_seconds,
                 }
