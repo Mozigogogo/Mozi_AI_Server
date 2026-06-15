@@ -9,8 +9,9 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 
 from app.services.data_service import get_discovery_coins
@@ -106,6 +107,189 @@ def get_bigorder_12h_signal(coin: str, weight: float) -> Optional[SignalSource]:
         weight=weight,
         detail=detail,
     )
+
+
+# ── A1+A2: 时间衰减大单信号 ────────────────────────────────────────────────────
+# 半衰期映射：vol_regime → T½ (分钟)
+# quiet=180（横盘慢节奏）/ normal=90（默认）/ high=60（波动放大）/ extreme=45（暴拉暴跌）
+_VOL_REGIME_HALF_LIFE_MIN: Dict[str, int] = {
+    "quiet": 180,
+    "normal": 90,
+    "high": 60,
+    "extreme": 45,
+}
+
+# 进程内 vol_regime 平滑切换缓存：coin → (current_half_life_min, last_update_ts, target_half_life_min)
+_T_SMOOTH_CACHE: Dict[str, Tuple[float, float, int]] = {}
+_T_SMOOTH_TRANSITION_SECONDS = 1800.0  # 30 分钟线性过渡，避免硬跳
+
+
+def decay_weight(age_seconds: float, half_life_seconds: float) -> float:
+    """指数衰减权重：weight = 2^(-age / T½)。age < 0 时返回 1.0（防止时钟漂移）。"""
+    if age_seconds <= 0:
+        return 1.0
+    return math.exp(-math.log(2) * age_seconds / half_life_seconds)
+
+
+def _get_smoothed_half_life(coin: str, vol_regime: str) -> int:
+    """vol_regime 切换时 30 分钟线性过渡，避免 T½ 硬跳导致打分跳变"""
+    target = _VOL_REGIME_HALF_LIFE_MIN.get(vol_regime, 90)
+    now = time.time()
+
+    if coin not in _T_SMOOTH_CACHE:
+        _T_SMOOTH_CACHE[coin] = (float(target), now, target)
+        return target
+
+    last_current, last_ts, last_target = _T_SMOOTH_CACHE[coin]
+
+    # 完全稳定：目标和当前值都一致 → 仅刷新时间戳
+    if target == last_target and last_current == target:
+        _T_SMOOTH_CACHE[coin] = (float(target), now, target)
+        return target
+
+    # 否则可能处于过渡中（目标可能 == last_target 也可能 != last_target）
+    elapsed = now - last_ts
+    if elapsed >= _T_SMOOTH_TRANSITION_SECONDS:
+        # 过渡完成
+        _T_SMOOTH_CACHE[coin] = (float(target), now, target)
+        return target
+
+    # 过渡中：从 last_current 线性逼近 target
+    progress = elapsed / _T_SMOOTH_TRANSITION_SECONDS
+    smoothed = last_current + (target - last_current) * progress
+    # 注意：过渡中不更新 last_current 和 last_ts，保持锚点直到过渡完成
+    _T_SMOOTH_CACHE[coin] = (last_current, last_ts, target)
+    return int(round(smoothed))
+
+
+def get_bigorder_decay_signal(
+    coin: str,
+    weight: float,
+    vol_regime: str = "normal",
+    dual_window: bool = False,
+) -> Optional[SignalSource]:
+    """
+    时间衰减加权的大单聚合信号（替代/补充 get_bigorder_12h_signal）
+
+    - T½ 自适应 vol_regime：quiet=180 / normal=90 / high=60 / extreme=45 分钟
+    - 切换 vol_regime 时 30 分钟平滑过渡
+    - 拉 12h ticks 但用指数衰减权重，前 1h 占主导，4h 后剩 ~12%，12h 后约 1%
+    - dual_window=True 时（极端波动）同时算 45min + 180min 双版本，
+      方向冲突时 confidence *= 0.4
+
+    Args:
+        coin: 币种
+        weight: 信号源权重
+        vol_regime: quiet/normal/high/extreme
+        dual_window: 是否启用双窗对比（仅 vol_regime=extreme 时推荐开启）
+    """
+    consumer = bigorder_deps.consumer if hasattr(bigorder_deps, "consumer") else None
+    if not consumer:
+        return None
+
+    half_life_min = _get_smoothed_half_life(coin, vol_regime)
+    half_life_sec_primary = half_life_min * 60.0
+
+    # 双窗对比：极端波动时额外算一个长窗（180min）作为上下文锚
+    half_life_sec_context = 180 * 60 if dual_window else None
+
+    now_ms = int(time.time() * 1000)
+
+    # 主窗（自适应 T½）累计
+    primary_buy, primary_sell = 0.0, 0.0
+    # 上下文窗（固定 180min，仅 dual_window 时）
+    ctx_buy, ctx_sell = 0.0, 0.0
+
+    buy_count = 0
+    sell_count = 0
+    active_exchanges: List[str] = []
+
+    for exchange in app_settings.exchanges:
+        try:
+            buy_ticks, sell_ticks = consumer.fetch_ticks(exchange, coin, 43200)  # 12h 拉满
+            for t in buy_ticks:
+                age_sec = (now_ms - t.deal_timestamp) / 1000.0
+                primary_buy += t.amount * decay_weight(age_sec, half_life_sec_primary)
+                if half_life_sec_context:
+                    ctx_buy += t.amount * decay_weight(age_sec, half_life_sec_context)
+                buy_count += 1
+            for t in sell_ticks:
+                age_sec = (now_ms - t.deal_timestamp) / 1000.0
+                primary_sell += t.amount * decay_weight(age_sec, half_life_sec_primary)
+                if half_life_sec_context:
+                    ctx_sell += t.amount * decay_weight(age_sec, half_life_sec_context)
+                sell_count += 1
+            if buy_ticks or sell_ticks:
+                active_exchanges.append(exchange)
+        except Exception:
+            continue
+
+    total_ticks = buy_count + sell_count
+    if total_ticks == 0:
+        return None
+
+    # 主窗方向 + 分数
+    primary_direction, primary_score = _score_decay_window(
+        primary_buy, primary_sell, total_ticks
+    )
+
+    # 双窗 confidence gate
+    confidence_modifier = 1.0
+    dual_window_note = ""
+    if dual_window and half_life_sec_context:
+        ctx_direction, _ = _score_decay_window(ctx_buy, ctx_sell, total_ticks)
+        if ctx_direction != primary_direction and primary_direction != SignalDirection.NEUTRAL:
+            confidence_modifier = 0.4
+            dual_window_note = f" [双窗冲突 T½{half_life_min}↔180min，置信×0.4]"
+
+    score = primary_score * confidence_modifier
+
+    def _fmt(v: float) -> str:
+        if abs(v) >= 1e6:
+            return f"${v / 1e6:.2f}M"
+        if abs(v) >= 1e3:
+            return f"${v / 1e3:.1f}K"
+        return f"${v:.0f}"
+
+    net = primary_buy - primary_sell
+    detail = (
+        f"衰减聚合({'+'.join(active_exchanges[:3])}, T½={half_life_min}min, vol={vol_regime}), "
+        f"加权买{_fmt(primary_buy)}/卖{_fmt(primary_sell)}, "
+        f"净{_fmt(net)}, {total_ticks}笔{dual_window_note}"
+    )
+
+    return SignalSource(
+        name="bigorder_decay",
+        score=score,
+        direction=primary_direction,
+        weight=weight,
+        detail=detail,
+    )
+
+
+def _score_decay_window(
+    buy_amount: float, sell_amount: float, total_ticks: int
+) -> Tuple[Any, float]:
+    """单窗口方向 + 分数计算（与 12h 版本口径一致，便于对比）"""
+    net_flow = buy_amount - sell_amount
+    total_flow = buy_amount + sell_amount
+
+    if net_flow > 0 and buy_amount > sell_amount * 1.2:
+        direction = SignalDirection.LONG
+    elif net_flow < 0 and sell_amount > buy_amount * 1.2:
+        direction = SignalDirection.SHORT
+    else:
+        direction = SignalDirection.NEUTRAL
+
+    flow_imbalance = abs(net_flow) / total_flow * 100 if total_flow > 0 else 0
+    density_score = min(30, total_ticks * 0.5)
+    score = min(100, flow_imbalance + density_score)
+
+    if direction == SignalDirection.NEUTRAL:
+        score *= 0.5
+
+    return direction, score
+
 
 
 def _scan_single(coin: str) -> ScanResult:
