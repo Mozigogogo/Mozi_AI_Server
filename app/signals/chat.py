@@ -23,7 +23,6 @@ class SignalChatRequest(BaseModel):
     request_id: str = Field(..., max_length=100)
     user_id: str = Field(..., max_length=100)
     message: str
-    coin: Optional[str] = None
     conversation_id: Optional[str] = None
 
 SYSTEM_PROMPT = """You are the "Signal Alpha" quantitative analyst, specializing in cryptocurrency signal card analysis and trading recommendations.
@@ -295,10 +294,14 @@ def _tool_query_history(coin: str = None, status: str = None, days: int = 7, lim
         return {"error": str(e)}
 
 
-def _get_suggestions(tool_name: str, user_message: str, coin_hint: str = None) -> list:
-    """生成推荐追问"""
+def _get_suggestions(tool_name: str, user_message: str, coin: str = "") -> list:
+    """生成推荐追问
+
+    coin 来自 LLM 从用户问题抽取的 tool_args.coin；空时模板里的 {coin} 替换为空，
+    问题变成通用表达。
+    """
     lang = _detect_language(user_message)
-    coin = coin_hint or ""
+    coin = coin or ""
 
     templates = {
         "zh": {
@@ -324,21 +327,26 @@ async def chat(request: SignalChatRequest):
     """信号卡对话式 SSE 流式接口"""
     rid = request.request_id
     user_message = request.message
-    coin_hint = request.coin
 
     client = get_llm_client()
     model = settings.bigorder_deepseek_model
 
+    # 加载会话上下文（conversation_id 维持跨轮币种，取代 coin 入参）
+    from app.core.session import session_manager
+    session = session_manager.get(request.conversation_id) if request.conversation_id else None
+    history_questions = session["questions"] if session else []
+    last_coin = session["coin_symbol"] if session else None
+
     async def event_generator():
-        user_content = user_message
-        if coin_hint:
-            lang = _detect_language(user_message)
-            prefix = f"[当前关注币种: {coin_hint.upper()}]" if lang == "zh" else f"[Focus coin: {coin_hint.upper()}]"
-            user_content = f"{prefix} {user_message}"
+        # 把最近 3 个用户问题拼进 system prompt，让 LLM 理解 "再分析下" 这类省略语
+        sys_content = SYSTEM_PROMPT
+        if history_questions:
+            recent = "\n".join(f"- {q}" for q in history_questions[-3:])
+            sys_content = f"{SYSTEM_PROMPT}\n\n[最近用户提问，供理解省略语]\n{recent}"
 
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
+            {"role": "system", "content": sys_content},
+            {"role": "user", "content": user_message},
         ]
 
         yield render(sse_start(rid, request.conversation_id))
@@ -387,6 +395,14 @@ async def chat(request: SignalChatRequest):
             )
         except asyncio.TimeoutError:
             tool_result = {"error": "Query timed out"}
+
+        # 保存本轮到 session（coin_symbol 用于下一轮的省略语解析）
+        if request.conversation_id:
+            session_manager.update(
+                request.conversation_id,
+                question=user_message,
+                coin_symbol=tool_args.get("coin") or last_coin,
+            )
 
         # ---- Step 2.5: 如果有信号卡，先推送 signal_card 事件 ----
         if tool_name == "analyze_coin" and isinstance(tool_result, dict):
@@ -451,8 +467,7 @@ async def chat(request: SignalChatRequest):
             yield render(sse_error(rid, ERR_INTERNAL, str(e)))
 
         # 推荐问题
-        coin = tool_args.get("coin", coin_hint)
-        suggestions = _get_suggestions(tool_name, user_message, coin)
+        suggestions = _get_suggestions(tool_name, user_message, tool_args.get("coin", ""))
         if suggestions:
             yield render(sse_suggestions(rid, suggestions))
 

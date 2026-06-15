@@ -269,12 +269,14 @@ def _detect_language(text: str) -> str:
     return "en"
 
 
-def _get_suggestions(tool_name: str, user_message: str, coin_hint: str = None) -> list:
-    """根据调用的 tool、用户消息和币种生成推荐问题"""
+def _get_suggestions(tool_name: str, user_message: str, coin: str = "") -> list:
+    """根据调用的 tool、用户消息和币种生成推荐问题
+
+    coin 来自 LLM 从用户问题抽取的 tool_args.coin；没有就用空串，
+    模板里的 {coin} 占位会被替换成空，问题变成「最近有什么异动信号」这种通用表达。
+    """
     language = _detect_language(user_message)
-    coin = (coin_hint or "").strip().upper()
-    if not coin:
-        coin = "BTC"
+    coin = (coin or "").strip().upper()
     templates = _SUGGESTION_TEMPLATES.get(language, _SUGGESTION_TEMPLATES["zh"])
     suggestions = templates.get(tool_name, templates.get("query_anomalies", []))
     return [
@@ -463,20 +465,26 @@ async def chat(request: ChatRequest):
 
     rid = request.request_id
     user_message = request.message
-    coin_hint = request.coin
 
     client = get_llm_client()
     model = settings.bigorder_deepseek_model
 
+    # 加载会话上下文（conversation_id 维持跨轮币种，取代 coin 入参）
+    from app.core.session import session_manager
+    session = session_manager.get(request.conversation_id) if request.conversation_id else None
+    history_questions = session["questions"] if session else None
+    last_coin = session["coin_symbol"] if session else None
+
     async def event_generator():
-        user_content = user_message
-        if coin_hint:
-            lang = _detect_language(user_message)
-            prefix = f"[当前关注币种: {coin_hint.upper()}]" if lang == "zh" else f"[Focus coin: {coin_hint.upper()}]"
-            user_content = f"{prefix} {user_message}"
+        # 把最近 3 个用户问题拼进 system prompt，让 LLM 理解 "再来一个" 这类省略语
+        sys_content = SYSTEM_PROMPT
+        if history_questions:
+            recent = "\n".join(f"- {q}" for q in history_questions[-3:])
+            sys_content = f"{SYSTEM_PROMPT}\n\n[最近用户提问，供理解省略语]\n{recent}"
+
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
+            {"role": "system", "content": sys_content},
+            {"role": "user", "content": user_message},
         ]
 
         yield render(sse_start(rid, request.conversation_id))
@@ -525,6 +533,14 @@ async def chat(request: ChatRequest):
             )
         except asyncio.TimeoutError:
             tool_result = {"error": "Query timed out"}
+
+        # 保存本轮到 session（coin_symbol 用于下一轮的省略语解析）
+        if request.conversation_id:
+            session_manager.update(
+                request.conversation_id,
+                question=user_message,
+                coin_symbol=tool_args.get("coin") or last_coin,
+            )
 
         yield render(sse_tool_debug(rid, "tool_result", {"tool": tool_name, "result": tool_result}))
 
@@ -577,7 +593,7 @@ async def chat(request: ChatRequest):
             yield render(sse_error(rid, ERR_INTERNAL, str(e)))
 
         # 生成推荐问题
-        suggestions = _get_suggestions(tool_name, user_message, coin_hint)
+        suggestions = _get_suggestions(tool_name, user_message, tool_args.get("coin", ""))
         if suggestions:
             yield render(sse_suggestions(rid, [s["suggestion"] for s in suggestions]))
 

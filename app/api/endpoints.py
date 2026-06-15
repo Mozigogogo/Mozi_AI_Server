@@ -46,7 +46,7 @@ async def analyze_stream(request: AnalyzeRequest):
             yield render(sse_start(rid, request.conversation_id))
 
             async for chunk in crypto_agent.answer(
-                request.question, mode="think", symbol=request.symbol,
+                request.message, mode="think",
                 conversation_id=request.conversation_id
             ):
                 if isinstance(chunk, dict):

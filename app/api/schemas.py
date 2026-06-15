@@ -1,5 +1,5 @@
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 
 
@@ -11,30 +11,17 @@ class Language(str, Enum):
 
 class AnalyzeRequest(BaseModel):
     """分析请求模型"""
+    model_config = ConfigDict(populate_by_name=True)
+
     request_id: str = Field(..., description="客户端生成，SSE 全程透传", max_length=100)
     user_id: str = Field(..., description="用户 ID", max_length=100)
-    symbol: Optional[str] = Field(
-        default=None,
-        description="可选。币种符号（如 BTC）；不传则由问题文本或会话记忆推断",
-        max_length=10,
-        examples=["BTC"],
-    )
-
-    @field_validator("symbol", mode="before")
-    @classmethod
-    def normalize_optional_symbol(cls, v):
-        if v is None:
-            return None
-        if isinstance(v, str):
-            s = v.strip().upper()
-            return s if s else None
-        return v
-    question: str = Field(
+    message: str = Field(
         ...,
-        description="分析问题",
+        alias="question",
+        description="用户消息（旧字段名 question 仍兼容）",
         min_length=2,
         max_length=1000,
-        example="请分析当前市场状况"
+        example="请分析当前市场状况",
     )
     conversation_id: Optional[str] = Field(
         default=None,
