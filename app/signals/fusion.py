@@ -692,6 +692,13 @@ def generate_card_for_chat(coin: str, tier: str = "pro", always: bool = False, l
             signal_card.sample_count = bt["sample_count"]
             signal_card.avg_profit_pct = bt["avg_profit_pct"]
 
+        # chat 路径也要持久化，否则用户主动问的卡不进结算系统
+        try:
+            from app.signals.settlement import save_signal_card
+            save_signal_card(signal_card)
+        except Exception:
+            pass
+
         event_data = _build_card_event(signal_card, bt, tier)
         event_data["price_source"] = "header.currentPrice"
         event_data["kline_periods"] = {

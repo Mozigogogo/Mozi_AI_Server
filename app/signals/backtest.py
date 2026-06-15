@@ -40,7 +40,7 @@ def backtest_signal(
     signal_grade: str,
     stop_loss_pct: float = 3.0,
     take_profit_pct: float = 5.0,
-    lookback_days: int = 30,
+    lookback_days: int = 90,
 ) -> Optional[Dict[str, Any]]:
     """
     回测信号卡历史胜率
@@ -77,7 +77,7 @@ def backtest_from_signal_history(
     coin: str,
     direction: str,
     signal_grade: Optional[str],
-    lookback_days: int = 30,
+    lookback_days: int = 90,
     min_sample: int = 10,
 ) -> Optional[Dict[str, Any]]:
     """
