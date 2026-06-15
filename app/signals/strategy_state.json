@@ -8,7 +8,7 @@
   "factor_performances": {},
   "regime": "quiet",
   "regime_updated_at": 0.0,
-  "total_signals_generated": 6566,
+  "total_signals_generated": 6629,
   "total_signals_settled": 0,
   "global_win_rate": 0.5,
   "evolution_history": [],
@@ -16,15 +16,129 @@
   "coin_winrates": {
     "BTC": {
       "wins": 2,
-      "total": 3,
-      "total_pnl": 6.9,
-      "last_updated": 1780409828.896311
+      "total": 8,
+      "total_pnl": -3.8841999999999994,
+      "last_updated": 1781501964.3189492
     },
     "ETH": {
       "wins": 3,
       "total": 4,
       "total_pnl": 4.1,
       "last_updated": 1780409828.899018
+    },
+    "TON": {
+      "wins": 0,
+      "total": 1,
+      "total_pnl": -2.5714,
+      "last_updated": 1781501778.300926
+    },
+    "ORCA": {
+      "wins": 4,
+      "total": 9,
+      "total_pnl": 1.4831999999999996,
+      "last_updated": 1781505297.057289
+    },
+    "STG": {
+      "wins": 0,
+      "total": 6,
+      "total_pnl": -94.3052,
+      "last_updated": 1781501971.09258
+    },
+    "TRX": {
+      "wins": 0,
+      "total": 11,
+      "total_pnl": -4.4682,
+      "last_updated": 1781502665.150136
+    },
+    "ORDI": {
+      "wins": 0,
+      "total": 1,
+      "total_pnl": -2.7059,
+      "last_updated": 1781501784.005816
+    },
+    "BNB": {
+      "wins": 0,
+      "total": 11,
+      "total_pnl": -15.053600000000001,
+      "last_updated": 1781505299.6267688
+    },
+    "OP": {
+      "wins": 0,
+      "total": 10,
+      "total_pnl": -11.817999999999998,
+      "last_updated": 1781501971.375659
+    },
+    "WLFI": {
+      "wins": 0,
+      "total": 11,
+      "total_pnl": -11.0,
+      "last_updated": 1781502668.193013
+    },
+    "PYTH": {
+      "wins": 3,
+      "total": 3,
+      "total_pnl": 1.5,
+      "last_updated": 1781501808.6737568
+    },
+    "UNI": {
+      "wins": 0,
+      "total": 7,
+      "total_pnl": -9.7933,
+      "last_updated": 1781502669.4028852
+    },
+    "APT": {
+      "wins": 0,
+      "total": 3,
+      "total_pnl": -7.164300000000001,
+      "last_updated": 1781501886.1580281
+    },
+    "AXL": {
+      "wins": 9,
+      "total": 9,
+      "total_pnl": 57.599999999999994,
+      "last_updated": 1781501971.577572
+    },
+    "OPEN": {
+      "wins": 4,
+      "total": 4,
+      "total_pnl": 18.9832,
+      "last_updated": 1781501877.757762
+    },
+    "ICP": {
+      "wins": 0,
+      "total": 4,
+      "total_pnl": -11.9638,
+      "last_updated": 1781501873.133172
+    },
+    "OPN": {
+      "wins": 0,
+      "total": 8,
+      "total_pnl": -7.5,
+      "last_updated": 1781501975.585272
+    },
+    "ENJ": {
+      "wins": 0,
+      "total": 4,
+      "total_pnl": -16.0,
+      "last_updated": 1781501892.988908
+    },
+    "EPIC": {
+      "wins": 0,
+      "total": 7,
+      "total_pnl": -31.698100000000004,
+      "last_updated": 1781501970.902935
+    },
+    "LTC": {
+      "wins": 0,
+      "total": 2,
+      "total_pnl": -3.7762000000000002,
+      "last_updated": 1781501884.453099
+    },
+    "KAITO": {
+      "wins": 0,
+      "total": 2,
+      "total_pnl": -2.0638,
+      "last_updated": 1781505298.590077
     }
   }
 }
