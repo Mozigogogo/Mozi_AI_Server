@@ -456,10 +456,15 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
     if use_v2:
         try:
             from app.signals.alpha_scanner import get_bigorder_decay_signal, detect_accumulation_pattern
+            # 用真正的 vol_regime（不是 market regime），否则映射不准
+            vol_regime_for_decay = (
+                math_result.vol_cone.regime if math_result and math_result.vol_cone and math_result.vol_cone.regime
+                else regime  # 兜底用 market regime（不精确但不会崩）
+            )
             decay_src = get_bigorder_decay_signal(
                 coin, adaptive_weights.get("bigorder_anomaly", 0.35),
-                vol_regime=regime,
-                dual_window=(regime == "extreme"),
+                vol_regime=vol_regime_for_decay,
+                dual_window=(vol_regime_for_decay == "extreme"),
             )
             if decay_src:
                 # 吸筹 pattern 命中时强制 LONG（覆盖简单 net_flow 判断）
