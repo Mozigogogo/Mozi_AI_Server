@@ -545,38 +545,37 @@ async def chat(request: ChatRequest):
         yield render(sse_tool_debug(rid, "tool_result", {"tool": tool_name, "result": tool_result}))
 
         # ---- Step 3: 流式输出最终回答 ----
-        assistant_msg = {"role": "assistant", "tool_calls": [tc.model_dump()]}
-        if msg.content:
-            assistant_msg["content"] = msg.content
-        if hasattr(msg, 'reasoning_content') and msg.reasoning_content:
-            assistant_msg["reasoning_content"] = msg.reasoning_content
-        messages.append(assistant_msg)
-        messages.append({
-            "role": "tool",
-            "tool_call_id": tc.id,
-            "content": json.dumps(tool_result, ensure_ascii=False, default=str),
-        })
-
+        # 关键：重置 messages 为 system+user（不带 tool_calls 历史），
+        # 否则 DeepSeek 收到 tool_calls+tool_result 会继续生成 tool_call 标签
+        # （如 "｜｜DSML｜｜invoke>...</｜｜DSML｜｜tool_calls>"）并流到 content。
         user_lang = _detect_language(user_message)
         if user_lang == "en":
-            messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a cryptocurrency large-trade anomaly analyst.\n"
-                        "Based on the data provided, write a clear analysis in English.\n"
-                        "Be concise, include key numbers. Use tables when comparing multiple items. Never fabricate data."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"Question: {user_message}\n\n"
-                        f"Data:\n{json.dumps(tool_result, ensure_ascii=False, default=str, indent=2)}\n\n"
-                        "Write a clear analysis in English."
-                    )
-                }
-            ]
+            sys_content = (
+                "You are a cryptocurrency large-trade anomaly analyst.\n"
+                "Based on the data provided, write a clear analysis in English.\n"
+                "Be concise, include key numbers. Use tables when comparing multiple items. Never fabricate data."
+            )
+            user_suffix = "Write a clear analysis in English."
+        else:
+            sys_content = (
+                "你是一名加密货币大单异动分析师。\n"
+                "根据提供的数据，用中文写一段清晰的分析。\n"
+                "简洁、突出关键数字。对比多个项目时用表格。绝对不要编造数据。\n"
+                "不要输出任何 XML/标签/工具调用格式，只输出自然语言分析。"
+            )
+            user_suffix = "请用中文写一段清晰的分析（不要输出任何标签或工具调用格式）。"
+
+        messages = [
+            {"role": "system", "content": sys_content},
+            {
+                "role": "user",
+                "content": (
+                    f"Question: {user_message}\n\n"
+                    f"Data:\n{json.dumps(tool_result, ensure_ascii=False, default=str, indent=2)}\n\n"
+                    f"{user_suffix}"
+                )
+            },
+        ]
 
         try:
             final_resp = await client.chat.completions.create(
