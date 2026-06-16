@@ -159,7 +159,7 @@ def _tool_analyze_coin(coin: str, lang: str = "zh") -> dict:
 
     if not card_event:
         err = "Insufficient data to generate signal card" if lang == "en" else "数据不足，无法生成信号卡"
-        return {"coin": coin.upper(), "error": err}
+        return {"coin": coin.upper(), "error": err, "no_signal": True}
 
     return {
         "coin": coin.upper(),
@@ -406,6 +406,16 @@ async def chat(request: SignalChatRequest):
 
         # ---- Step 2.5: 如果有信号卡，先推送 signal_card 事件 ----
         if tool_name == "analyze_coin" and isinstance(tool_result, dict):
+            # 数据真的拉不到时跳过 LLM，给固定兜底文案（避免幻觉出 C 级警告等）
+            if tool_result.get("no_signal"):
+                msg = (
+                    "暂时无法获取该币种的市场数据，请稍后再试。"
+                    if user_lang == "zh"
+                    else "Market data temporarily unavailable for this coin. Please retry later."
+                )
+                yield render(sse_chat_delta(rid, msg))
+                yield render(sse_done(rid))
+                return
             card_event = tool_result.get("signal_card")
             if card_event:
                 yield render(sse_signal_card(rid, card_event))
@@ -431,14 +441,26 @@ async def chat(request: SignalChatRequest):
             del analysis_context["signal_card"]
 
         lang_instruction = "用中文回答" if user_lang == "zh" else "Answer in English"
+        has_signal_summary = isinstance(analysis_context, dict) and "signal_summary" in analysis_context
+        if has_signal_summary:
+            extra_rule = (
+                "A signal card summary is provided — interpret it clearly. "
+                "For C-grade signals, warn about low confidence."
+            )
+        else:
+            # 没卡时禁提 C 级 / 置信度 / 警告等概念，避免 LLM 凭印象幻觉
+            extra_rule = (
+                "No signal card was generated for this coin (data unavailable). "
+                "Tell the user briefly to retry later. "
+                "Do NOT mention C-grade, confidence, warning, or any signal details."
+            )
         final_messages = [
             {
                 "role": "system",
                 "content": (
                     f"You are a cryptocurrency quantitative analyst. {lang_instruction}.\n"
                     "Based on the data provided, write a concise analysis.\n"
-                    "If a signal card summary is provided, interpret it clearly.\n"
-                    "For C-grade signals, warn about low confidence.\n"
+                    f"{extra_rule}\n"
                     "Never fabricate data."
                 )
             },

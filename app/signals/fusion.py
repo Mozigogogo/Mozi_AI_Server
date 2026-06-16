@@ -743,7 +743,8 @@ def generate_card_for_chat(coin: str, tier: str = "pro", always: bool = False, l
         event_data["display"] = signal_card.format_card(lang)
         return event_data
 
-    except Exception:
+    except Exception as e:
+        print(f"⚠️ generate_card_for_chat({coin}) 失败: {type(e).__name__}: {e}")
         return None
 
 
