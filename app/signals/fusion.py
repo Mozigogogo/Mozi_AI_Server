@@ -702,6 +702,7 @@ def generate_card_for_chat(coin: str, tier: str = "pro", always: bool = False, l
 
         ohlcv = _parse_kline(daily_data, volume_data)
         if not ohlcv:
+            print(f"⚠️ generate_card_for_chat({coin}): K 线数据不足（daily keys={list(timeframes.keys())}）")
             return None
 
         entry_ohlcv = _parse_kline(hourly_data, min_bars=15)
