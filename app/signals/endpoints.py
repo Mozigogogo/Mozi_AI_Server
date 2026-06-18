@@ -35,7 +35,6 @@ _pushed_signals: dict = {}
 async def generate_signal(
     coin: str,
     kline_type: int = Query(2, description="K线类型: 1=小时 2=天 3=周"),
-    v2: bool = Query(False, description="启用 v2 新逻辑（时间衰减大单 + 吸筹 pattern）"),
     relaxed: bool = Query(False, description="宽松模式：3 源不一致时仍出 C 级卡（chat 路径默认开启）"),
 ):
     """为指定币种生成交易信号卡（含数学推导 + 自适应策略）"""
@@ -79,7 +78,7 @@ async def generate_signal(
 
     # 融合生成信号卡
     signal_card = await asyncio.get_running_loop().run_in_executor(
-        None, fuse_signals, coin, ohlcv, raw_data, relaxed, "zh", v2
+        None, fuse_signals, coin, ohlcv, raw_data, relaxed, "zh"
     )
 
     if not signal_card:
