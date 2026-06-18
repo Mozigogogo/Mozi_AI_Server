@@ -17,6 +17,7 @@ from app.skills.agent import crypto_agent
 from app.core.config import get_settings
 from app.core.exceptions import CryptoAnalystException
 from app.utils.validators import validate_symbol, validate_question, validate_language
+from app.utils.chat_trace import trace, Timer, mask
 from app.utils.sse_protocol import (
     sse_start, sse_chat_delta, sse_signal_card, sse_suggestions,
     sse_done, sse_error, render, ERR_INTERNAL,
@@ -40,31 +41,38 @@ async def health_check():
 async def analyze_stream(request: AnalyzeRequest):
     """分析加密货币（流式）"""
     rid = request.request_id
+    trace(rid, "enter", endpoint="analyze_stream",
+          conv=request.conversation_id, msg=mask(request.message))
 
     async def event_generator():
+        trace(rid, "generator.start")
         try:
             yield render(sse_start(rid, request.conversation_id))
 
-            async for chunk in crypto_agent.answer(
-                request.message, mode="think",
-                conversation_id=request.conversation_id
-            ):
-                if isinstance(chunk, dict):
-                    chunk_type = chunk.get("type", "")
-                    if chunk_type == "signal_card":
-                        yield render(sse_signal_card(rid, chunk.get("data", chunk)))
-                    elif chunk_type == "suggestions":
-                        yield render(sse_suggestions(rid, chunk.get("suggestions", [])))
+            with Timer(rid, "agent.answer"):
+                async for chunk in crypto_agent.answer(
+                    request.message, mode="think",
+                    conversation_id=request.conversation_id
+                ):
+                    if isinstance(chunk, dict):
+                        chunk_type = chunk.get("type", "")
+                        if chunk_type == "signal_card":
+                            yield render(sse_signal_card(rid, chunk.get("data", chunk)))
+                        elif chunk_type == "suggestions":
+                            yield render(sse_suggestions(rid, chunk.get("suggestions", [])))
+                        else:
+                            yield render(sse_chat_delta(rid, json.dumps(chunk, ensure_ascii=False)))
                     else:
-                        yield render(sse_chat_delta(rid, json.dumps(chunk, ensure_ascii=False)))
-                else:
-                    yield render(sse_chat_delta(rid, chunk))
+                        yield render(sse_chat_delta(rid, chunk))
 
             yield render(sse_done(rid))
+            trace(rid, "generator.end", reason="normal")
 
         except CryptoAnalystException as e:
+            trace(rid, "generator.error", error=f"CryptoAnalystException: {e.detail}")
             yield render(sse_error(rid, ERR_INTERNAL, e.detail))
         except Exception as e:
+            trace(rid, "generator.error", error=f"{type(e).__name__}: {e}")
             traceback.print_exc()
             yield render(sse_error(rid, ERR_INTERNAL, f"分析失败: {e}"))
 
@@ -75,31 +83,38 @@ async def analyze_stream(request: AnalyzeRequest):
 async def chat_stream(request: ChatRequest):
     """对话式交互（流式）"""
     rid = request.request_id
+    trace(rid, "enter", endpoint="chat_stream",
+          conv=request.conversation_id, msg=mask(request.message))
 
     async def event_generator():
+        trace(rid, "generator.start")
         try:
             yield render(sse_start(rid, request.conversation_id))
 
-            async for chunk in crypto_agent.answer(
-                request.message, mode="chat",
-                conversation_id=request.conversation_id
-            ):
-                if isinstance(chunk, dict):
-                    chunk_type = chunk.get("type", "")
-                    if chunk_type == "signal_card":
-                        yield render(sse_signal_card(rid, chunk.get("data", chunk)))
-                    elif chunk_type == "suggestions":
-                        yield render(sse_suggestions(rid, chunk.get("suggestions", [])))
+            with Timer(rid, "agent.answer"):
+                async for chunk in crypto_agent.answer(
+                    request.message, mode="chat",
+                    conversation_id=request.conversation_id
+                ):
+                    if isinstance(chunk, dict):
+                        chunk_type = chunk.get("type", "")
+                        if chunk_type == "signal_card":
+                            yield render(sse_signal_card(rid, chunk.get("data", chunk)))
+                        elif chunk_type == "suggestions":
+                            yield render(sse_suggestions(rid, chunk.get("suggestions", [])))
+                        else:
+                            yield render(sse_chat_delta(rid, json.dumps(chunk, ensure_ascii=False)))
                     else:
-                        yield render(sse_chat_delta(rid, json.dumps(chunk, ensure_ascii=False)))
-                else:
-                    yield render(sse_chat_delta(rid, chunk))
+                        yield render(sse_chat_delta(rid, chunk))
 
             yield render(sse_done(rid))
+            trace(rid, "generator.end", reason="normal")
 
         except CryptoAnalystException as e:
+            trace(rid, "generator.error", error=f"CryptoAnalystException: {e.detail}")
             yield render(sse_error(rid, ERR_INTERNAL, e.detail))
         except Exception as e:
+            trace(rid, "generator.error", error=f"{type(e).__name__}: {e}")
             traceback.print_exc()
             yield render(sse_error(rid, ERR_INTERNAL, f"对话失败: {e}"))
 

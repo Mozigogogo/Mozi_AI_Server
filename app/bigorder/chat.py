@@ -11,6 +11,7 @@ from app.bigorder.models import ChatRequest, SignalLevel
 import app.bigorder.deps as bigorder_deps
 from app.core.llm_client import get_llm_client
 from config.settings import settings
+from app.utils.chat_trace import trace, Timer, mask
 from app.utils.sse_protocol import (
     sse_start, sse_chat_delta, sse_suggestions,
     sse_tool_debug, sse_done, sse_error, render,
@@ -466,6 +467,9 @@ async def chat(request: ChatRequest):
     rid = request.request_id
     user_message = request.message
 
+    trace(rid, "enter", endpoint="bigorder_chat",
+          conv=request.conversation_id, msg=mask(user_message))
+
     client = get_llm_client()
     model = settings.bigorder_deepseek_model
 
@@ -474,8 +478,13 @@ async def chat(request: ChatRequest):
     session = session_manager.get(request.conversation_id) if request.conversation_id else None
     history_questions = session["questions"] if session else None
     last_coin = session["coin_symbol"] if session else None
+    trace(rid, "session.loaded",
+          has_session=bool(session),
+          history_n=len(history_questions or []),
+          last_coin=last_coin)
 
     async def event_generator():
+        trace(rid, "generator.start")
         # 把最近 3 个用户问题拼进 system prompt，让 LLM 理解 "再来一个" 这类省略语
         sys_content = SYSTEM_PROMPT
         if history_questions:
@@ -492,26 +501,34 @@ async def chat(request: ChatRequest):
 
         # ---- Step 1: 非流式调用，让 LLM 选 tool ----
         try:
-            route_resp = await asyncio.wait_for(
-                client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    tools=TOOLS,
-                    tool_choice="auto",
-                    max_tokens=500,
-                ),
-                timeout=30.0
-            )
+            with Timer(rid, "step1.llm_route"):
+                route_resp = await asyncio.wait_for(
+                    client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        tools=TOOLS,
+                        tool_choice="auto",
+                        max_tokens=500,
+                    ),
+                    timeout=30.0
+                )
         except Exception as e:
+            trace(rid, "step1.error", error=f"{type(e).__name__}: {e}")
             yield render(sse_error(rid, ERR_LLM_TIMEOUT, str(e)))
             return
 
         msg = route_resp.choices[0].message
 
+        msg = route_resp.choices[0].message
+        trace(rid, "step1.done",
+              has_tool_calls=bool(msg.tool_calls),
+              tool=msg.tool_calls[0].function.name if msg.tool_calls else None)
+
         # 无 tool_call -> 直接输出 LLM 回答
         if not msg.tool_calls:
             yield render(sse_chat_delta(rid, msg.content or ""))
             yield render(sse_done(rid))
+            trace(rid, "generator.end", reason="no_tool_calls")
             return
 
         # ---- Step 2: 执行 tool ----
@@ -527,12 +544,17 @@ async def chat(request: ChatRequest):
         loop = asyncio.get_running_loop()
         timeout = _TOOL_TIMEOUTS.get(tool_name, 10)
         try:
-            tool_result = await asyncio.wait_for(
-                loop.run_in_executor(None, _execute_tool, tool_name, tool_args),
-                timeout=timeout
-            )
+            with Timer(rid, "step2.tool_exec", tool=tool_name, timeout=timeout):
+                tool_result = await asyncio.wait_for(
+                    loop.run_in_executor(None, _execute_tool, tool_name, tool_args),
+                    timeout=timeout
+                )
         except asyncio.TimeoutError:
+            trace(rid, "step2.timeout", tool=tool_name, timeout=timeout)
             tool_result = {"error": "Query timed out"}
+
+        trace(rid, "step2.done", tool=tool_name,
+              has_error=isinstance(tool_result, dict) and bool(tool_result.get("error")))
 
         # 保存本轮到 session（coin_symbol 用于下一轮的省略语解析）
         if request.conversation_id:
@@ -578,17 +600,22 @@ async def chat(request: ChatRequest):
         ]
 
         try:
-            final_resp = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                max_tokens=1000,
-                stream=True,
-            )
-            async for chunk in final_resp:
-                delta = chunk.choices[0].delta
-                if delta.content:
-                    yield render(sse_chat_delta(rid, delta.content))
+            with Timer(rid, "step3.llm_stream"):
+                final_resp = await client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    max_tokens=1000,
+                    stream=True,
+                )
+                chunk_n = 0
+                async for chunk in final_resp:
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        chunk_n += 1
+                        yield render(sse_chat_delta(rid, delta.content))
+            trace(rid, "step3.done", chunks=chunk_n)
         except Exception as e:
+            trace(rid, "step3.error", error=f"{type(e).__name__}: {e}")
             yield render(sse_error(rid, ERR_INTERNAL, str(e)))
 
         # 生成推荐问题
@@ -597,5 +624,6 @@ async def chat(request: ChatRequest):
             yield render(sse_suggestions(rid, [s["suggestion"] for s in suggestions]))
 
         yield render(sse_done(rid))
+        trace(rid, "generator.end", reason="normal")
 
     return EventSourceResponse(event_generator())
