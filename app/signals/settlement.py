@@ -540,6 +540,8 @@ CREATE TABLE IF NOT EXISTS scan_cache (
 
 
 def save_scan_batch(results: list, scan_time: float):
+    from app.utils.formatters import format_price_change
+
     signals = [r for r in results if r.signal_card is not None]
     total_coins = len(results)
     results_json = json.dumps([s.signal_card.model_dump() for s in signals], ensure_ascii=False)
@@ -554,12 +556,15 @@ def save_scan_batch(results: list, scan_time: float):
                 "kellyPct": round(card.math.kelly_fraction * 100, 1) if card.math else 12.5,
                 "card": {
                     "coin": card.coin, "direction": card.direction.value, "grade": card.grade.value,
-                    "confidence": card.confidence, "currentPrice": card.current_price,
-                    "entryZone": [card.entry_low, card.entry_high],
-                    "stopLoss": card.stop_loss, "takeProfit": card.take_profit,
+                    "confidence": card.confidence,
+                    # 价格字段统一用 format_price_change 字符串展示
+                    "currentPrice": format_price_change(card.current_price),
+                    "entryZone": [format_price_change(card.entry_low), format_price_change(card.entry_high)],
+                    "stopLoss": format_price_change(card.stop_loss),
+                    "takeProfit": format_price_change(card.take_profit),
                     "riskReward": card.risk_reward_ratio, "positionPct": round(card.position_pct),
                     "kellyPct": round(card.math.kelly_fraction * 100, 1) if card.math else 12.5,
-                    "invalidation": card.invalidation_price,
+                    "invalidation": format_price_change(card.invalidation_price) if card.invalidation_price else None,
                     "sources": [{"name": src.name, "score": round(src.score)} for src in card.sources],
                     "winRate": card.win_rate, "sampleCount": card.sample_count, "avgProfit": card.avg_profit_pct,
                 },
@@ -596,7 +601,7 @@ def save_scan_batch(results: list, scan_time: float):
             conn.commit()
             cursor.close()
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM scan_cache WHERE id NOT IN (SELECT id FROM (SELECT id FROM scan_cache ORDER BY id DESC LIMIT 100) t)")
+            cursor.execute("DELETE FROM scan_cache WHERE id NOT IN (SELECT id FROM (SELECT id FROM scan_cache ORDER BY id DESC LIMIT 10) t)")
             conn.commit()
             cursor.close()
             print(f"扫描结果已写入 scan_cache ({len(signals)} signals)")
