@@ -105,7 +105,7 @@ async def generate_signal(
 
     return {
         "status": "success",
-        "signal": signal_card.model_dump(),
+        "signal": signal_card.model_dump_display(),
         "display": signal_card.format_card(),
         "backtest": bt_result,
         "price_source": "header.currentPrice",
@@ -199,7 +199,7 @@ async def scan_top_coins(
         "source": "fresh",
         "total_coins_scanned": len(results),
         "count": len(signals),
-        "signals": [s.signal_card.model_dump() for s in signals],
+        "signals": [s.signal_card.model_dump_display() for s in signals],
         "display": [s.signal_card.format_card() for s in signals],
         "scan_time": round(elapsed, 1),
     }

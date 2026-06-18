@@ -750,19 +750,20 @@ def generate_card_for_chat(coin: str, tier: str = "pro", always: bool = False, l
 
 
 def _build_card_event(signal_card: SignalCard, bt_result: dict, tier: str) -> dict:
-    """构建前端渲染用的 signal_card 事件数据"""
+    """构建前端渲染用的 signal_card 事件数据（价格字段已格式化为字符串）"""
+    from app.utils.formatters import format_price_change
     card = {
         "coin": signal_card.coin,
         "direction": signal_card.direction.value,
         "grade": signal_card.grade.value,
         "confidence": signal_card.confidence,
-        "current_price": signal_card.current_price,
-        "entry_zone": [signal_card.entry_low, signal_card.entry_high],
-        "stop_loss": signal_card.stop_loss,
-        "take_profit": signal_card.take_profit,
+        "current_price": format_price_change(signal_card.current_price),
+        "entry_zone": [format_price_change(signal_card.entry_low), format_price_change(signal_card.entry_high)],
+        "stop_loss": format_price_change(signal_card.stop_loss),
+        "take_profit": format_price_change(signal_card.take_profit),
         "risk_reward": signal_card.risk_reward_ratio,
         "position_pct": signal_card.position_pct,
-        "invalidation": signal_card.invalidation_price,
+        "invalidation": format_price_change(signal_card.invalidation_price) if signal_card.invalidation_price else None,
         "sources": [
             {"name": s.name, "score": round(s.score, 1),
              "direction": s.direction.value, "detail": s.detail}

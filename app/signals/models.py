@@ -118,6 +118,25 @@ class SignalCard(BaseModel):
     settled_price: Optional[float] = None
     pnl_pct: Optional[float] = None
 
+    # 价格字段清单 — 前端展示时统一用 format_price_change 格式化
+    _PRICE_FIELDS = (
+        "current_price", "entry_low", "entry_high",
+        "stop_loss", "take_profit", "invalidation_price",
+    )
+
+    def model_dump_display(self, **kw) -> dict:
+        """用于前端展示的 dump：价格字段用 format_price_change 转字符串。
+
+        其他字段（confidence / risk_reward_ratio / 仓位等）保持原数值。
+        结算/统计等内部链路请继续用 model_dump()。
+        """
+        from app.utils.formatters import format_price_change
+        d = self.model_dump(**kw)
+        for k in self._PRICE_FIELDS:
+            if k in d and d[k] is not None:
+                d[k] = format_price_change(d[k])
+        return d
+
     def format_card(self, lang: str = "zh") -> str:
         """格式化输出信号卡文本（中英双语）"""
         en = lang == "en"
