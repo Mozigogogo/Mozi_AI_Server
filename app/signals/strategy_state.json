@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "weights": {
     "bigorder_anomaly": 0.35,
     "quantitative": 0.35,

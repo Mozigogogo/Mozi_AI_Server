@@ -149,6 +149,7 @@ class SignalCard(BaseModel):
         grade_emoji = {"S": "🔴", "A": "🟡", "B": "⚪", "C": "🔸"}
         source_names = {
             "bigorder_anomaly": "BigOrder" if en else "大单异动",
+            "bigorder_decay": "BigOrder(Decay)" if en else "时间衰减大单",
             "quantitative": "Quant6F" if en else "量化六因子",
             "technical": "Technical" if en else "技术分析",
         }

@@ -132,8 +132,14 @@ class FactorPerformance:
 
 @dataclass
 class StrategyState:
-    """策略完整状态（持久化到 JSON）"""
-    version: int = 1
+    """策略完整状态（持久化到 JSON）
+
+    version 语义：
+      1 = v1 信号策略时代（legacy bigorder_anomaly）
+      2 = v2 信号策略时代（时间衰减大单 + 吸筹 pattern，2026-06-18 全量上线）
+      后续每次 evolution 递增
+    """
+    version: int = 2
     weights: Dict[str, float] = field(default_factory=lambda: dict(DEFAULT_WEIGHTS))
     factor_performances: Dict[str, dict] = field(default_factory=dict)
     regime: str = "quiet"
@@ -195,8 +201,13 @@ class AdaptiveStrategyEngine:
         if STRATEGY_FILE.exists():
             try:
                 data = json.loads(STRATEGY_FILE.read_text())
-                return StrategyState(**{k: v for k, v in data.items()
-                                       if k in StrategyState.__dataclass_fields__})
+                state = StrategyState(**{k: v for k, v in data.items()
+                                        if k in StrategyState.__dataclass_fields__})
+                # 迁移：v1 信号策略时代的 state（version<2 且未 evolution）自动升到 v2
+                # evolution_history 非空说明已经迭代过，保留原 version
+                if state.version < 2 and not state.evolution_history:
+                    state.version = 2
+                return state
             except Exception:
                 pass
         return StrategyState()
