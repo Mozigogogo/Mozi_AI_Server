@@ -1,8 +1,56 @@
 import json
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional, Union
 from app.core.config import get_settings
 
 settings = get_settings()
+
+
+def format_price_change(num: Union[int, float, None, str]) -> str:
+    """价格格式化（信号卡统一规范）。
+
+    规则:
+      num >= 1                → 2 位小数                  例 1.5 → "1.50", 66036 → "66036.00"
+      num == 0                → "0.0"
+      num < 1 且前导零 < 5 位  → 5 位小数                  例 0.05 → "0.05000"
+      num < 1 且前导零 ≥ 5 位  → 紧凑记号 0.0{N-1}xx       例 0.000005 → "0.0{4}5"
+                                                          例 0.0000000123 → "0.0{6}12"
+
+    Args:
+        num: 价格数值（或可转 float 的字符串）；None / 解析失败 → "0.0"
+
+    Returns:
+        格式化后的字符串（不含货币符号；调用方可套 `$` 前缀）。
+    """
+    if num is None:
+        return "0.0"
+    try:
+        n = float(num)
+    except (TypeError, ValueError):
+        return "0.0"
+
+    if n == 0:
+        return "0.0"
+
+    if n >= 1:
+        return f"{n:.2f}"
+
+    # n < 1：数前导 0
+    num_str = f"{n:.20f}"
+    decimal_part = num_str.split(".")[1] if "." in num_str else ""
+    zero_count = 0
+    for ch in decimal_part:
+        if ch == "0":
+            zero_count += 1
+        else:
+            break
+
+    if zero_count < 5:
+        return f"{n:.5f}"
+
+    # 极小数：紧凑记号（保留前两位有效数字）
+    non_zero_part = decimal_part[zero_count:]
+    rounded = str(round(float("0." + non_zero_part), 2))
+    return "0.0{" + str(zero_count - 1) + "}" + rounded[2:]
 
 
 def format_kline_data(kline_data: Dict[str, Any]) -> str:

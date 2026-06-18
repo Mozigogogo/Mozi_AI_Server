@@ -135,18 +135,9 @@ class SignalCard(BaseModel):
         }
 
         def _fp(v):
-            if v >= 1000:
-                return f"${v:,.0f}"
-            elif v >= 1:
-                return f"${v:,.2f}"
-            elif v >= 0.01:
-                return f"${v:.4f}"
-            elif v >= 0.0001:
-                s = f"{v:.8f}".rstrip('0').rstrip('.')
-                return f"${s}"
-            else:
-                s = f"{v:.12f}".rstrip('0').rstrip('.')
-                return f"${s}"
+            # 统一价格格式：>=1 → 2 位小数；<1 → 5 位小数；极小数 → 紧凑记号 0.0{N}xx
+            from app.utils.formatters import format_price_change
+            return f"${format_price_change(v)}"
 
         lines = [
             f"📊 {self.coin} {'Signal Card' if en else '交易信号卡'} | {grade_emoji.get(self.grade, '⚪')}{self.grade}{'-Grade' if en else '级'} | {'Conf' if en else '置信度'} {self.confidence:.0f}%",
