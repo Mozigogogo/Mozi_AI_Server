@@ -1,7 +1,13 @@
 """
-量化决策分析 Skill — 专业六因子重构版
+量化决策分析 Skill — 专业六因子重构版（优化版）
 因子体系：趋势强度 / 动量质量 / 量价结构 / 资金结构 / 波动风险 / 市场结构
 输出：可执行交易指令（入场区间、止损、止盈、仓位建议）
+
+本次优化要点：
+1. 去除冗余的局部 import，统一使用文件头部已导入的指标函数
+2. 新增"市场状态自适应权重"：用 ADX 判断趋势市/盘整市，动态调整六因子权重
+3. 新增轻量回测函数 backtest_trend_momentum_rule，用历史K线滚动验证简化规则
+   的历史胜率，便于校准阈值（不影响交易信号本身）
 """
 from __future__ import annotations
 
@@ -11,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from .indicators import (
-    ema_triple, adx, supertrend,
+    ema, ema_triple, adx, supertrend,
     rsi, macd, detect_divergence,
     obv, vwap,
     atr, bollinger_bands,
@@ -298,8 +304,7 @@ def _score_volume_price(ohlcv: dict) -> FactorResult:
     vwap_dev = (price - vwap_now) / vwap_now * 100  # % 偏离
 
     # OBV 趋势：用 EMA(10) 平滑后判断斜率
-    from .indicators import ema as _ema
-    obv_ema = _ema(obv_vals, 10)
+    obv_ema = ema(obv_vals, 10)
     def last_valid(lst):
         for v in reversed(lst):
             if v is not None and not math.isnan(v): return v
@@ -543,6 +548,53 @@ def _score_market_structure(ohlcv: dict, current_price: float) -> FactorResult:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 市场状态自适应：用 ADX 调整六因子权重
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 不同 regime 下的六因子权重（基准权重见各 _score_xxx 函数）
+# - trending：趋势因子主导，动量辅助
+# - extreme_trend：趋势权重进一步放大
+# - weak_trend：均衡分布，市场结构权重大幅提升
+# - ranging：动量/趋势衰减，结构/资金相对抬升
+REGIME_WEIGHTS: dict[str, dict[str, float]] = {
+    "trending":       {"trend": 0.35, "momentum": 0.25, "volume_price": 0.15, "capital": 0.15, "volatility_risk": 0.05, "market_structure": 0.05},
+    "extreme_trend":  {"trend": 0.40, "momentum": 0.25, "volume_price": 0.15, "capital": 0.10, "volatility_risk": 0.05, "market_structure": 0.05},
+    "weak_trend":     {"trend": 0.20, "momentum": 0.20, "volume_price": 0.20, "capital": 0.20, "volatility_risk": 0.10, "market_structure": 0.10},
+    "ranging":        {"trend": 0.10, "momentum": 0.15, "volume_price": 0.20, "capital": 0.25, "volatility_risk": 0.15, "market_structure": 0.15},
+}
+
+
+def _determine_market_regime(ohlcv: dict) -> str:
+    """用 ADX 判断市场状态：extreme_trend / trending / weak_trend / ranging。"""
+    try:
+        adx_vals = adx(ohlcv["highs"], ohlcv["lows"], ohlcv["closes"], 14)
+        # 取最后一个非空值
+        cur_adx = None
+        for v in reversed(adx_vals or []):
+            if v is not None and not (isinstance(v, float) and math.isnan(v)):
+                cur_adx = v
+                break
+        if cur_adx is None:
+            return "weak_trend"
+        if cur_adx >= 35: return "extreme_trend"
+        if cur_adx >= 25: return "trending"
+        if cur_adx >= 18: return "weak_trend"
+        return "ranging"
+    except Exception:
+        return "weak_trend"
+
+
+def _apply_adaptive_weights(factors: list[FactorResult], regime: str) -> None:
+    """根据 regime 覆写六因子权重（原地修改 FactorResult.weight）。"""
+    weights = REGIME_WEIGHTS.get(regime)
+    if not weights:
+        return
+    for f in factors:
+        if f.name in weights:
+            f.weight = weights[f.name]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 合成信号 → 可执行交易指令
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -578,11 +630,10 @@ def _build_trade_signal(
     suggested_pos = pos_map[strength] if direction != "neutral" else 0.0
 
     # ATR 止损止盈计算
-    from .indicators import atr as _atr, vwap as _vwap, bollinger_bands as _bb, supertrend as _st
-    atr_vals  = _atr(highs, lows, closes, 14)
-    vwap_vals = _vwap(highs, lows, closes, volumes)
-    bb_u, _, bb_l = _bb(closes, 20, 2.0)
-    st_line, _ = _st(highs, lows, closes, 10, 3.0)
+    atr_vals  = atr(highs, lows, closes, 14)
+    vwap_vals = vwap(highs, lows, closes, volumes)
+    bb_u, _, bb_l = bollinger_bands(closes, 20, 2.0)
+    st_line, _ = supertrend(highs, lows, closes, 10, 3.0)
 
     def last_valid(lst):
         for v in reversed(lst):
@@ -873,6 +924,10 @@ class QuantitativeAnalysisSkill:
             _score_market_structure(ohlcv, price),
         ]
 
+        # 根据市场状态自适应调整六因子权重
+        regime = _determine_market_regime(ohlcv)
+        _apply_adaptive_weights(factors, regime)
+
         # 合成可执行交易信号
         signal = _build_trade_signal(factors, ohlcv, raw_data, symbol)
 
@@ -883,3 +938,105 @@ class QuantitativeAnalysisSkill:
     def _get_timestamp() -> str:
         from datetime import datetime, timezone
         return datetime.now(timezone.utc).isoformat()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 历史回测辅助函数（独立于交易信号，用于校准阈值）
+# ─────────────────────────────────────────────────────────────────────────────
+
+def backtest_trend_momentum_rule(
+    closes: list[float],
+    fast: int = 12,
+    slow: int = 26,
+    rsi_period: int = 14,
+    rsi_buy: float = 50.0,
+    rsi_sell: float = 50.0,
+    horizon: int = 5,
+    fee_pct: float = 0.04,
+) -> dict:
+    """用 EMA(fast/slow) 金叉死叉 + RSI 过滤做滚动规则回测。
+
+    本函数独立于六因子信号，目的：
+      - 用极简规则在历史 K 线上滚动回测，得到"裸趋势规则"的胜率/平均收益
+      - 作为阈值校准的基准线，方便后续调整六因子内部阈值时对照
+
+    Args:
+        closes: 收盘价序列（需 >= slow + horizon + 1）
+        fast/slow: EMA 快慢线周期
+        rsi_period: RSI 周期
+        rsi_buy/rsi_sell: RSI 过滤阈值
+        horizon: 每次入场后的持有 N 根 K 线再平仓
+        fee_pct: 单边手续费百分比
+
+    Returns:
+        dict: {
+            "trades": int, "wins": int, "win_rate": float,
+            "avg_pnl_pct": float, "total_pnl_pct": float,
+            "long_trades": int, "short_trades": int,
+        }
+    """
+    n = len(closes)
+    if n < slow + horizon + 1:
+        return {"trades": 0, "wins": 0, "win_rate": 0.0,
+                "avg_pnl_pct": 0.0, "total_pnl_pct": 0.0,
+                "long_trades": 0, "short_trades": 0}
+
+    fast_ema = ema(closes, fast)
+    slow_ema = ema(closes, slow)
+    rsi_vals = rsi(closes, rsi_period)
+
+    def _last_valid(arr, idx):
+        for v in reversed(arr[: idx + 1]):
+            if v is not None and not (isinstance(v, float) and math.isnan(v)):
+                return v
+        return None
+
+    trades = 0
+    wins = 0
+    total_pnl = 0.0
+    long_trades = 0
+    short_trades = 0
+
+    i = slow  # 从 slow 开始确保 EMA 稳定
+    while i < n - horizon:
+        f_v = _last_valid(fast_ema, i)
+        s_v = _last_valid(slow_ema, i)
+        r_v = _last_valid(rsi_vals, i)
+        f_prev = _last_valid(fast_ema, i - 1)
+        s_prev = _last_valid(slow_ema, i - 1)
+        if not (f_v and s_v and f_prev and s_prev and r_v is not None):
+            i += 1
+            continue
+
+        # 金叉 + RSI 在多头区间 → 做多
+        golden_cross = f_prev <= s_prev and f_v > s_v and r_v > rsi_buy
+        # 死叉 + RSI 在空头区间 → 做空
+        death_cross = f_prev >= s_prev and f_v < s_v and r_v < rsi_sell
+
+        if golden_cross:
+            direction = "long"; long_trades += 1
+        elif death_cross:
+            direction = "short"; short_trades += 1
+        else:
+            i += 1
+            continue
+
+        entry = closes[i]
+        exit_ = closes[i + horizon]
+        gross = (exit_ - entry) / entry * 100 if direction == "long" else (entry - exit_) / entry * 100
+        net = gross - 2 * fee_pct  # 开仓 + 平仓
+        trades += 1
+        total_pnl += net
+        if net > 0:
+            wins += 1
+        i += horizon  # 进入持有期，跳过到下一次可能入场点
+
+    return {
+        "trades": trades,
+        "wins": wins,
+        "win_rate": round(wins / trades, 4) if trades else 0.0,
+        "avg_pnl_pct": round(total_pnl / trades, 4) if trades else 0.0,
+        "total_pnl_pct": round(total_pnl, 4),
+        "long_trades": long_trades,
+        "short_trades": short_trades,
+    }
