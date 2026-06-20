@@ -567,8 +567,8 @@ REGIME_WEIGHTS: dict[str, dict[str, float]] = {
 def _determine_market_regime(ohlcv: dict) -> str:
     """用 ADX 判断市场状态：extreme_trend / trending / weak_trend / ranging。"""
     try:
-        adx_vals = adx(ohlcv["highs"], ohlcv["lows"], ohlcv["closes"], 14)
-        # 取最后一个非空值
+        # adx 返回 (adx_vals, plus_di, minus_di) 三元组，只取 adx 序列
+        adx_vals, _, _ = adx(ohlcv["highs"], ohlcv["lows"], ohlcv["closes"], 14)
         cur_adx = None
         for v in reversed(adx_vals or []):
             if v is not None and not (isinstance(v, float) and math.isnan(v)):
