@@ -6,6 +6,9 @@ import redis
 from typing import Dict, List, Tuple, Optional
 from app.bigorder.models import TickData
 from config.settings import settings
+from app.utils.logger import get_logger
+
+logger = get_logger("app.bigorder.consumer")
 
 
 # 匹配 key 中 _big_deal_ 之后的 {BASE}_{SIDE} 部分
@@ -81,7 +84,7 @@ class RedisConsumer:
         try:
             results = self.client.zrangebyscore(key, from_ms, to_ms, withscores=True)
         except Exception as e:
-            print(f"读取 {key} 失败: {e}")
+            logger.error(f"读取 {key} 失败: {e}")
             return []
 
         ticks = []
@@ -163,7 +166,7 @@ class RedisConsumer:
         try:
             results = pipe.execute()
         except Exception as e:
-            print(f"pipeline 读取失败: {e}")
+            logger.error(f"pipeline 读取失败: {e}")
             return {}
 
         grouped: Dict[str, Tuple[List[TickData], List[TickData]]] = {}

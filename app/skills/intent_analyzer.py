@@ -5,8 +5,11 @@ import re
 
 from openai import AsyncOpenAI
 
+from app.utils.logger import get_logger
 from app.skills.base import IntentInfo
 from app.core.config import get_settings
+
+logger = get_logger("app.skills.intent_analyzer")
 
 settings = get_settings()
 
@@ -73,7 +76,7 @@ API：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) |
 
                 # 如果解析结果为 simple_chat 但用户问的不是闲聊，重试
                 if attempt == 0:
-                    print(f"  ⚠️ 意图识别可能不正确({intent_data})，重试...")
+                    logger.info(f"  ⚠️ 意图识别可能不正确({intent_data})，重试...")
                     continue
 
                 # 第二次还是 simple_chat，可能真的是闲聊
@@ -85,9 +88,9 @@ API：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) |
 
             except Exception as e:
                 if attempt == 0:
-                    print(f"  ⚠️ 意图识别异常({e})，重试...")
+                    logger.info(f"  ⚠️ 意图识别异常({e})，重试...")
                     continue
-                print(f"  ❌ 意图识别重试后仍失败: {e}")
+                logger.info(f"  ❌ 意图识别重试后仍失败: {e}")
 
         # 兜底
         return IntentInfo(
@@ -127,7 +130,7 @@ API：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) |
             except json.JSONDecodeError:
                 continue
 
-        print(f"JSON 解析失败, 原始响应: {response[:200]}")
+        logger.info(f"JSON 解析失败, 原始响应: {response[:200]}")
         # 返回默认值
         return {
             "language": "zh",
@@ -146,7 +149,7 @@ API：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) |
             parts = str(symbol).split(":")
             # 取最后一个作为实际币种 (如 "BTC:ETH" → "ETH")
             corrected = parts[-1].strip().upper()
-            print(f"  ⚠️ 修正币种符号: {symbol} → {corrected}")
+            logger.info(f"  ⚠️ 修正币种符号: {symbol} → {corrected}")
             data["coin_symbol"] = corrected
 
         # 统一大写

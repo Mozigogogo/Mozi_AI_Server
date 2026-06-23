@@ -1,5 +1,6 @@
 """综合分析 Skill"""
 import asyncio
+from app.utils.logger import get_logger
 from app.skills.base import BaseSkill, IntentInfo, SkillResult
 from app.services.data_service import (
     get_header_data,
@@ -10,6 +11,8 @@ from app.services.data_service import (
     get_funding_rate
 )
 
+
+logger = get_logger("app.skills.analysis_skills.comprehensive")
 
 class ComprehensiveAnalysisSkill(BaseSkill):
     """综合分析 Skill - 多维度全面分析"""
@@ -67,14 +70,14 @@ class ComprehensiveAnalysisSkill(BaseSkill):
             if not isinstance(result, Exception):
                 # 检查结果是否有效（非空字典/非空列表）
                 if result is None:
-                    print(f"  警告: {api_name} 返回 None（币种可能有误）")
+                    logger.info(f"  警告: {api_name} 返回 None（币种可能有误）")
                 elif isinstance(result, dict) and result.get("code") is not None and result.get("code") != 0:
-                    print(f"  警告: {api_name} 返回错误: {result.get('errorMsg')}")
+                    logger.info(f"  警告: {api_name} 返回错误: {result.get('errorMsg')}")
                 else:
                     data[api_name] = result
                     api_calls.append(api_name)
             else:
-                print(f"  警告: {api_name} 调用失败: {str(result)}")
+                logger.info(f"  警告: {api_name} 调用失败: {str(result)}")
 
         # 构建传给LLM的数据（包含摘要+关键原始数据）
         llm_data = self._build_llm_data(data)

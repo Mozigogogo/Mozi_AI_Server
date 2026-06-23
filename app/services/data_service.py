@@ -6,8 +6,10 @@ import threading
 from typing import Dict, List, Any, Optional
 from app.core.config import get_settings
 from app.core.exceptions import DataFetchException, DatabaseException
+from app.utils.logger import get_logger
 
 settings = get_settings()
+logger = get_logger("app.services.data_service")
 
 # MySQL 连接池（全局）
 _db_pool = None
@@ -129,7 +131,7 @@ def fetch_json(url: str, timeout: int = None, max_retries: int = None) -> Any:
         except requests.Timeout as e:
             last_exception = DataFetchException(f"API请求超时（{timeout}秒）: {url}")
             if attempt < max_retries - 1:
-                print(f"API超时，{settings.api_retry_delay}秒后重试 ({attempt + 1}/{max_retries})...")
+                logger.warning(f"API超时，{settings.api_retry_delay}秒后重试 ({attempt + 1}/{max_retries})...")
                 import time
                 time.sleep(settings.api_retry_delay)
         except requests.HTTPError as e:
@@ -137,7 +139,7 @@ def fetch_json(url: str, timeout: int = None, max_retries: int = None) -> Any:
             status_code = e.response.status_code if e.response else 0
             # 502/503 通常是临时问题，可以重试
             if status_code in (502, 503) and attempt < max_retries - 1:
-                print(f"API {status_code}错误，{settings.api_retry_delay}秒后重试 ({attempt + 1}/{max_retries})...")
+                logger.warning(f"API {status_code}错误，{settings.api_retry_delay}秒后重试 ({attempt + 1}/{max_retries})...")
                 import time
                 time.sleep(settings.api_retry_delay)
         except Exception as e:
@@ -203,7 +205,7 @@ def get_multi_timeframe_klines(symbol: str, types: tuple = (1, 2, 3, 4)) -> Dict
         try:
             result[meta["name"]] = get_kline_data_for_period(symbol, kline_type)
         except Exception as e:
-            print(f"获取{meta['name']}失败({symbol}): {e}")
+            logger.error(f"获取{meta['name']}失败({symbol}): {e}")
             result[meta["name"]] = {}
     return result
 
@@ -262,7 +264,7 @@ def get_news_from_mysql(symbol: str, limit: int = None) -> List[str]:
         return news
     except Exception as e:
         # 容错处理：不抛出异常，返回空列表
-        print(f"获取新闻数据失败: {str(e)}")
+        logger.error(f"获取新闻数据失败: {str(e)}")
         return []
     finally:
         # 确保连接和游标被正确关闭
@@ -327,7 +329,7 @@ def get_discovery_coins() -> List[str]:
             _coin_list_expire = time.time() + 300  # 5分钟缓存
         return coins
     except Exception as e:
-        print(f"获取币种列表失败: {e}")
+        logger.error(f"获取币种列表失败: {e}")
         return _coin_list_cache or []
 
 
@@ -340,7 +342,7 @@ def get_derivatives_agg(symbol: str) -> Dict[str, Any]:
             return data.get("data", {})
         return {}
     except Exception as e:
-        print(f"获取衍生品聚合数据异常: {str(e)}")
+        logger.error(f"获取衍生品聚合数据异常: {str(e)}")
         return {}
 
 
@@ -406,7 +408,7 @@ def get_open_interest(symbol: str) -> Dict[str, Any]:
             return {}
         return agg_data
     except Exception as e:
-        print(f"获取持仓量数据异常: {str(e)}")
+        logger.error(f"获取持仓量数据异常: {str(e)}")
         return {}
 
 
@@ -445,7 +447,7 @@ def get_trading_volume(symbol: str) -> Dict[str, Any]:
         return trading_data
 
     except Exception as e:
-        print(f"获取成交量数据异常: {str(e)}")
+        logger.error(f"获取成交量数据异常: {str(e)}")
         return {"volume": 0, "volume_change": 0}
 
 

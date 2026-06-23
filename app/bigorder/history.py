@@ -3,6 +3,9 @@ import json
 import threading
 from typing import Dict, Tuple
 from config.settings import settings
+from app.utils.logger import get_logger
+
+logger = get_logger("app.bigorder.history")
 
 
 class HistoryTracker:
@@ -60,7 +63,7 @@ class HistoryTracker:
                         "mean": value, "std": 1.0, "count": 1, "values": [value]
                     }))
             except Exception as e:
-                print(f"更新基线失败 {field}: {e}")
+                logger.error(f"更新基线失败 {field}: {e}")
 
     def get_all_baselines(self, coin: str) -> Dict[str, Dict[str, Tuple[float, float]]]:
         """获取某币种所有交易所所有维度的基线"""

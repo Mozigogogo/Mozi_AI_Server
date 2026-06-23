@@ -23,6 +23,9 @@ from .indicators import (
     atr, bollinger_bands,
     swing_points, key_levels,
 )
+from app.utils.logger import get_logger
+
+logger = get_logger("app.skills.analysis_skills.quantitative")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 数据结构
@@ -991,7 +994,7 @@ class QuantitativeAnalysisSkill:
                 raw_data[name] = result
                 api_calls.append(name)
             else:
-                print(f"  ⚠️ {name} 调用失败: {result}")
+                logger.info(f"  ⚠️ {name} 调用失败: {result}")
 
         llm_data = self.analyze(symbol, raw_data)
 

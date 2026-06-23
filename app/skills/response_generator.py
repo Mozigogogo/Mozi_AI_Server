@@ -4,8 +4,11 @@ from typing import Dict, Any, AsyncGenerator
 
 from openai import AsyncOpenAI
 
+from app.utils.logger import get_logger
 from app.skills.base import SkillResult, IntentInfo
 from app.core.config import get_settings
+
+logger = get_logger("app.skills.response_generator")
 
 settings = get_settings()
 
@@ -279,7 +282,7 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
             return response_text
 
         except Exception as e:
-            print(f"回答生成失败: {e}")
+            logger.info(f"回答生成失败: {e}")
             # 返回错误消息
             if intent.language == "zh":
                 return f"抱歉，生成回答时出错：{str(e)}"
@@ -367,12 +370,12 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
                     if has_content:
                         return
                     elif attempt == 0:
-                        print(f"  ⚠️ LLM流式响应为空，重试...")
+                        logger.info(f"  ⚠️ LLM流式响应为空，重试...")
                 except asyncio.TimeoutError:
-                    print(f"  ⚠️ LLM响应超时({timeout_seconds}s)，{'重试...' if attempt == 0 else '切换兜底'}")
+                    logger.info(f"  ⚠️ LLM响应超时({timeout_seconds}s)，{'重试...' if attempt == 0 else '切换兜底'}")
 
             # 所有流式都失败，非流式兜底
-            print(f"  ⚠️ LLM流式失败，切换非流式兜底...")
+            logger.info(f"  ⚠️ LLM流式失败，切换非流式兜底...")
             try:
                 fallback = await asyncio.wait_for(
                     self.client.chat.completions.create(
@@ -389,12 +392,12 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
                     yield text
                     return
             except (asyncio.TimeoutError, Exception) as fe:
-                print(f"  ❌ 非流式兜底失败: {fe}")
+                logger.info(f"  ❌ 非流式兜底失败: {fe}")
 
             yield "抱歉，生成回答时出现问题，请重新提问。" if intent.language == "zh" else "Sorry, an error occurred. Please try again."
 
         except Exception as e:
-            print(f"流式回答生成失败: {e}")
+            logger.info(f"流式回答生成失败: {e}")
             if intent.language == "zh":
                 yield "抱歉，生成回答时出现问题，请重新提问。"
             else:

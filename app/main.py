@@ -11,18 +11,21 @@ from app.core.config import get_settings
 from app.core.exceptions import CryptoAnalystException
 from app.api.endpoints import router as api_router
 from app.api.skill_endpoints import router as skill_test_router
+from app.utils.logger import configure_logging, get_logger
 
 settings = get_settings()
+configure_logging(settings.log_level if hasattr(settings, "log_level") else "INFO")
+logger = get_logger("app.main")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时
-    print(f"启动 {settings.app_name} v{settings.app_version}")
-    print(f"API地址: http://{settings.api_host}:{settings.api_port}")
-    print(f"调试模式: {settings.debug}")
-    print(
+    logger.info(f"启动 {settings.app_name} v{settings.app_version}")
+    logger.info(f"API地址: http://{settings.api_host}:{settings.api_port}")
+    logger.info(f"调试模式: {settings.debug}")
+    logger.info(
         f"Redis配置: REDIS_ENABLED={settings.redis_enabled} "
         f"(env={__import__('os').environ.get('REDIS_ENABLED', '<unset>')}), "
         f"host={settings.redis_host}:{settings.redis_port}"
@@ -35,7 +38,7 @@ async def lifespan(app: FastAPI):
         bigorder_deps.init_bigorder_deps()
         if bigorder_deps.is_redis_available():
             coins = bigorder_deps.consumer.get_watched_coins()
-            print(f"BigOrder: Redis 已连接，监控 {len(coins)} 个币种")
+            logger.info(f"BigOrder: Redis 已连接，监控 {len(coins)} 个币种")
             scan_task = asyncio.create_task(
                 _bigorder_background_scan(
                     bigorder_deps.consumer,
@@ -44,13 +47,13 @@ async def lifespan(app: FastAPI):
                 )
             )
         else:
-            print("BigOrder: Redis 连接失败，后台扫描未启动")
+            logger.warning("BigOrder: Redis 连接失败，后台扫描未启动")
 
     # 信号卡后台任务（始终启动，不依赖 Redis）
     settlement_task = asyncio.create_task(_signal_settlement_task())
     review_task = asyncio.create_task(_weekly_review_task())
     market_scan_task = asyncio.create_task(_market_scan_task())
-    print("Signal Cards: 后台结算(10min) + 周期复盘(每周日) + 全市场扫描(30min) 已启动")
+    logger.info("Signal Cards: 后台结算(10min) + 周期复盘(每周日) + 全市场扫描(30min) 已启动")
 
     yield
 
@@ -60,7 +63,7 @@ async def lifespan(app: FastAPI):
     settlement_task.cancel()
     review_task.cancel()
     market_scan_task.cancel()
-    print("服务关闭")
+    logger.info("服务关闭")
 
 
 # 创建FastAPI应用
@@ -238,25 +241,25 @@ app.include_router(
 # BigOrder 对话接口（始终注册；Redis 未启用时返回 503）
 from app.bigorder.chat import router as bigorder_chat_router
 app.include_router(bigorder_chat_router, prefix="/bigorder/v1", tags=["BigOrder Chat"])
-print("BigOrder: POST /bigorder/v1/chat 已注册")
+logger.info("BigOrder: POST /bigorder/v1/chat 已注册")
 
 # BigOrder REST / SSE（需 REDIS_ENABLED=true）
 if settings.redis_enabled:
     from app.bigorder.endpoints import router as bigorder_router
     app.include_router(bigorder_router, prefix="/bigorder/v1", tags=["BigOrder Detection"])
-    print("BigOrder: REST 路由已注册 (/bigorder/v1/*)")
+    logger.info("BigOrder: REST 路由已注册 (/bigorder/v1/*)")
 else:
-    print("BigOrder: REDIS_ENABLED=false，REST 路由未注册（/chat 仍可用，需开启 Redis 后才有数据）")
+    logger.warning("BigOrder: REDIS_ENABLED=false，REST 路由未注册（/chat 仍可用，需开启 Redis 后才有数据）")
 
 # Signal Cards 交易信号卡
 from app.signals.endpoints import router as signal_router
 app.include_router(signal_router, prefix="/api/v1/signals", tags=["Signal Cards"])
-print("Signal Cards: 路由已注册 (/api/v1/signals/*)")
+logger.info("Signal Cards: 路由已注册 (/api/v1/signals/*)")
 
 # Signal Cards Chat 量化信号对话
 from app.signals.chat import router as signal_chat_router
 app.include_router(signal_chat_router, prefix="/signals/v1", tags=["Signal Chat"])
-print("Signal Chat: POST /signals/v1/chat 已注册")
+logger.info("Signal Chat: POST /signals/v1/chat 已注册")
 
 
 # 中间件：添加请求处理时间
@@ -288,7 +291,7 @@ async def _bigorder_background_scan(consumer, scorer, llm_analyzer):
                     timeout=120,
                 )
             except asyncio.TimeoutError:
-                print("BigOrder 后台扫描: score_all 超时(2min)，跳过本轮")
+                logger.warning("BigOrder 后台扫描: score_all 超时(2min)，跳过本轮")
                 continue
             for signal in signals:
                 if signal.score.level.value == "none":
@@ -312,7 +315,7 @@ async def _bigorder_background_scan(consumer, scorer, llm_analyzer):
         except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"BigOrder 后台扫描异常: {e}")
+            logger.error(f"BigOrder 后台扫描异常: {e}", exc_info=True)
             await asyncio.sleep(10)
 
 
@@ -328,14 +331,14 @@ async def _signal_settlement_task():
                     timeout=280,
                 )
             except asyncio.TimeoutError:
-                print("信号卡结算超时(280s)，跳过本轮")
+                logger.warning("信号卡结算超时(280s)，跳过本轮")
                 continue
             if result["settled"] > 0:
-                print(f"Signal Cards: 结算 {result['settled']} 张 (TP={result['hit_tp']} SL={result['hit_sl']} 过期={result['expired']})")
+                logger.info(f"Signal Cards: 结算 {result['settled']} 张 (TP={result['hit_tp']} SL={result['hit_sl']} 过期={result['expired']})")
         except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"信号卡结算任务异常: {e}")
+            logger.error(f"信号卡结算任务异常: {e}", exc_info=True)
             await asyncio.sleep(60)
 
 
@@ -353,12 +356,12 @@ async def _market_scan_task():
             try:
                 results = await asyncio.wait_for(scan_all_coins(concurrency=10), timeout=300)
             except asyncio.TimeoutError:
-                print("全市场扫描超时(5min)，跳过本轮")
+                logger.warning("全市场扫描超时(5min)，跳过本轮")
                 continue
             elapsed = _time.time() - t0
 
             signals = [r for r in results if r.signal_card is not None]
-            print(f"全市场扫描完成: {len(results)} 币种, {len(signals)} 信号, 耗时 {elapsed:.1f}s")
+            logger.info(f"全市场扫描完成: {len(results)} 币种, {len(signals)} 信号, 耗时 {elapsed:.1f}s")
 
             # 信号卡写入 signal_card_history（供结算和复盘）
             saved = 0
@@ -370,7 +373,7 @@ async def _market_scan_task():
                 except Exception:
                     pass
             if saved:
-                print(f"Signal Cards: {saved} 张写入 signal_card_history")
+                logger.info(f"Signal Cards: {saved} 张写入 signal_card_history")
 
             # 超时保护：存库最多 30 秒
             try:
@@ -379,11 +382,11 @@ async def _market_scan_task():
                     timeout=30,
                 )
             except asyncio.TimeoutError:
-                print("扫描结果存库超时(30s)，已写本地文件兜底")
+                logger.warning("扫描结果存库超时(30s)，已写本地文件兜底")
         except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"全市场扫描任务异常: {e}")
+            logger.error(f"全市场扫描任务异常: {e}", exc_info=True)
             await asyncio.sleep(60)
 
 
@@ -400,17 +403,17 @@ async def _weekly_review_task():
             next_review = now.replace(hour=3, minute=0, second=0, microsecond=0) + datetime.timedelta(days=days_until_sunday)
             wait_seconds = (next_review - now).total_seconds()
 
-            print(f"Signal Cards: 下次复盘时间 {next_review.strftime('%Y-%m-%d %H:%M')}（{wait_seconds/3600:.1f}h 后）")
+            logger.info(f"Signal Cards: 下次复盘时间 {next_review.strftime('%Y-%m-%d %H:%M')}（{wait_seconds/3600:.1f}h 后）")
             await asyncio.sleep(wait_seconds)
 
             from app.signals.review import weekly_review
             report = await asyncio.get_event_loop().run_in_executor(None, weekly_review)
-            print(f"Signal Cards: 周复盘完成 — 胜率{report.get('win_rate', 0)}% 夏普{report.get('sharpe_ratio', 0)}")
+            logger.info(f"Signal Cards: 周复盘完成 — 胜率{report.get('win_rate', 0)}% 夏普{report.get('sharpe_ratio', 0)}")
 
         except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"周期复盘任务异常: {e}")
+            logger.error(f"周期复盘任务异常: {e}", exc_info=True)
             await asyncio.sleep(3600)
 
 

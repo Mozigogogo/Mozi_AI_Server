@@ -1,12 +1,15 @@
 """技术分析 Skill"""
 import asyncio
 import pandas as pd
+from app.utils.logger import get_logger
 from app.skills.base import BaseSkill, IntentInfo, SkillResult
 from app.services.data_service import (
     get_kline_data, get_header_data,
     get_buy_sell_ratio, get_funding_rate
 )
 
+
+logger = get_logger("app.skills.analysis_skills.technical")
 
 class TechnicalAnalysisSkill(BaseSkill):
     """技术分析 Skill - 趋势、支撑阻力、指标分析"""
@@ -179,9 +182,7 @@ class TechnicalAnalysisSkill(BaseSkill):
             }
 
         except Exception as e:
-            print(f"计算技术指标失败: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"计算技术指标失败: {e}")
             return {}
 
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:

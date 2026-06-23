@@ -7,6 +7,10 @@ from fastapi import APIRouter, HTTPException, status, Query
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 
+from app.utils.logger import get_logger
+
+logger = get_logger("app.api.endpoints")
+
 from app.api.schemas import (
     AnalyzeRequest,
     ChatRequest,
@@ -73,7 +77,7 @@ async def analyze_stream(request: AnalyzeRequest):
             yield render(sse_error(rid, ERR_INTERNAL, e.detail))
         except Exception as e:
             trace(rid, "generator.error", error=f"{type(e).__name__}: {e}")
-            traceback.print_exc()
+            logger.exception(f"SSE 分析失败: {e}")
             yield render(sse_error(rid, ERR_INTERNAL, f"分析失败: {e}"))
 
     return EventSourceResponse(event_generator())
@@ -115,7 +119,7 @@ async def chat_stream(request: ChatRequest):
             yield render(sse_error(rid, ERR_INTERNAL, e.detail))
         except Exception as e:
             trace(rid, "generator.error", error=f"{type(e).__name__}: {e}")
-            traceback.print_exc()
+            logger.exception(f"SSE 对话失败: {e}")
             yield render(sse_error(rid, ERR_INTERNAL, f"对话失败: {e}"))
 
     return EventSourceResponse(event_generator())

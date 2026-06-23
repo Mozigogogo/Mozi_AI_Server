@@ -10,6 +10,9 @@ from app.core.session import session_manager
 from app.core.config import get_settings
 from app.core.llm_client import get_llm_client
 from app.services.data_service import get_header_data
+from app.utils.logger import get_logger
+
+logger = get_logger("app.skills.agent")
 
 settings = get_settings()
 
@@ -45,7 +48,7 @@ class CryptoAnalystAgent:
         """
         async with self.semaphore:
             try:
-                print(f"\n=== 新请求 === 问题: {question} 模式: {mode} 会话: {conversation_id}")
+                logger.info(f"\n=== 新请求 === 问题: {question} 模式: {mode} 会话: {conversation_id}")
 
                 # 加载会话上下文（用户隔离）
                 session = session_manager.get(conversation_id) if conversation_id else None
@@ -59,7 +62,7 @@ class CryptoAnalystAgent:
                 # simple_chat → 直接返回通用回答
                 # 非闲聊意图但没币种 → 用会话记忆兜底
                 if intent.intent_type == "simple_chat" and not intent.coin_symbol:
-                    print(f"  检测到简单对话/无关问题，返回通用回答")
+                    logger.info(f"  检测到简单对话/无关问题，返回通用回答")
                     # 仍然保存问题到会话（用户可能在之后问到币种）
                     if conversation_id:
                         session_manager.update(conversation_id, question=question)
@@ -70,11 +73,11 @@ class CryptoAnalystAgent:
                 # 币种来源优先级：问题文本 > 会话记忆
                 if not intent.coin_symbol and last_coin:
                     intent.coin_symbol = last_coin
-                    print(f"  使用会话记忆币种: {last_coin}")
+                    logger.info(f"  使用会话记忆币种: {last_coin}")
 
                 # 如果有币种但意图被误判为 simple_chat，修正为综合分析
                 if intent.intent_type == "simple_chat" and intent.coin_symbol:
-                    print(f"  ⚠️ 有币种但意图为 simple_chat，修正为 analyze_comprehensive")
+                    logger.info(f"  ⚠️ 有币种但意图为 simple_chat，修正为 analyze_comprehensive")
                     intent.intent_type = "analyze_comprehensive"
 
                 # 二次检查：LLM未识别币种但问题中可能包含币种（如 pepe、ton 等）
@@ -88,7 +91,7 @@ class CryptoAnalystAgent:
                             if validate_coin_exists(sym):
                                 intent.coin_symbol = sym
                                 intent.intent_type = "analyze_comprehensive"
-                                print(f"  ⚠️ 二次验证: API确认 {sym} 为有效币种，修正意图")
+                                logger.info(f"  ⚠️ 二次验证: API确认 {sym} 为有效币种，修正意图")
                                 break
                         except Exception:
                             pass
@@ -97,33 +100,33 @@ class CryptoAnalystAgent:
                 if intent.coin_symbol and not intent.required_apis:
                     intent.required_apis = ["get_header_data", "get_kline_data", "get_buy_sell_ratio", "get_funding_rate"]
 
-                print(f"  意图: {intent.intent_type} 币种: {intent.coin_symbol} APIs: {intent.required_apis}")
+                logger.info(f"  意图: {intent.intent_type} 币种: {intent.coin_symbol} APIs: {intent.required_apis}")
 
                 # 检查是否是简单对话（无币种）
                 if intent.intent_type == "simple_chat":
-                    print(f"\n[步骤2] 检测到简单对话")
+                    logger.info(f"\n[步骤2] 检测到简单对话")
                     greeting = self.response_generator.get_greeting(intent.language)
                     yield greeting
                     return
 
                 # 检查是否有币种
                 if not intent.coin_symbol:
-                    print(f"\n[步骤2] 未检测到币种")
+                    logger.info(f"\n[步骤2] 未检测到币种")
                     msg = self.response_generator.get_no_symbol_message(intent.language)
                     yield msg
                     return
 
                 # 步骤2：Skill 路由（精准匹配）
-                print(f"\n[步骤2] Skill 路由...")
+                logger.info(f"\n[步骤2] Skill 路由...")
                 skill = self.skill_router.route(intent, mode)
-                print(f"匹配到 Skill: {skill.name}")
+                logger.info(f"匹配到 Skill: {skill.name}")
 
                 # 步骤3：执行 Skill（只调用必要的 API）
-                print(f"\n[步骤3] 执行 Skill: {skill.name}")
+                logger.info(f"\n[步骤3] 执行 Skill: {skill.name}")
                 skill_result = await skill.execute_async(intent.coin_symbol, intent)
-                print(f"Skill 执行结果:")
-                print(f"  - 调用的 API: {skill_result.api_calls}")
-                print(f"  - 时间戳: {skill_result.timestamp}")
+                logger.info(f"Skill 执行结果:")
+                logger.info(f"  - 调用的 API: {skill_result.api_calls}")
+                logger.info(f"  - 时间戳: {skill_result.timestamp}")
 
                 # ── 信号卡分支（纯增量，不影响已有流程）──────────────────
                 if skill.name == "signal_card":
@@ -131,7 +134,7 @@ class CryptoAnalystAgent:
                     if card_event:
                         # 返回 signal_card 事件 → 前端渲染为卡片
                         yield {"type": "signal_card", "data": card_event}
-                        print(f"  ✅ 信号卡已生成: {card_event.get('card', {}).get('coin')} {card_event.get('card', {}).get('direction')}")
+                        logger.info(f"  ✅ 信号卡已生成: {card_event.get('card', {}).get('coin')} {card_event.get('card', {}).get('direction')}")
                     else:
                         # 无信号时返回文字提示
                         coin_name = intent.coin_symbol or ""
@@ -149,13 +152,13 @@ class CryptoAnalystAgent:
 
                     if conversation_id:
                         session_manager.update(conversation_id, coin_symbol=intent.coin_symbol, question=question)
-                    print(f"\n=== 请求完成（信号卡）===\n")
+                    logger.info(f"\n=== 请求完成（信号卡）===\n")
                     return
                 # ── 信号卡分支结束 ──────────────────────────────────────
 
                 # 检查数据是否全空（API 可能因币种符号错误而全部失败）
                 if not skill_result.api_calls:
-                    print(f"  ⚠️ 所有 API 调用失败，币种符号可能有误: {intent.coin_symbol}")
+                    logger.info(f"  ⚠️ 所有 API 调用失败，币种符号可能有误: {intent.coin_symbol}")
                     if intent.language == "zh":
                         yield f"抱歉，无法获取 {intent.coin_symbol} 的市场数据，请检查币种符号是否正确（如 BTC、ETH、SOL）。"
                     else:
@@ -171,7 +174,7 @@ class CryptoAnalystAgent:
                         has_realtime_price = True
 
                 if not has_realtime_price:
-                    print(f"  ⚠️ 缺少实时价格，尝试单独获取 header 数据...")
+                    logger.info(f"  ⚠️ 缺少实时价格，尝试单独获取 header 数据...")
                     for retry in range(2):
                         try:
                             header = await asyncio.to_thread(get_header_data, intent.coin_symbol)
@@ -185,17 +188,17 @@ class CryptoAnalystAgent:
                                 skill_result.data["实时数据"] = price_info
                                 if "get_header_data" not in skill_result.api_calls:
                                     skill_result.api_calls.append("get_header_data")
-                                print(f"  ✅ 兜底获取成功(第{retry+1}次): 价格 {header.get('currentPrice')}")
+                                logger.info(f"  ✅ 兜底获取成功(第{retry+1}次): 价格 {header.get('currentPrice')}")
                                 break
                         except Exception as e:
-                            print(f"  ⚠️ 第{retry+1}次 header 获取失败: {e}")
+                            logger.info(f"  ⚠️ 第{retry+1}次 header 获取失败: {e}")
 
                     # 补充失败不报错，用已有数据继续生成回答
                     if not has_realtime_price and "实时数据" not in skill_result.data:
-                        print(f"  ⚠️ header API 不可用，使用已有 {len(skill_result.api_calls)} 个 API 数据继续回答")
+                        logger.info(f"  ⚠️ header API 不可用，使用已有 {len(skill_result.api_calls)} 个 API 数据继续回答")
 
                 # 步骤4：生成回答（使用用户语言）
-                print(f"\n[步骤4] 生成回答...")
+                logger.info(f"\n[步骤4] 生成回答...")
 
                 # 根据意图类型决定模式
                 if intent.intent_type == "analyze_quantitative":
@@ -214,7 +217,7 @@ class CryptoAnalystAgent:
                     yield chunk  # 立即发送每个chunk
 
                 response = "".join(full_response)
-                print(f"生成的回答: {response[:100]}...")
+                logger.info(f"生成的回答: {response[:100]}...")
 
                 # 保存会话：只存问题 + 识别到的币种
                 if conversation_id:
@@ -231,12 +234,10 @@ class CryptoAnalystAgent:
                     )
                     yield {"type": "suggestions", "suggestions": suggestions}
 
-                print(f"\n=== 请求完成 ===\n")
+                logger.info(f"\n=== 请求完成 ===\n")
 
             except Exception as e:
-                print(f"\n处理请求出错: {e}")
-                import traceback
-                traceback.print_exc()
+                logger.exception(f"处理请求出错: {e}")
 
                 # 根据错误类型返回友好的错误消息
                 error_msg = ""

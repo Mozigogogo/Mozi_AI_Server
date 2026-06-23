@@ -14,6 +14,9 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any
 
 from config.settings import settings
+from app.utils.logger import get_logger
+
+logger = get_logger("app.signals.review")
 
 
 def _get_conn():
@@ -176,9 +179,7 @@ def weekly_review() -> Dict[str, Any]:
         return report
 
     except Exception as e:
-        print(f"周期复盘异常: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"周期复盘异常: {e}")
         return {"status": "error", "message": str(e)}
     finally:
         if conn:

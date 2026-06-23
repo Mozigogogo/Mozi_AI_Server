@@ -4,8 +4,10 @@ from typing import List, Optional, Dict, Any
 from collections import OrderedDict
 from datetime import datetime, timedelta
 from app.core.config import get_settings
+from app.utils.logger import get_logger
 
 settings = get_settings()
+logger = get_logger("app.services.session_service")
 
 
 class LRUCache:
@@ -88,7 +90,7 @@ class SessionService:
 
         except Exception as e:
             # 数据库异常，返回空列表降级为无状态模式
-            print(f"[SessionService] 获取会话历史失败: {e}")
+            logger.error(f"获取会话历史失败: {e}")
             return []
 
     def add_message(self, session_id: str, role: str, content: str):
@@ -124,7 +126,7 @@ class SessionService:
 
         except Exception as e:
             # 数据库写入失败，仅记录日志不中断服务
-            print(f"[SessionService] 保存会话消息失败: {e}")
+            logger.error(f"保存会话消息失败: {e}")
 
     def clear_session(self, session_id: str):
         """
@@ -142,7 +144,7 @@ class SessionService:
             # 删除数据库记录
             self._delete_from_db(session_id)
         except Exception as e:
-            print(f"[SessionService] 清除会话失败: {e}")
+            logger.error(f"清除会话失败: {e}")
 
     def clear_all(self):
         """清除所有会话缓存"""

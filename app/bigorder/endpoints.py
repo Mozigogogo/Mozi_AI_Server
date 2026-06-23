@@ -10,6 +10,9 @@ from sse_starlette.sse import EventSourceResponse
 import app.bigorder.deps as bigorder_deps
 from app.bigorder.models import AnomalySignal, SignalLevel
 from config.settings import settings
+from app.utils.logger import get_logger
+
+logger = get_logger("app.bigorder.endpoints")
 
 router = APIRouter()
 
@@ -299,7 +302,7 @@ async def _save_to_mysql(signals: List[AnomalySignal]):
         conn.commit()
         cursor.close()
     except Exception as e:
-        print(f"MySQL 写入失败: {e}")
+        logger.error(f"MySQL 写入失败: {e}")
     finally:
         if conn:
             conn.close()

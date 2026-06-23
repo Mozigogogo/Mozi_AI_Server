@@ -10,6 +10,9 @@ from app.bigorder.models import (
     AnomalySignal, SignalLevel, OrderFlowStats, ExchangeCompare
 )
 from config.settings import settings
+from app.utils.logger import get_logger
+
+logger = get_logger("app.bigorder.scorer")
 
 
 class AnomalyScorer:
@@ -177,7 +180,7 @@ class AnomalyScorer:
                     if signal and signal.score.level != SignalLevel.NONE:
                         signals.append(signal)
                 except Exception as e:
-                    print(f"打分失败 {exchange}/{coin}: {e}")
+                    logger.error(f"打分失败 {exchange}/{coin}: {e}")
         signals.sort(key=lambda s: s.score.total_score, reverse=True)
         return signals
 

@@ -13,6 +13,9 @@
 import os
 from typing import Optional, Dict, Any, List
 from config.settings import settings
+from app.utils.logger import get_logger
+
+logger = get_logger("app.signals.backtest")
 
 
 def _env_get(key: str) -> str:
@@ -112,7 +115,7 @@ def backtest_from_signal_history(
         return None
 
     except Exception as e:
-        print(f"signal_history 回测失败: {e}")
+        logger.error(f"signal_history 回测失败: {e}")
         return None
     finally:
         if conn:
@@ -307,7 +310,7 @@ def _backtest_from_anomaly_legacy(
         }
 
     except Exception as e:
-        print(f"回测失败: {e}")
+        logger.error(f"回测失败: {e}")
         return None
     finally:
         if conn:

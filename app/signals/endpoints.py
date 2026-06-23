@@ -23,9 +23,11 @@ from app.services.data_service import (
     get_discovery_coins,
 )
 from app.skills.analysis_skills.quantitative import _parse_kline
+from app.utils.logger import get_logger
 from config.settings import settings
 
 router = APIRouter()
+logger = get_logger("app.signals.endpoints")
 
 # 已推送的信号去重缓存 {coin: (direction, grade, timestamp)}
 _pushed_signals: dict = {}
@@ -40,16 +42,22 @@ async def generate_signal(
     """为指定币种生成交易信号卡（含数学推导 + 自适应策略）"""
     coin = coin.upper()
 
-    # 获取实时价格 + K 线数据 + 成交量
+    # 获取实时价格 + K 线数据 + 成交量（1h 可选，失败降级为纯日线）
+    loop = asyncio.get_running_loop()
     try:
-        header_data, kline_data, hourly_data, volume_data = await asyncio.gather(
-            asyncio.get_running_loop().run_in_executor(None, get_header_data, coin),
-            asyncio.get_running_loop().run_in_executor(None, get_kline_data_for_period, coin, kline_type),
-            asyncio.get_running_loop().run_in_executor(None, get_kline_data_for_period, coin, 1),
-            asyncio.get_running_loop().run_in_executor(None, get_trade_volume, coin),
+        header_data, kline_data, volume_data = await asyncio.gather(
+            loop.run_in_executor(None, get_header_data, coin),
+            loop.run_in_executor(None, get_kline_data_for_period, coin, kline_type),
+            loop.run_in_executor(None, get_trade_volume, coin),
         )
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"获取K线数据失败: {str(e)}"})
+
+    hourly_data = None
+    try:
+        hourly_data = await loop.run_in_executor(None, get_kline_data_for_period, coin, 1)
+    except Exception as e:
+        logger.warning(f"{coin} 1h K线拉取失败，降级为纯日线: {e}")
 
     min_bars = 15 if kline_type == 1 else 25
     ohlcv = _parse_kline(kline_data, volume_data, min_bars=min_bars)
@@ -59,15 +67,14 @@ async def generate_signal(
     # 获取衍生品数据
     raw_data = {}
     try:
-        derivatives = await asyncio.get_running_loop().run_in_executor(
-            None, get_derivatives_agg, coin
-        )
+        derivatives = await loop.run_in_executor(None, get_derivatives_agg, coin)
         if derivatives:
             raw_data["derivatives"] = derivatives
     except Exception:
         pass
 
-    entry_ohlcv = _parse_kline(hourly_data, min_bars=15)
+    # entry_ohlcv 同时给入场 ATR 和 quantitative 双周期融合用，min_bars=55 满足 ema_triple
+    entry_ohlcv = _parse_kline(hourly_data, min_bars=55) if hourly_data else None
     raw_data["header"] = header_data
     raw_data["current_price"] = header_data.get("currentPrice") if isinstance(header_data, dict) else None
     raw_data["entry_ohlcv"] = entry_ohlcv

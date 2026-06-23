@@ -19,6 +19,9 @@ from app.signals.math_engine import run_math_derivation
 from app.signals.adaptive_strategy import get_strategy_engine
 import app.bigorder.deps as bigorder_deps
 from config.settings import settings
+from app.utils.logger import get_logger
+
+logger = get_logger("app.signals.fusion")
 
 
 def _extract_realtime_price(raw_data: dict) -> Optional[float]:
@@ -135,8 +138,14 @@ def _bigorder_source(coin: str, weight: float, lang: str = "zh") -> Optional[Sig
     )
 
 
-def _quantitative_source(coin: str, weight: float, lang: str = "zh") -> Optional[SignalSource]:
-    """获取量化六因子信号源"""
+def _quantitative_source(
+    coin: str, weight: float, lang: str = "zh",
+    entry_ohlcv: Optional[dict] = None,
+) -> Optional[SignalSource]:
+    """获取量化六因子信号源。
+
+    entry_ohlcv: 上层（endpoints/scan_all_coins）已拉的 1h OHLCV，传入复用避免重复 HTTP 请求。
+    """
     try:
         from app.skills.analysis_skills.quantitative import QuantitativeAnalysisSkill, _parse_kline
         from app.services.data_service import (
@@ -151,13 +160,14 @@ def _quantitative_source(coin: str, weight: float, lang: str = "zh") -> Optional
         kline = get_kline_data(coin, 2)
         volume = get_trade_volume(coin)
 
-        # 1h K线 72 根（满足 ema_triple 需 55）— 失败降级到纯日线
-        ohlcv_1h = None
-        try:
-            kline_1h = get_kline_data(coin, 1)
-            ohlcv_1h = _parse_kline(kline_1h, min_bars=55)
-        except Exception:
-            pass
+        # 1h K线 72 根（满足 ema_triple 需 55）。优先复用上层传入的 entry_ohlcv，否则自己拉
+        ohlcv_1h = entry_ohlcv
+        if ohlcv_1h is None:
+            try:
+                kline_1h = get_kline_data(coin, 1)
+                ohlcv_1h = _parse_kline(kline_1h, min_bars=55)
+            except Exception:
+                pass
 
         # 资金数据（激活 capital 因子）— 任一失败不拖垮整张卡
         bs_ratio = oi = fr = None
@@ -524,7 +534,10 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
     if bigorder_src:
         sources.append(bigorder_src)
 
-    quant_src = _quantitative_source(coin, adaptive_weights.get("quantitative", 0.35), lang)
+    quant_src = _quantitative_source(
+        coin, adaptive_weights.get("quantitative", 0.35), lang,
+        entry_ohlcv=raw_data.get("entry_ohlcv"),
+    )
     if quant_src:
         sources.append(quant_src)
 
@@ -737,7 +750,7 @@ def generate_card_for_chat(coin: str, tier: str = "pro", always: bool = False, l
 
         ohlcv = _parse_kline(daily_data, volume_data)
         if not ohlcv:
-            print(f"⚠️ generate_card_for_chat({coin}): K 线数据不足（daily keys={list(timeframes.keys())}）")
+            logger.warning(f"generate_card_for_chat({coin}): K 线数据不足（daily keys={list(timeframes.keys())}）")
             return None
 
         entry_ohlcv = _parse_kline(hourly_data, min_bars=15)
@@ -780,7 +793,7 @@ def generate_card_for_chat(coin: str, tier: str = "pro", always: bool = False, l
         return event_data
 
     except Exception as e:
-        print(f"⚠️ generate_card_for_chat({coin}) 失败: {type(e).__name__}: {e}")
+        logger.error(f"generate_card_for_chat({coin}) 失败: {type(e).__name__}: {e}")
         return None
 
 

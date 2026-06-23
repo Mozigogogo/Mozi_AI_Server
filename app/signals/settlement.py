@@ -19,6 +19,9 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 from config.settings import settings
+from app.utils.logger import get_logger
+
+logger = get_logger("app.signals.settlement")
 
 # ── 模式检测 ────────────────────────────────────────────────────────────────
 
@@ -140,9 +143,9 @@ def _ensure_tunnel():
 
             _SSH_TUNNEL = {"ssh": ssh, "transport": transport, "server": server,
                            "thread": t, "stop": stop_event, "alive": True}
-            print(f"SSH隧道已建立: localhost:{LOCAL_PORT} -> remote:8001")
+            logger.info(f"SSH隧道已建立: localhost:{LOCAL_PORT} -> remote:8001")
         except Exception as e:
-            print(f"SSH隧道建立失败: {e}，将使用本地文件兜底")
+            logger.warning(f"SSH隧道建立失败: {e}，将使用本地文件兜底")
             _SSH_TUNNEL = None
 
 
@@ -222,7 +225,7 @@ def _save_signal_card_direct(card) -> Optional[int]:
         cursor.close()
         return rid
     except Exception as e:
-        print(f"信号卡存库失败: {e}")
+        logger.error(f"信号卡存库失败: {e}")
         return None
     finally:
         if conn:
@@ -250,7 +253,7 @@ def _save_signal_card_proxy(card) -> Optional[int]:
     result = _proxy_post("/api/save_signal_card", payload)
     if result.get("ok"):
         return result.get("id")
-    print(f"信号卡存库(代理)失败: {result.get('error')}")
+    logger.error(f"信号卡存库(代理)失败: {result.get('error')}")
     return None
 
 
@@ -291,7 +294,7 @@ def _settle_pending_direct() -> Dict[str, int]:
                     pass
         return stats
     except Exception as e:
-        print(f"结算任务异常: {e}")
+        logger.error(f"结算任务异常: {e}")
         return {"settled": 0, "hit_tp": 0, "hit_sl": 0, "expired": 0}
     finally:
         if conn:
@@ -357,7 +360,7 @@ def _update_status_direct(conn, card_id: int, status: str, settled_price: float,
         conn.commit()
         cursor.close()
     except Exception as e:
-        print(f"更新信号卡状态失败(id={card_id}): {e}")
+        logger.error(f"更新信号卡状态失败(id={card_id}): {e}")
 
 
 def _settle_pending_proxy() -> Dict[str, int]:
@@ -430,7 +433,7 @@ def _settle_pending_proxy() -> Dict[str, int]:
                     pass
         return stats
     except Exception as e:
-        print(f"结算(代理)异常: {e}")
+        logger.error(f"结算(代理)异常: {e}")
         return {"settled": 0, "hit_tp": 0, "hit_sl": 0, "expired": 0}
 
 
@@ -454,7 +457,7 @@ def _fetch_hourly_klines(coin: str, since: datetime) -> List[dict]:
                            "low": float(bar[2]), "close": float(bar[3])})
         return result
     except Exception as e:
-        print(f"拉取K线失败({coin}): {e}")
+        logger.error(f"拉取K线失败({coin}): {e}")
         return []
 
 
@@ -514,7 +517,7 @@ def get_accumulated_winrate(coin: str = None, grade: str = None, days: int = 30)
                 "hit_tp": hit_tp, "hit_sl": hit_sl, "expired": expired,
                 "avg_profit_pct": round(sum(pnls) / len(pnls), 2)}
     except Exception as e:
-        print(f"累加胜率查询失败: {e}")
+        logger.error(f"累加胜率查询失败: {e}")
         return None
     finally:
         if conn:
@@ -586,9 +589,9 @@ def save_scan_batch(results: list, scan_time: float):
             "total_coins": total_coins, "signal_count": len(signals),
             "scan_time": round(scan_time, 1), "results_json": results_json, "displays_json": displays_json})
         if result.get("ok"):
-            print(f"扫描结果已写入远程 scan_cache ({len(signals)} signals)")
+            logger.info(f"扫描结果已写入远程 scan_cache ({len(signals)} signals)")
         else:
-            print(f"扫描结果写远程失败: {result.get('error')}")
+            logger.error(f"扫描结果写远程失败: {result.get('error')}")
     else:
         conn = None
         try:
@@ -604,9 +607,9 @@ def save_scan_batch(results: list, scan_time: float):
             cursor.execute("DELETE FROM scan_cache WHERE id NOT IN (SELECT id FROM (SELECT id FROM scan_cache ORDER BY id DESC LIMIT 10) t)")
             conn.commit()
             cursor.close()
-            print(f"扫描结果已写入 scan_cache ({len(signals)} signals)")
+            logger.info(f"扫描结果已写入 scan_cache ({len(signals)} signals)")
         except Exception as e:
-            print(f"扫描结果存MySQL失败: {e}")
+            logger.error(f"扫描结果存MySQL失败: {e}")
         finally:
             if conn:
                 conn.close()
@@ -618,7 +621,7 @@ def save_scan_batch(results: list, scan_time: float):
                  "displays": display_cards, "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         _SCAN_CACHE_FILE.write_text(json.dumps(cache, ensure_ascii=False, indent=2))
     except Exception as e:
-        print(f"扫描结果写本地文件失败: {e}")
+        logger.error(f"扫描结果写本地文件失败: {e}")
 
 
 def _safe_json_loads(raw):
@@ -674,7 +677,7 @@ def get_latest_scan(max_age_seconds: int = 1800) -> Optional[Dict[str, Any]]:
                     "is_stale": age > max_age_seconds,
                 }
         except Exception as e:
-            print(f"读MySQL扫描缓存失败: {e}")
+            logger.error(f"读MySQL扫描缓存失败: {e}")
         finally:
             if conn:
                 conn.close()

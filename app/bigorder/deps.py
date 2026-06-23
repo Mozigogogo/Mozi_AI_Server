@@ -1,5 +1,8 @@
 """BigOrder 依赖管理 - Redis 可选"""
 from config.settings import get_settings
+from app.utils.logger import get_logger
+
+logger = get_logger("app.bigorder.deps")
 
 consumer = None
 scorer = None
@@ -55,7 +58,7 @@ def init_bigorder_deps():
     _init_error = None
 
     if not settings.redis_enabled:
-        print("BigOrder: REDIS_ENABLED=false, 跳过初始化")
+        logger.info("BigOrder: REDIS_ENABLED=false, 跳过初始化")
         _init_error = "REDIS_ENABLED=false"
         return
 
@@ -69,19 +72,19 @@ def init_bigorder_deps():
         if not consumer.ping():
             consumer = None
             _init_error = f"Redis ping 失败 ({settings.redis_host}:{settings.redis_port})"
-            print(f"BigOrder: {_init_error}")
+            logger.warning(f"BigOrder: {_init_error}")
             return
 
         history = HistoryTracker(consumer.client)
         scorer = AnomalyScorer(consumer, history)
         llm_analyzer = LLMAnalyzer()
-        print("BigOrder: 依赖初始化成功")
+        logger.info("BigOrder: 依赖初始化成功")
 
     except ImportError as e:
         consumer = None
         _init_error = f"缺少依赖包: {e}"
-        print(f"BigOrder: {_init_error}")
+        logger.error(f"BigOrder: {_init_error}")
     except Exception as e:
         consumer = None
         _init_error = str(e)
-        print(f"BigOrder: 初始化失败: {e}")
+        logger.error(f"BigOrder: 初始化失败: {e}")

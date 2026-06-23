@@ -6,6 +6,9 @@ from openai import AsyncOpenAI
 from app.bigorder.models import AnomalySignal, SignalLevel
 from app.core.llm_client import get_llm_client
 from config.settings import settings
+from app.utils.logger import get_logger
+
+logger = get_logger("app.bigorder.llm_analyzer")
 
 
 class LLMAnalyzer:
@@ -116,7 +119,7 @@ Keep under 200 words. Do not mention other coins. Do not fabricate data."""
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
-            print(f"LLM 分析失败: {e}")
+            logger.error(f"LLM 分析失败: {e}")
             if lang == "en":
                 return f"⚠️ LLM analysis unavailable ({signal.coin} total score: {s.total_score})"
             return f"⚠️ LLM解读暂不可用（{signal.coin} 综合得分{s.total_score}）"

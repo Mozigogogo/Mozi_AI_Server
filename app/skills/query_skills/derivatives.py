@@ -1,5 +1,6 @@
 """衍生品查询 Skill"""
 import asyncio
+from app.utils.logger import get_logger
 from app.skills.base import BaseSkill, IntentInfo, SkillResult
 from app.services.data_service import (
     get_buy_sell_ratio,
@@ -8,6 +9,8 @@ from app.services.data_service import (
     get_funding_rate
 )
 
+
+logger = get_logger("app.skills.query_skills.derivatives")
 
 class DerivativesQuerySkill(BaseSkill):
     """衍生品查询 Skill - 查询持仓、资金费率等"""
@@ -58,7 +61,7 @@ class DerivativesQuerySkill(BaseSkill):
             for i, api_name in enumerate(api_calls):
                 result = results[i]
                 if isinstance(result, Exception):
-                    print(f"  警告: {api_name} 调用失败: {str(result)}")
+                    logger.info(f"  警告: {api_name} 调用失败: {str(result)}")
                 else:
                     raw_data[api_name] = result
 

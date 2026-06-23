@@ -1,6 +1,7 @@
 """Skill 路由器 - 根据 required_apis 精准匹配 Skill"""
 from typing import Dict
 
+from app.utils.logger import get_logger
 from app.skills.base import BaseSkill, IntentInfo
 from app.skills.query_skills import (
     BasicInfoSkill,
@@ -16,6 +17,8 @@ from app.skills.analysis_skills import (
     SignalCardSkill,
 )
 
+
+logger = get_logger("app.skills.skill_router")
 
 class SkillRouter:
     """Skill 路由器 - 根据意图精准匹配 Skill"""
@@ -61,11 +64,11 @@ class SkillRouter:
         # 遍历所有 Skills，找到匹配的
         for skill_name, skill in self.skills.items():
             if skill.match(intent, mode):
-                print(f"匹配到 Skill: {skill_name}")
+                logger.info(f"匹配到 Skill: {skill_name}")
                 return skill
 
         # 如果没有匹配到，返回通用查询 Skill
-        print("未找到匹配的 Skill，使用通用查询 Skill")
+        logger.info("未找到匹配的 Skill，使用通用查询 Skill")
         return BasicInfoSkill()
 
 
