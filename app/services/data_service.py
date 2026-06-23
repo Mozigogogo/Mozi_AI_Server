@@ -148,7 +148,7 @@ def fetch_json(url: str, timeout: int = None, max_retries: int = None) -> Any:
 
 
 KLINE_TYPE_META = {
-    1: {"name": "hourly_24h", "label": "小时K线(24h)", "limit": 24},
+    1: {"name": "hourly_72h", "label": "小时K线(72h)", "limit": 72},
     2: {"name": "daily_60d", "label": "日线(60d)", "limit": 60},
     3: {"name": "weekly_1y", "label": "周线(近1年)", "limit": 52},
     4: {"name": "monthly_all", "label": "月线(全量)", "limit": None},

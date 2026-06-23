@@ -72,6 +72,11 @@ class TradeSignal:
     key_risk: str               # 最主要的风险描述
     factors: list[FactorResult] = field(default_factory=list)
 
+    # 双周期融合诊断（日线 + 1h）
+    daily_composite: Optional[float] = None      # 日线 composite
+    hourly_composite: Optional[float] = None     # 1h composite（None=数据不足）
+    tf_agreement: Optional[str] = None           # agreement/disagreement/neutral/insufficient_1h_data
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # K 线解析
@@ -595,6 +600,78 @@ def _apply_adaptive_weights(factors: list[FactorResult], regime: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 双周期融合：日线 + 1h
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 双周期融合权重（日线 vs 1h），按 regime 调整
+# - trending：日线主导，1h 提供时机
+# - extreme_trend：日线进一步主导（强趋势不轻易反转）
+# - weak_trend：均衡（短期信号此时更有价值）
+# - ranging：1h 反而主导（震荡市短期反转是主要 alpha）
+DUAL_TF_WEIGHTS: dict[str, tuple[float, float]] = {
+    "trending":       (0.65, 0.35),
+    "extreme_trend":  (0.75, 0.25),
+    "weak_trend":     (0.55, 0.45),
+    "ranging":        (0.45, 0.55),
+}
+
+# 共振/分歧调整系数（应用到加权平均后的 composite）
+AGREEMENT_BONUS = 0.20        # 日线 vs 1h 同向 → composite 绝对值 +20%
+DISAGREEMENT_PENALTY = 0.30   # 日线 vs 1h 反向 → composite 绝对值 -30%
+MIN_1H_SIGNAL = 15            # 1h composite 绝对值阈值，低于此视为噪声不参与共振判定
+
+
+def _compute_dual_tf_composite(
+    factors_daily: list[FactorResult],
+    factors_1h: Optional[list[FactorResult]],
+    regime: str,
+) -> tuple[float, dict]:
+    """计算双周期融合 composite。
+
+    返回 (composite_final -100~+100, diagnostic_dict)。
+    diagnostic 含每日 composite、1h composite、共振状态、应用的权重。
+    1h 数据不足时退化到纯日线 composite。
+    """
+    composite_daily = sum(f.score * f.weight for f in factors_daily)
+
+    if not factors_1h or len(factors_1h) < 6:
+        return composite_daily, {
+            "daily_composite": round(composite_daily, 2),
+            "hourly_composite": None,
+            "agreement": "insufficient_1h_data",
+            "weights": (1.0, 0.0),
+            "fused_composite": round(composite_daily, 2),
+        }
+
+    composite_1h = sum(f.score * f.weight for f in factors_1h)
+    w_daily, w_1h = DUAL_TF_WEIGHTS.get(regime, (0.65, 0.35))
+
+    composite_base = composite_daily * w_daily + composite_1h * w_1h
+
+    sign_daily = 1 if composite_daily > 0 else (-1 if composite_daily < 0 else 0)
+    sign_1h = 1 if composite_1h > 0 else (-1 if composite_1h < 0 else 0)
+
+    if sign_daily != 0 and sign_daily == sign_1h and abs(composite_1h) >= MIN_1H_SIGNAL:
+        composite = composite_base * (1 + AGREEMENT_BONUS)
+        agreement = "agreement"
+    elif sign_daily != 0 and sign_1h != 0 and sign_daily != sign_1h and abs(composite_1h) >= MIN_1H_SIGNAL:
+        composite = composite_base * (1 - DISAGREEMENT_PENALTY)
+        agreement = "disagreement"
+    else:
+        composite = composite_base
+        agreement = "neutral"
+
+    composite = max(-100, min(100, composite))
+    return composite, {
+        "daily_composite": round(composite_daily, 2),
+        "hourly_composite": round(composite_1h, 2),
+        "agreement": agreement,
+        "weights": (w_daily, w_1h),
+        "fused_composite": round(composite, 2),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 合成信号 → 可执行交易指令
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -603,6 +680,8 @@ def _build_trade_signal(
     ohlcv: dict,
     raw_data: dict,
     symbol: str,
+    override_composite: Optional[float] = None,
+    dual_tf_info: Optional[dict] = None,
 ) -> TradeSignal:
     price   = ohlcv["closes"][-1]
     highs   = ohlcv["highs"]
@@ -610,8 +689,8 @@ def _build_trade_signal(
     closes  = ohlcv["closes"]
     volumes = ohlcv["volumes"]
 
-    # 加权综合评分
-    composite = sum(f.score * f.weight for f in factors)
+    # 加权综合评分（双周期融合时由外部传入 override_composite）
+    composite = override_composite if override_composite is not None else sum(f.score * f.weight for f in factors)
 
     # 方向与强度
     bullish_count = sum(1 for f in factors if f.signal == "bullish")
@@ -725,12 +804,47 @@ def _build_trade_signal(
         invalidation_price=round(invalidation, 6),
         key_risk="；".join(risks[:2]),
         factors=factors,
+        daily_composite=(dual_tf_info or {}).get("daily_composite"),
+        hourly_composite=(dual_tf_info or {}).get("hourly_composite"),
+        tf_agreement=(dual_tf_info or {}).get("agreement"),
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LLM 数据包构建
 # ─────────────────────────────────────────────────────────────────────────────
+
+_AGREEMENT_CN = {
+    "agreement": "同向共振",
+    "disagreement": "周期分歧",
+    "neutral": "中性",
+    "insufficient_1h_data": "1h数据不足",
+}
+
+
+def _build_multi_tf_payload(signal: TradeSignal) -> dict:
+    """构建"多周期共振"section：展示日线 vs 1h 的 composite 和共振状态。"""
+    agreement = signal.tf_agreement or "insufficient_1h_data"
+    daily = signal.daily_composite
+    hourly = signal.hourly_composite
+
+    if agreement == "insufficient_1h_data" or hourly is None:
+        explanation = "1h K线数据不足，仅按日线综合评分出信号"
+    elif agreement == "agreement":
+        explanation = f"日线({daily:.0f})与1h({hourly:.0f})同向，共振加成 +20%"
+    elif agreement == "disagreement":
+        explanation = f"日线({daily:.0f})与1h({hourly:.0f})反向，分歧降级 -30%"
+    else:
+        explanation = f"日线({daily:.0f})与1h({hourly:.0f})综合判定"
+
+    return {
+        "日线综合评分": daily,
+        "1h综合评分": hourly,
+        "共振状态": _AGREEMENT_CN.get(agreement, "未知"),
+        "融合后评分": signal.composite_score,
+        "说明": explanation,
+    }
+
 
 def _build_llm_payload(symbol: str, signal: TradeSignal, raw_data: dict) -> dict:
     """
@@ -793,6 +907,7 @@ def _build_llm_payload(symbol: str, signal: TradeSignal, raw_data: dict) -> dict
         },
         "主要风险": signal.key_risk,
         "六因子明细": factor_summary,
+        "多周期共振": _build_multi_tf_payload(signal),
     }
 
     # 附加新闻（最新3条）
@@ -914,7 +1029,7 @@ class QuantitativeAnalysisSkill:
         ohlcv = _apply_realtime_price(ohlcv, realtime_price)
         price = ohlcv["closes"][-1]
 
-        # 计算六个因子
+        # 日线六因子
         factors = [
             _score_trend(ohlcv),
             _score_momentum(ohlcv),
@@ -928,8 +1043,33 @@ class QuantitativeAnalysisSkill:
         regime = _determine_market_regime(ohlcv)
         _apply_adaptive_weights(factors, regime)
 
+        # 1h 六因子（双周期融合核心）
+        ohlcv_1h = raw_data.get("hourly_ohlcv")
+        factors_1h = None
+        if ohlcv_1h and isinstance(ohlcv_1h, dict) and len(ohlcv_1h.get("closes", [])) >= 55:
+            try:
+                price_1h = ohlcv_1h["closes"][-1]
+                factors_1h = [
+                    _score_trend(ohlcv_1h),
+                    _score_momentum(ohlcv_1h),
+                    _score_volume_price(ohlcv_1h),
+                    _score_capital(raw_data),  # 资金因子不分周期，共用同一份
+                    _score_volatility_risk(ohlcv_1h, price_1h),
+                    _score_market_structure(ohlcv_1h, price_1h),
+                ]
+                _apply_adaptive_weights(factors_1h, regime)
+            except Exception:
+                factors_1h = None  # 1h 指标计算失败时降级到纯日线
+
+        # 双周期融合 composite
+        fused_composite, dual_tf_info = _compute_dual_tf_composite(factors, factors_1h, regime)
+
         # 合成可执行交易信号
-        signal = _build_trade_signal(factors, ohlcv, raw_data, symbol)
+        signal = _build_trade_signal(
+            factors, ohlcv, raw_data, symbol,
+            override_composite=fused_composite,
+            dual_tf_info=dual_tf_info,
+        )
 
         # 构建 LLM 数据包
         return _build_llm_payload(symbol, signal, raw_data)

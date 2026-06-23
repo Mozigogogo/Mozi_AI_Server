@@ -73,7 +73,7 @@ async def generate_signal(
     raw_data["entry_ohlcv"] = entry_ohlcv
     raw_data["kline_periods"] = {
         "signal": kline_data.get("periodName") if isinstance(kline_data, dict) else None,
-        "entry": "hourly_24h" if entry_ohlcv else kline_data.get("periodName") if isinstance(kline_data, dict) else None,
+        "entry": "hourly_72h" if entry_ohlcv else kline_data.get("periodName") if isinstance(kline_data, dict) else None,
     }
 
     # 融合生成信号卡

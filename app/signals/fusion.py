@@ -138,8 +138,11 @@ def _bigorder_source(coin: str, weight: float, lang: str = "zh") -> Optional[Sig
 def _quantitative_source(coin: str, weight: float, lang: str = "zh") -> Optional[SignalSource]:
     """获取量化六因子信号源"""
     try:
-        from app.skills.analysis_skills.quantitative import QuantitativeAnalysisSkill
-        from app.services.data_service import get_header_data, get_kline_data, get_trade_volume
+        from app.skills.analysis_skills.quantitative import QuantitativeAnalysisSkill, _parse_kline
+        from app.services.data_service import (
+            get_header_data, get_kline_data, get_trade_volume,
+            get_buy_sell_ratio, get_open_interest, get_funding_rate,
+        )
     except ImportError:
         return None
 
@@ -147,10 +150,32 @@ def _quantitative_source(coin: str, weight: float, lang: str = "zh") -> Optional
         header = get_header_data(coin)
         kline = get_kline_data(coin, 2)
         volume = get_trade_volume(coin)
+
+        # 1h K线 72 根（满足 ema_triple 需 55）— 失败降级到纯日线
+        ohlcv_1h = None
+        try:
+            kline_1h = get_kline_data(coin, 1)
+            ohlcv_1h = _parse_kline(kline_1h, min_bars=55)
+        except Exception:
+            pass
+
+        # 资金数据（激活 capital 因子）— 任一失败不拖垮整张卡
+        bs_ratio = oi = fr = None
+        try: bs_ratio = get_buy_sell_ratio(coin)
+        except Exception: pass
+        try: oi = get_open_interest(coin)
+        except Exception: pass
+        try: fr = get_funding_rate(coin)
+        except Exception: pass
+
         raw_data = {
             "get_header_data": header,
             "get_kline_data": kline,
             "get_trade_volume": volume,
+            "get_buy_sell_ratio": bs_ratio,
+            "get_open_interest": oi,
+            "get_funding_rate": fr,
+            "hourly_ohlcv": ohlcv_1h,
         }
 
         skill = QuantitativeAnalysisSkill()
@@ -191,6 +216,17 @@ def _quantitative_source(coin: str, weight: float, lang: str = "zh") -> Optional
         except ValueError:
             confidence = 0
 
+    # 多周期共振标记（前端信号卡直接看到分歧/共振）
+    multi_tf = result.get("多周期共振") or {}
+    tf_state = multi_tf.get("共振状态", "")
+    daily_c = multi_tf.get("日线综合评分")
+    hourly_c = multi_tf.get("1h综合评分")
+    tf_marker = ""
+    if tf_state == "周期分歧" and daily_c is not None and hourly_c is not None:
+        tf_marker = f" | ⚠️ 周期分歧（日{daily_c:.0f} vs 1h{hourly_c:.0f}）"
+    elif tf_state == "同向共振":
+        tf_marker = " | ✓ 双周期共振"
+
     direction_map = {
         "long": SignalDirection.LONG,
         "short": SignalDirection.SHORT,
@@ -203,9 +239,9 @@ def _quantitative_source(coin: str, weight: float, lang: str = "zh") -> Optional
         direction=direction_map.get(direction_str, SignalDirection.NEUTRAL),
         weight=weight,
         detail=(
-            f"Score {composite:.0f}, strength {strength_en}, confidence {confidence}%"
+            f"Score {composite:.0f}, strength {strength_en}, confidence {confidence}%{tf_marker}"
             if lang == "en" else
-            f"综合评分{composite:.0f}, 强度{strength}, 置信度{confidence}%"
+            f"综合评分{composite:.0f}, 强度{strength}, 置信度{confidence}%{tf_marker}"
         ),
     )
 
@@ -697,7 +733,7 @@ def generate_card_for_chat(coin: str, tier: str = "pro", always: bool = False, l
         volume_data = get_trade_volume(coin)
 
         daily_data = timeframes.get("daily_60d") or timeframes.get("daily_30d") or {}
-        hourly_data = timeframes.get("hourly_24h") or {}
+        hourly_data = timeframes.get("hourly_72h") or {}
 
         ohlcv = _parse_kline(daily_data, volume_data)
         if not ohlcv:
@@ -735,7 +771,7 @@ def generate_card_for_chat(coin: str, tier: str = "pro", always: bool = False, l
         event_data = _build_card_event(signal_card, bt, tier)
         event_data["price_source"] = "header.currentPrice"
         event_data["kline_periods"] = {
-            "entry": "hourly_24h" if entry_ohlcv else "daily_30d",
+            "entry": "hourly_72h" if entry_ohlcv else "daily_30d",
             "signal": "daily_30d",
             "weekly": "weekly_1y",
             "monthly": "monthly_all",

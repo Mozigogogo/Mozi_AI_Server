@@ -422,7 +422,7 @@ def _scan_single(coin: str) -> ScanResult:
             "entry_ohlcv": entry_ohlcv,
             "kline_periods": {
                 "signal": "daily_30d",
-                "entry": "hourly_24h" if entry_ohlcv else "daily_30d",
+                "entry": "hourly_72h" if entry_ohlcv else "daily_30d",
             },
         }
         try:
