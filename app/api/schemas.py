@@ -60,6 +60,36 @@ class ChatRequest(BaseModel):
     )
 
 
+class RouteRequest(BaseModel):
+    """指令路由请求"""
+    model_config = ConfigDict(populate_by_name=True)
+    message: str = Field(
+        ...,
+        alias="question",
+        description="用户问题",
+        min_length=1,
+        max_length=1000,
+        example="BTC现在多少钱",
+    )
+    conversation_id: Optional[str] = Field(
+        default=None, description="会话ID（可选，预留上下文使用）", max_length=100
+    )
+
+
+class RouteResponse(BaseModel):
+    """指令路由响应"""
+    command: Optional[str] = Field(
+        None, description="对应指令，如 /price。LLM 失败时为 null，前端读 fallback_text"
+    )
+    coin_symbol: Optional[str] = Field(None, description="从问题中提取的币种符号（大写）")
+    confidence: float = Field(0.0, description="置信度 0-1")
+    reason: str = Field("", description="判定理由（调试用）")
+    language: str = Field("zh", description="zh 或 en")
+    fallback_text: Optional[str] = Field(
+        None, description="LLM 失败时返回的能力介绍文案，前端直接渲染为消息"
+    )
+
+
 class ToolInfo(BaseModel):
     """工具信息模型"""
     name: str = Field(..., description="工具名称")

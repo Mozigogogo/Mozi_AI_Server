@@ -16,8 +16,11 @@ from app.api.schemas import (
     ChatRequest,
     HealthResponse,
     ErrorResponse,
+    RouteRequest,
+    RouteResponse,
 )
 from app.skills.agent import crypto_agent
+from app.skills.command_router import command_router
 from app.core.config import get_settings
 from app.core.exceptions import CryptoAnalystException
 from app.utils.validators import validate_symbol, validate_question, validate_language
@@ -123,6 +126,28 @@ async def chat_stream(request: ChatRequest):
             yield render(sse_error(rid, ERR_INTERNAL, f"对话失败: {e}"))
 
     return EventSourceResponse(event_generator())
+
+
+@router.post("/route", response_model=RouteResponse)
+async def route_command(request: RouteRequest):
+    """根据用户问题识别意图并返回对应指令（/price /ai /chat /bigorder /predict /alert）"""
+    rid = f"route_{int(time.time()*1000)}"
+    trace(rid, "enter", endpoint="route", msg=mask(request.message))
+
+    try:
+        result = await command_router.classify(request.message)
+        trace(rid, "route.done",
+              command=result.get("command"),
+              coin=result.get("coin_symbol"),
+              conf=result.get("confidence"))
+        return RouteResponse(**result)
+    except Exception as e:
+        logger.exception(f"/route 内部错误: {e}")
+        return RouteResponse(
+            command=None,
+            reason=f"内部错误: {e}",
+            fallback_text=command_router._fallback(str(e))["fallback_text"],
+        )
 
 
 @router.get("/symbols")
