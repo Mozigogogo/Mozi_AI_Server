@@ -714,3 +714,181 @@ async def query_history(
         }
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+# ── 策略评估：多维切片回测 ────────────────────────────────────────────────────
+
+_ALLOWED_GROUP_BY = {
+    "direction": "direction",
+    "grade": "grade",
+    "coin": "coin",
+    "strategy_version": "strategy_version",
+    "tf_agreement": "JSON_UNQUOTE(JSON_EXTRACT(math_json, '$.tf_agreement'))",
+    "regime": "JSON_UNQUOTE(JSON_EXTRACT(math_json, '$.market_regime'))",
+}
+
+
+def _strategy_review_query(
+    days: int,
+    group_by: Optional[str],
+    coin: Optional[str],
+    direction: Optional[str],
+    grade: Optional[str],
+    strategy_version: Optional[int],
+    tf_agreement: Optional[str],
+) -> dict:
+    """聚合查询 signal_card_history，按指定维度切片。直连 MySQL。"""
+    from app.signals.settlement import _USE_PROXY, _proxy_get, _get_conn
+    import pymysql.cursors
+
+    if _USE_PROXY:
+        result = _proxy_get("/api/strategy-review", {
+            "days": days, "group_by": group_by,
+            "coin": coin, "direction": direction, "grade": grade,
+            "strategy_version": strategy_version, "tf_agreement": tf_agreement,
+        })
+        if not result.get("ok"):
+            return {"error": result.get("error", "proxy query failed")}
+        return result.get("data", {})
+
+    conn = None
+    try:
+        conn = _get_conn()
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+
+        where_parts = [
+            "status IN ('hit_tp', 'hit_sl', 'expired')",
+            "created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)",
+        ]
+        params: list = [days]
+        if coin:
+            where_parts.append("coin = %s"); params.append(coin.upper())
+        if direction:
+            where_parts.append("direction = %s"); params.append(direction)
+        if grade:
+            where_parts.append("grade = %s"); params.append(grade.upper())
+        if strategy_version:
+            where_parts.append("strategy_version = %s"); params.append(strategy_version)
+        if tf_agreement:
+            where_parts.append("JSON_UNQUOTE(JSON_EXTRACT(math_json, '$.tf_agreement')) = %s")
+            params.append(tf_agreement)
+        where = " AND ".join(where_parts)
+
+        # totals（不分组）
+        cursor.execute(
+            f"""SELECT
+                   COUNT(*) AS n,
+                   SUM(status = 'hit_tp') AS tp,
+                   SUM(status = 'hit_sl') AS sl,
+                   SUM(status = 'expired') AS exp,
+                   SUM(status = 'hit_tp' OR (status = 'expired' AND pnl_pct > 0)) AS wins,
+                   COALESCE(AVG(pnl_pct), 0) AS avg_pnl,
+                   COALESCE(SUM(pnl_pct), 0) AS sum_pnl
+                FROM signal_card_history
+                WHERE {where}""",
+            params,
+        )
+        t = cursor.fetchone()
+        totals = {
+            "sample_count": int(t["n"] or 0),
+            "win_rate": round((t["wins"] or 0) / t["n"] * 100, 1) if t["n"] else 0.0,
+            "avg_pnl_pct": round(float(t["avg_pnl"] or 0), 2),
+            "sum_pnl_pct": round(float(t["sum_pnl"] or 0), 2),
+            "hit_tp": int(t["tp"] or 0), "hit_sl": int(t["sl"] or 0), "expired": int(t["exp"] or 0),
+        }
+
+        groups = []
+        if group_by:
+            if group_by not in _ALLOWED_GROUP_BY:
+                return {"error": f"invalid group_by: {group_by}"}
+            group_expr = _ALLOWED_GROUP_BY[group_by]
+            cursor.execute(
+                f"""SELECT
+                       {group_expr} AS group_key,
+                       COUNT(*) AS n,
+                       SUM(status = 'hit_tp') AS tp,
+                       SUM(status = 'hit_sl') AS sl,
+                       SUM(status = 'expired') AS exp,
+                       SUM(status = 'hit_tp' OR (status = 'expired' AND pnl_pct > 0)) AS wins,
+                       COALESCE(AVG(pnl_pct), 0) AS avg_pnl,
+                       COALESCE(SUM(pnl_pct), 0) AS sum_pnl
+                    FROM signal_card_history
+                    WHERE {where}
+                    GROUP BY group_key
+                    ORDER BY n DESC""",
+                params,
+            )
+            for r in cursor.fetchall():
+                key = r["group_key"]
+                if key is None:
+                    note = "math_json 缺该字段（历史卡或非 fusion 路径）" if group_by in ("tf_agreement", "regime") else None
+                    groups.append({
+                        "key": None, "note": note,
+                        "sample_count": int(r["n"] or 0),
+                        "win_rate": round((r["wins"] or 0) / r["n"] * 100, 1) if r["n"] else 0.0,
+                        "avg_pnl_pct": round(float(r["avg_pnl"] or 0), 2),
+                        "sum_pnl_pct": round(float(r["sum_pnl"] or 0), 2),
+                        "hit_tp": int(r["tp"] or 0), "hit_sl": int(r["sl"] or 0), "expired": int(r["exp"] or 0),
+                    })
+                else:
+                    groups.append({
+                        "key": key,
+                        "sample_count": int(r["n"] or 0),
+                        "win_rate": round((r["wins"] or 0) / r["n"] * 100, 1) if r["n"] else 0.0,
+                        "avg_pnl_pct": round(float(r["avg_pnl"] or 0), 2),
+                        "sum_pnl_pct": round(float(r["sum_pnl"] or 0), 2),
+                        "hit_tp": int(r["tp"] or 0), "hit_sl": int(r["sl"] or 0), "expired": int(r["exp"] or 0),
+                    })
+
+        cursor.close()
+        return {"totals": totals, "groups": groups}
+    except Exception as e:
+        logger.exception(f"strategy-review 查询失败: {e}")
+        return {"error": str(e)}
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.get("/strategy-review")
+async def strategy_review(
+    days: int = Query(14, ge=1, le=90, description="回看天数"),
+    group_by: Optional[str] = Query(
+        None,
+        description="分组维度：direction / grade / coin / strategy_version / tf_agreement / regime",
+    ),
+    coin: Optional[str] = Query(None, description="过滤：币种，如 BTC"),
+    direction: Optional[str] = Query(None, description="过滤：long / short"),
+    grade: Optional[str] = Query(None, description="过滤：S / A / B"),
+    strategy_version: Optional[int] = Query(None, description="过滤：策略版本（v4=双周期融合）"),
+    tf_agreement: Optional[str] = Query(
+        None,
+        description="过滤：agreement / disagreement / neutral / insufficient_1h_data",
+    ),
+):
+    """
+    策略评估：多维切片回测（解决 /winrate 不能按方向/共振切片 + /backtest 样本门槛过高的问题）
+
+    典型用法：
+      - 双周期融合 alpha 检验：?days=14&strategy_version=4&group_by=tf_agreement
+      - long vs short：?days=14&group_by=direction
+      - 新旧策略对比：?days=14&group_by=strategy_version
+      - 单币种 grade 分布：?coin=BTC&days=14&group_by=grade
+    """
+    result = await asyncio.get_running_loop().run_in_executor(
+        None, _strategy_review_query,
+        days, group_by, coin, direction, grade, strategy_version, tf_agreement,
+    )
+    if "error" in result:
+        return JSONResponse(status_code=500, content={"error": result["error"]})
+
+    return {
+        "status": "success",
+        "filters": {
+            "days": days, "group_by": group_by,
+            "coin": coin, "direction": direction, "grade": grade,
+            "strategy_version": strategy_version, "tf_agreement": tf_agreement,
+        },
+        "totals": result["totals"],
+        "groups": result["groups"],
+    }

@@ -138,6 +138,16 @@ def _bigorder_source(coin: str, weight: float, lang: str = "zh") -> Optional[Sig
     )
 
 
+def _map_tf_state(state: str) -> Optional[str]:
+    """中文共振状态 → 英文枚举（用于落库 math_json.tf_agreement）"""
+    return {
+        "同向共振": "agreement",
+        "周期分歧": "disagreement",
+        "中性": "neutral",
+        "1h数据不足": "insufficient_1h_data",
+    }.get(state)
+
+
 def _quantitative_source(
     coin: str, weight: float, lang: str = "zh",
     entry_ohlcv: Optional[dict] = None,
@@ -243,6 +253,15 @@ def _quantitative_source(
         "neutral": SignalDirection.NEUTRAL,
     }
 
+    dual_tf_extra = None
+    if multi_tf:
+        dual_tf_extra = {
+            "daily_composite": daily_c,
+            "hourly_composite": hourly_c,
+            "tf_agreement": _map_tf_state(tf_state),
+            "fused_composite": multi_tf.get("融合后评分"),
+        }
+
     return SignalSource(
         name="quantitative",
         score=abs(composite),
@@ -253,6 +272,7 @@ def _quantitative_source(
             if lang == "en" else
             f"综合评分{composite:.0f}, 强度{strength}, 置信度{confidence}%{tf_marker}"
         ),
+        extra=dual_tf_extra,
     )
 
 
@@ -538,8 +558,10 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
         coin, adaptive_weights.get("quantitative", 0.35), lang,
         entry_ohlcv=raw_data.get("entry_ohlcv"),
     )
+    dual_tf_info = None
     if quant_src:
         sources.append(quant_src)
+        dual_tf_info = quant_src.extra or {}
 
     tech_src = _technical_source(ohlcv, adaptive_weights.get("technical", 0.30), lang)
     if tech_src:
@@ -684,6 +706,11 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
             math_score_adjustment=math_result.math_score_adjustment,
             math_confidence=math_result.math_confidence,
             key_findings=math_result.key_findings,
+            # 双周期融合诊断（来自 quant_src.extra）
+            daily_composite=dual_tf_info.get("daily_composite") if dual_tf_info else None,
+            hourly_composite=dual_tf_info.get("hourly_composite") if dual_tf_info else None,
+            tf_agreement=dual_tf_info.get("tf_agreement") if dual_tf_info else None,
+            fused_composite=dual_tf_info.get("fused_composite") if dual_tf_info else None,
         )
 
     # ── 策略元数据 ────────────────────────────────────────────

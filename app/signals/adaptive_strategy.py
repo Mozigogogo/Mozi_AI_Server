@@ -137,9 +137,11 @@ class StrategyState:
     version 语义：
       1 = v1 信号策略时代（legacy bigorder_anomaly）
       2 = v2 信号策略时代（时间衰减大单 + 吸筹 pattern，2026-06-18 全量上线）
+      3 = v3 历史中间态（已不生成）
+      4 = v4 双周期融合 + 资金因子激活（2026-06-23 上线）
       后续每次 evolution 递增
     """
-    version: int = 2
+    version: int = 4
     weights: Dict[str, float] = field(default_factory=lambda: dict(DEFAULT_WEIGHTS))
     factor_performances: Dict[str, dict] = field(default_factory=dict)
     regime: str = "quiet"
@@ -203,10 +205,10 @@ class AdaptiveStrategyEngine:
                 data = json.loads(STRATEGY_FILE.read_text())
                 state = StrategyState(**{k: v for k, v in data.items()
                                         if k in StrategyState.__dataclass_fields__})
-                # 迁移：v1 信号策略时代的 state（version<2 且未 evolution）自动升到 v2
+                # 迁移：旧策略 state 自动升到 v4（双周期融合 + 资金因子激活，2026-06-23 上线）
                 # evolution_history 非空说明已经迭代过，保留原 version
-                if state.version < 2 and not state.evolution_history:
-                    state.version = 2
+                if state.version < 4 and not state.evolution_history:
+                    state.version = 4
                 return state
             except Exception:
                 pass

@@ -42,6 +42,7 @@ class SignalSource(BaseModel):
     direction: SignalDirection
     weight: float
     detail: str = ""
+    extra: Optional[Dict] = None   # 结构化扩展数据（如 dual_tf_info，不落库 sources_json）
 
 
 class MathDerivationSummary(BaseModel):
@@ -60,6 +61,11 @@ class MathDerivationSummary(BaseModel):
     math_score_adjustment: float = 0.0
     math_confidence: float = 0.5
     key_findings: List[str] = []
+    # 双周期融合诊断（v4 起）
+    daily_composite: Optional[float] = None
+    hourly_composite: Optional[float] = None
+    tf_agreement: Optional[str] = None       # agreement / disagreement / neutral / insufficient_1h_data
+    fused_composite: Optional[float] = None
 
 
 class StrategyMeta(BaseModel):
