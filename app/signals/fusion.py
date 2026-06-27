@@ -604,13 +604,13 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
         if not relaxed:
             return None
 
-    # ── 信号等级 ──────────────────────────────────────────────
+    # ── 信号等级（清晰分级：S 严格 / A 高质量 / B 兜底）─────────
     math_confirms = math_result and math_result.math_score_adjustment > 15
     if len(sources) >= 3 and consistent_count >= 3 and confidence >= 65 and math_confirms:
         grade = SignalGrade.S
-    elif len(sources) >= 3 and consistent_count >= 3 and confidence >= 65:
+    elif len(sources) >= 3 and consistent_count >= 3 and confidence >= 50:
         grade = SignalGrade.A
-    elif consistent_count >= 2 and confidence >= 50:
+    elif consistent_count >= 2 and confidence >= 70:
         grade = SignalGrade.A
     elif consistent_count >= 2 and confidence >= 35:
         grade = SignalGrade.B
@@ -802,9 +802,12 @@ def generate_card_for_chat(coin: str, tier: str = "pro", always: bool = False, l
             signal_card.avg_profit_pct = bt["avg_profit_pct"]
 
         # chat 路径也要持久化，否则用户主动问的卡不进结算系统
+        # query 路径：C 级也存 + origin=query，便于策略迭代区分 scan vs query
         try:
             from app.signals.settlement import save_signal_card
-            save_signal_card(signal_card)
+            if signal_card.math:
+                signal_card.math.origin = "query"
+            save_signal_card(signal_card, force=True)
         except Exception:
             pass
 

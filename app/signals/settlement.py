@@ -187,15 +187,19 @@ def _proxy_post(path: str, data: dict) -> dict:
 
 # ── 统一接口（根据模式自动选择）───────────────────────────────────────────────
 
-def save_signal_card(card) -> Optional[int]:
+def save_signal_card(card, force: bool = False) -> Optional[int]:
+    """持久化信号卡。
+
+    force=True 时即使 C 级也存（用户询问路径专用，便于策略迭代区分 scan vs query 数据）。
+    """
     if _USE_PROXY:
-        return _save_signal_card_proxy(card)
-    return _save_signal_card_direct(card)
+        return _save_signal_card_proxy(card, force=force)
+    return _save_signal_card_direct(card, force=force)
 
 
-def _save_signal_card_direct(card) -> Optional[int]:
+def _save_signal_card_direct(card, force: bool = False) -> Optional[int]:
     from app.signals.models import SignalGrade
-    if card.grade == SignalGrade.C:
+    if card.grade == SignalGrade.C and not force:
         return None
     conn = None
     try:
@@ -232,9 +236,9 @@ def _save_signal_card_direct(card) -> Optional[int]:
             conn.close()
 
 
-def _save_signal_card_proxy(card) -> Optional[int]:
+def _save_signal_card_proxy(card, force: bool = False) -> Optional[int]:
     from app.signals.models import SignalGrade
-    if card.grade == SignalGrade.C:
+    if card.grade == SignalGrade.C and not force:
         return None
     math_json = json.dumps(card.math.model_dump(), ensure_ascii=False) if card.math else None
     weights_json = json.dumps(card.strategy.adaptive_weights) if card.strategy and card.strategy.adaptive_weights else None

@@ -104,9 +104,11 @@ async def generate_signal(
         signal_card.sample_count = bt_result["sample_count"]
         signal_card.avg_profit_pct = bt_result["avg_profit_pct"]
 
-    # 持久化到数据库（后验结算用）
+    # 持久化到数据库（后验结算用）— 用户询问路径：C 级也存，origin=query 便于策略迭代切片
+    if signal_card.math:
+        signal_card.math.origin = "query"
     record_id = await asyncio.get_running_loop().run_in_executor(
-        None, save_signal_card, signal_card
+        None, lambda: save_signal_card(signal_card, force=True)
     )
 
     return {
@@ -725,6 +727,7 @@ _ALLOWED_GROUP_BY = {
     "strategy_version": "strategy_version",
     "tf_agreement": "JSON_UNQUOTE(JSON_EXTRACT(math_json, '$.tf_agreement'))",
     "regime": "JSON_UNQUOTE(JSON_EXTRACT(math_json, '$.market_regime'))",
+    "origin": "JSON_UNQUOTE(JSON_EXTRACT(math_json, '$.origin'))",
 }
 
 

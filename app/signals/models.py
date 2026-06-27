@@ -66,6 +66,8 @@ class MathDerivationSummary(BaseModel):
     hourly_composite: Optional[float] = None
     tf_agreement: Optional[str] = None       # agreement / disagreement / neutral / insufficient_1h_data
     fused_composite: Optional[float] = None
+    # 来源标记（v4 起）：scan 扫描生成 / query 用户询问生成
+    origin: str = "scan"
 
 
 class StrategyMeta(BaseModel):
