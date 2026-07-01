@@ -37,7 +37,13 @@ class IntentAnalyzer:
 
 API：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) | get_buy_sell_ratio(多空比) | get_open_interest(持仓量) | get_trading_volume(成交量) | get_funding_rate(资金费率)
 
-规则：价格变化/涨跌幅→query_price，成交量/持仓/多空比/资金费率→query_derivatives，量化/买入卖出→analyze_quantitative。只选需要的API。只输出JSON："""
+规则：
+- 价格变化/涨跌幅→query_price
+- 成交量/持仓/多空比/资金费率→query_derivatives
+- 量化/买入卖出→analyze_quantitative
+- 预测性问题（"会怎样/走势会怎样/后市如何/接下来怎么走/会涨会跌/未来趋势"等）→analyze_comprehensive（需要综合 K线+衍生品+新闻）
+- 单纯查"X 走势/X 趋势"（不带预测性问句）→query_trend
+只选需要的API。只输出JSON："""
 
     async def analyze(self, question: str, history_questions: list = None) -> IntentInfo:
         """分析用户意图（含重试）"""
