@@ -143,6 +143,8 @@ def _map_tf_state(state: str) -> Optional[str]:
     return {
         "同向共振": "agreement",
         "周期分歧": "disagreement",
+        "1h反转": "1h_reversal",
+        "1h强反转": "1h_reversal_strong",
         "中性": "neutral",
         "1h数据不足": "insufficient_1h_data",
     }.get(state)
@@ -246,6 +248,10 @@ def _quantitative_source(
         tf_marker = f" | ⚠️ 周期分歧（日{daily_c:.0f} vs 1h{hourly_c:.0f}）"
     elif tf_state == "同向共振":
         tf_marker = " | ✓ 双周期共振"
+    elif tf_state == "1h反转" and daily_c is not None and hourly_c is not None:
+        tf_marker = f" | 🔄 1h反转（日{daily_c:.0f} vs 1h{hourly_c:.0f}）"
+    elif tf_state == "1h强反转" and daily_c is not None and hourly_c is not None:
+        tf_marker = f" | 🚨 1h强反转（日{daily_c:.0f} vs 1h{hourly_c:.0f}）"
 
     direction_map = {
         "long": SignalDirection.LONG,
@@ -604,13 +610,13 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
         if not relaxed:
             return None
 
-    # ── 信号等级（清晰分级：S 严格 / A 高质量 / B 兜底）─────────
+    # ── 信号等级（v3 阈值回滚：S 严格需 math_confirms / A 路径 conf≥65 / 2源 A 路径 conf≥50）──
     math_confirms = math_result and math_result.math_score_adjustment > 15
     if len(sources) >= 3 and consistent_count >= 3 and confidence >= 65 and math_confirms:
         grade = SignalGrade.S
-    elif len(sources) >= 3 and consistent_count >= 3 and confidence >= 50:
+    elif len(sources) >= 3 and consistent_count >= 3 and confidence >= 65:
         grade = SignalGrade.A
-    elif consistent_count >= 2 and confidence >= 70:
+    elif consistent_count >= 2 and confidence >= 50:
         grade = SignalGrade.A
     elif consistent_count >= 2 and confidence >= 35:
         grade = SignalGrade.B

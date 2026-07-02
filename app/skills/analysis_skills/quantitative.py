@@ -620,8 +620,12 @@ DUAL_TF_WEIGHTS: dict[str, tuple[float, float]] = {
 
 # 共振/分歧调整系数（应用到加权平均后的 composite）
 AGREEMENT_BONUS = 0.20        # 日线 vs 1h 同向 → composite 绝对值 +20%
-DISAGREEMENT_PENALTY = 0.30   # 日线 vs 1h 反向 → composite 绝对值 -30%
+DISAGREEMENT_PENALTY = 0.30   # 日线 vs 1h 反向（1h 弱）→ composite 绝对值 -30%
 MIN_1H_SIGNAL = 15            # 1h composite 绝对值阈值，低于此视为噪声不参与共振判定
+
+# 1h 反转覆盖阈值（激进版）— 当 1h 反向且强度足以挑战日线时，让 1h 主导
+STRONG_1H_THRESHOLD = 40      # 1h 绝对强度 ≥40 → 强信号豁免，直接以 1h 为主（小折扣）
+CHALLENGE_RATIO = 0.5         # 1h/日线 绝对值比 ≥0.5 → 反转覆盖（中等折扣）
 
 
 def _compute_dual_tf_composite(
@@ -658,8 +662,20 @@ def _compute_dual_tf_composite(
         composite = composite_base * (1 + AGREEMENT_BONUS)
         agreement = "agreement"
     elif sign_daily != 0 and sign_1h != 0 and sign_daily != sign_1h and abs(composite_1h) >= MIN_1H_SIGNAL:
-        composite = composite_base * (1 - DISAGREEMENT_PENALTY)
-        agreement = "disagreement"
+        # 1h 反向 + 达到最小信号阈值 → 评估反转覆盖
+        challenge_ratio = abs(composite_1h) / max(abs(composite_daily), 1.0)
+        if abs(composite_1h) >= STRONG_1H_THRESHOLD:
+            # 强信号豁免：1h 绝对强度 ≥40 → 直接以 1h 为主（小折扣）
+            composite = composite_1h * 0.85
+            agreement = "1h_reversal_strong"
+        elif challenge_ratio >= CHALLENGE_RATIO:
+            # 相对强度足以挑战日线（1h 至少是日线的 50%）→ flip 方向到 1h
+            composite = composite_1h * 0.70
+            agreement = "1h_reversal"
+        else:
+            # 1h 反向但强度不足以挑战日线 → 普通分歧衰减
+            composite = composite_base * (1 - DISAGREEMENT_PENALTY)
+            agreement = "disagreement"
     else:
         composite = composite_base
         agreement = "neutral"
@@ -820,6 +836,8 @@ def _build_trade_signal(
 _AGREEMENT_CN = {
     "agreement": "同向共振",
     "disagreement": "周期分歧",
+    "1h_reversal": "1h反转",
+    "1h_reversal_strong": "1h强反转",
     "neutral": "中性",
     "insufficient_1h_data": "1h数据不足",
 }
@@ -836,7 +854,11 @@ def _build_multi_tf_payload(signal: TradeSignal) -> dict:
     elif agreement == "agreement":
         explanation = f"日线({daily:.0f})与1h({hourly:.0f})同向，共振加成 +20%"
     elif agreement == "disagreement":
-        explanation = f"日线({daily:.0f})与1h({hourly:.0f})反向，分歧降级 -30%"
+        explanation = f"日线({daily:.0f})与1h({hourly:.0f})反向，1h强度不足，分歧降级 -30%"
+    elif agreement == "1h_reversal":
+        explanation = f"⚠️ 1h({hourly:.0f})反向强度达到日线的50%+，市场反转信号，1h主导（日线{daily:.0f}被压倒）"
+    elif agreement == "1h_reversal_strong":
+        explanation = f"🚨 1h({hourly:.0f})强烈反向（≥40），1h强信号豁免主导（日线{daily:.0f}被反转）"
     else:
         explanation = f"日线({daily:.0f})与1h({hourly:.0f})综合判定"
 
