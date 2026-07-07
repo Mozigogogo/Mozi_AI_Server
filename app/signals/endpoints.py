@@ -388,6 +388,76 @@ async def detailed_backtest(
     return {"status": "success", "data": result}
 
 
+@router.get("/simple/{coin}")
+async def generate_simple_signal(
+    coin: str,
+    kline_type: int = Query(2, description="K线类型: 1=小时 2=天 3=周"),
+    relaxed: bool = Query(True, description="宽松模式：3 源不一致时也出信号（默认开启）"),
+):
+    """轻量信号卡接口 — 只返回 coin/direction/confidence/历史胜率（不落库）"""
+    coin = coin.upper()
+    loop = asyncio.get_running_loop()
+
+    try:
+        header_data, kline_data, volume_data = await asyncio.gather(
+            loop.run_in_executor(None, get_header_data, coin),
+            loop.run_in_executor(None, get_kline_data_for_period, coin, kline_type),
+            loop.run_in_executor(None, get_trade_volume, coin),
+        )
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"获取K线数据失败: {str(e)}"})
+
+    hourly_data = None
+    try:
+        hourly_data = await loop.run_in_executor(None, get_kline_data_for_period, coin, 1)
+    except Exception:
+        pass
+
+    min_bars = 15 if kline_type == 1 else 25
+    ohlcv = _parse_kline(kline_data, volume_data, min_bars=min_bars)
+    if not ohlcv:
+        return JSONResponse(status_code=404, content={"error": f"{coin} K线数据不足"})
+
+    raw_data: dict = {}
+    try:
+        derivatives = await loop.run_in_executor(None, get_derivatives_agg, coin)
+        if derivatives:
+            raw_data["derivatives"] = derivatives
+    except Exception:
+        pass
+
+    entry_ohlcv = _parse_kline(hourly_data, min_bars=55) if hourly_data else None
+    raw_data["header"] = header_data
+    raw_data["current_price"] = header_data.get("currentPrice") if isinstance(header_data, dict) else None
+    raw_data["entry_ohlcv"] = entry_ohlcv
+
+    signal_card = await loop.run_in_executor(
+        None, fuse_signals, coin, ohlcv, raw_data, relaxed, "zh"
+    )
+
+    if not signal_card:
+        return {
+            "status": "no_signal",
+            "coin": coin,
+            "message": "当前信号不足，未达到生成条件",
+        }
+
+    bt = await loop.run_in_executor(
+        None, backtest_signal, coin, signal_card.direction, signal_card.grade
+    )
+
+    return {
+        "status": "success",
+        "coin": coin,
+        "direction": signal_card.direction.value,
+        "confidence": signal_card.confidence,
+        "current_price": signal_card.current_price,
+        "created_at": signal_card.created_at,
+        "win_rate": bt["win_rate"] if bt else None,
+        "sample_count": bt["sample_count"] if bt else 0,
+    }
+
+
 # ── SSE 实时推送 ──────────────────────────────────────────────────────────────
 
 @router.get("/stream")
