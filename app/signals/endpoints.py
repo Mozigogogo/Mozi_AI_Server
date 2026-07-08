@@ -388,6 +388,54 @@ async def detailed_backtest(
     return {"status": "success", "data": result}
 
 
+@router.get("/simple/best")
+async def get_best_signal(
+    refresh: bool = Query(False, description="强制重新扫描全市场（耗时长，慎用）"),
+):
+    """返回当前等级+置信度最高的一个币种信号（响应格式同 /simple/{coin}）"""
+    from app.signals.settlement import get_latest_scan
+    loop = asyncio.get_running_loop()
+
+    signals: list = []
+    if not refresh:
+        cached = await loop.run_in_executor(None, get_latest_scan)
+        if cached and cached.get("signals"):
+            signals = list(cached["signals"])
+
+    if not signals:
+        try:
+            results = await asyncio.wait_for(scan_all_coins(concurrency=10), timeout=300)
+        except asyncio.TimeoutError:
+            return JSONResponse(status_code=504, content={"error": "扫描超时(5min)，请稍后重试"})
+        signals = [r.signal_card.model_dump_display() for r in results if r.signal_card is not None]
+
+    if not signals:
+        return {"status": "no_signal", "message": "当前无信号卡数据，请稍后重试"}
+
+    grade_priority = {"S": 3, "A": 2, "B": 1, "C": 0}
+    best = max(signals, key=lambda s: (
+        grade_priority.get(s.get("grade", "C"), 0),
+        float(s.get("confidence") or 0),
+    ))
+
+    cp = best.get("current_price")
+    try:
+        cp = float(cp) if cp is not None else None
+    except (ValueError, TypeError):
+        pass
+
+    return {
+        "status": "success",
+        "coin": best.get("coin"),
+        "direction": best.get("direction"),
+        "confidence": best.get("confidence"),
+        "current_price": cp,
+        "created_at": best.get("created_at"),
+        "win_rate": best.get("win_rate"),
+        "sample_count": best.get("sample_count"),
+    }
+
+
 @router.get("/simple/{coin}")
 async def generate_simple_signal(
     coin: str,
