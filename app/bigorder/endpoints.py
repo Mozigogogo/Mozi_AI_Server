@@ -113,7 +113,14 @@ async def get_large_orders(
                 cached = [o for o in cached if o.get("exchange") == exchange]
             return {"coin": coin.upper(), "count": len(cached), "orders": cached}
         orders = bigorder_deps.consumer.get_top_orders(coin.upper(), exchange=exchange or "Binance", top_n=top)
-        return {"coin": coin.upper(), "count": len(orders), "orders": [o.model_dump() for o in orders]}
+        orders_serialized = []
+        for o in orders:
+            d = o.model_dump()
+            if d.get("deal_timestamp"):
+                d["deal_time"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(d["deal_timestamp"]))
+                d.pop("deal_timestamp", None)
+            orders_serialized.append(d)
+        return {"coin": coin.upper(), "count": len(orders), "orders": orders_serialized}
 
     return await asyncio.get_running_loop().run_in_executor(None, _get_orders)
 
@@ -201,7 +208,9 @@ async def manual_scan(coins: Optional[List[str]] = None):
                 signal = await bigorder_deps.llm_analyzer.analyze_and_enrich(signal)
             except Exception:
                 pass
-            enriched.append(signal.model_dump())
+            d = signal.model_dump()
+            d.pop("timestamp", None)
+            enriched.append(d)
 
     await _save_to_mysql([s for s in signals if s.score.level == SignalLevel.STRONG])
 

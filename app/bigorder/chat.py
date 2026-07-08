@@ -2,6 +2,7 @@
 import json
 import time
 import asyncio
+from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -310,7 +311,7 @@ def _execute_tool(name: str, args: dict) -> dict:
             limit=args.get("limit", 20)
         )
         result = {"count": len(signals), "signals": [
-            {k: v for k, v in s.items() if k != "llm_analysis"} for s in signals
+            {k: v for k, v in s.items() if k not in ("llm_analysis", "timestamp")} for s in signals
         ]}
         _cache.set(cache_key, result)
         return result
@@ -324,6 +325,7 @@ def _execute_tool(name: str, args: dict) -> dict:
         cached = bigorder_deps.scorer.get_coin_signal(coin)
         if cached:
             cached.pop("llm_analysis", None)
+            cached.pop("timestamp", None)
             _cache.set(cache_key, cached)
             return cached
         result = {}
@@ -334,6 +336,7 @@ def _execute_tool(name: str, args: dict) -> dict:
                     d = signal.model_dump()
                     d.pop("llm_analysis", None)
                     d.pop("top_orders", None)
+                    d.pop("timestamp", None)
                     result[exchange] = d
             except Exception:
                 continue
@@ -383,7 +386,14 @@ def _execute_tool(name: str, args: dict) -> dict:
             _cache.set(cache_key, data)
             return data
         orders = bigorder_deps.consumer.get_top_orders(coin, exchange=exchange, top_n=top)
-        data = {"coin": coin, "count": len(orders), "orders": [o.model_dump() for o in orders]}
+        orders_serialized = []
+        for o in orders:
+            d = o.model_dump()
+            if d.get("deal_timestamp"):
+                d["deal_time"] = datetime.fromtimestamp(d["deal_timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
+                d.pop("deal_timestamp", None)
+            orders_serialized.append(d)
+        data = {"coin": coin, "count": len(orders), "orders": orders_serialized}
         _cache.set(cache_key, data)
         return data
 
