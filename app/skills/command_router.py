@@ -70,36 +70,78 @@ class CommandRouter:
         成功：{command, coin_symbol, confidence, reason, language, fallback_text=None}
         失败：{command=None, ..., fallback_text=FALLBACK_TEXT}
         """
-        try:
-            response = await self.client.chat.completions.create(
-                model=settings.deepseek_model,
-                max_tokens=200,
-                timeout=10.0,
-                messages=[{"role": "user", "content": PROMPT_TEMPLATE.format(question=question)}],
-            )
-            content = response.choices[0].message.content.strip()
-            data = self._parse_json(content)
+        for attempt in range(2):  # 最多重试1次
+            try:
+                response = await self.client.chat.completions.create(
+                    model=settings.deepseek_model,
+                    max_tokens=200,
+                    timeout=10.0,
+                    messages=[{"role": "user", "content": PROMPT_TEMPLATE.format(question=question)}],
+                )
+                content = response.choices[0].message.content.strip()
 
-            command = (data.get("command") or "").strip()
-            if command not in VALID_COMMANDS:
-                logger.warning(f"LLM 返回未知指令: {command}, raw={content[:200]}")
-                return self._fallback(f"未知指令: {command}")
+                # DeepSeek 偶发返回空 content（非异常但内容为空），重试
+                if not content:
+                    logger.warning(f"LLM 返回空 content (attempt {attempt+1})")
+                    if attempt == 0:
+                        continue
+                    return self._rule_based_fallback(question, "LLM 返回空 content")
 
-            coin = data.get("coin_symbol")
-            if coin:
-                coin = str(coin).strip().upper()
+                data = self._parse_json(content)
+                command = (data.get("command") or "").strip()
+                if command not in VALID_COMMANDS:
+                    logger.warning(f"LLM 返回未知指令: {command}, raw={content[:200]}")
+                    if attempt == 0:
+                        continue
+                    return self._rule_based_fallback(question, f"未知指令: {command}")
 
-            return {
-                "command": command,
-                "coin_symbol": coin,
-                "confidence": float(data.get("confidence", 0.0)),
-                "reason": str(data.get("reason", ""))[:200],
-                "language": data.get("language", "zh"),
-                "fallback_text": None,
-            }
-        except Exception as e:
-            logger.exception(f"指令路由失败: {e}")
-            return self._fallback(f"{type(e).__name__}: {e}")
+                coin = data.get("coin_symbol")
+                if coin:
+                    coin = str(coin).strip().upper()
+
+                return {
+                    "command": command,
+                    "coin_symbol": coin,
+                    "confidence": float(data.get("confidence", 0.0)),
+                    "reason": str(data.get("reason", ""))[:200],
+                    "language": data.get("language", "zh"),
+                    "fallback_text": None,
+                }
+            except Exception as e:
+                logger.exception(f"指令路由失败 (attempt {attempt+1}): {e}")
+                if attempt == 0:
+                    continue
+                return self._rule_based_fallback(question, f"{type(e).__name__}: {e}")
+
+        # 重试耗尽（理论不会到这）
+        return self._rule_based_fallback(question, "重试耗尽")
+
+    def _rule_based_fallback(self, question: str, reason: str) -> dict:
+        """LLM 失败时的关键词规则兜底 — 与 PROMPT_TEMPLATE 判定优先级保持一致"""
+        if any(kw in question for kw in ["监控", "报警", "提醒", "通知"]):
+            cmd = "/alert"
+        elif any(kw in question for kw in ["猜", "赌", "预测", "下注", "看涨看跌"]):
+            cmd = "/predict"
+        elif any(kw in question for kw in ["大单", "主力", "异动", "资金流向"]):
+            cmd = "/bigorder"
+        elif any(kw in question for kw in ["多少钱", "价格", "最新价", "涨跌幅", "市值"]):
+            cmd = "/price"
+        elif any(kw in question for kw in ["分析", "详细", "深度", "走势会怎样", "后市如何", "技术面", "量化", "综合分析"]):
+            cmd = "/ai"
+        else:
+            cmd = "/chat"
+
+        m = re.search(r'([A-Za-z]{2,5})', question)
+        coin = m.group(1).upper() if m else None
+
+        return {
+            "command": cmd,
+            "coin_symbol": coin,
+            "confidence": 0.5,
+            "reason": f"规则兜底({reason}) → {cmd}",
+            "language": "zh",
+            "fallback_text": None,
+        }
 
     @staticmethod
     def _parse_json(content: str) -> dict:
