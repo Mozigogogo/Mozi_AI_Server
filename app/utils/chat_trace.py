@@ -79,6 +79,16 @@ class Timer:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         dur_ms = (_time.time() - self.t0) * 1000
+        # CancelledError 是正常现象（SSE 客户端断开 / 上游 task 取消），不算 error
+        import asyncio
+        if exc_type is not None and issubclass(exc_type, asyncio.CancelledError):
+            trace(
+                self.rid,
+                f"{self.step}.cancelled",
+                duration_ms=dur_ms,
+                **self.extra,
+            )
+            return False
         if exc_type is None:
             trace(self.rid, f"{self.step}.end", duration_ms=dur_ms, **self.extra)
         else:
