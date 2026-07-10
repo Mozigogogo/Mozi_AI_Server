@@ -299,7 +299,42 @@ def _get_bigorder_mysql_config():
     }
 
 
+def _humanize_timestamps(obj):
+    """递归把所有时间戳字段转可读字符串（不喂原始数字给 LLM）。
+
+    tick.deal_timestamp (秒) → deal_time
+    signal.timestamp / updated_at (毫秒 > 1e12) → *_str
+    """
+    if isinstance(obj, dict):
+        for k in list(obj.keys()):
+            obj[k] = _humanize_timestamps(obj[k])
+        if "deal_timestamp" in obj and isinstance(obj["deal_timestamp"], (int, float)):
+            ts = obj.pop("deal_timestamp")
+            try:
+                obj["deal_time"] = datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M:%S")
+            except (ValueError, OSError, OverflowError):
+                obj["deal_time"] = str(ts)
+        for key in ("timestamp", "updated_at"):
+            v = obj.get(key)
+            if isinstance(v, (int, float)) and v > 1_000_000_000_000:
+                try:
+                    obj[key + "_str"] = datetime.fromtimestamp(int(v) / 1000).strftime("%Y-%m-%d %H:%M:%S")
+                    obj.pop(key)
+                except (ValueError, OSError, OverflowError):
+                    pass
+        return obj
+    if isinstance(obj, list):
+        return [_humanize_timestamps(x) for x in obj]
+    return obj
+
+
 def _execute_tool(name: str, args: dict) -> dict:
+    """工具调度入口 — 统一转换所有时间戳字段为可读字符串"""
+    result = _execute_tool_impl(name, args)
+    return _humanize_timestamps(result)
+
+
+def _execute_tool_impl(name: str, args: dict) -> dict:
     if name == "query_anomalies":
         cache_key = f"anomalies:{args.get('exchange')}:{args.get('min_score')}:{args.get('limit', 20)}"
         hit = _cache.get(cache_key)
