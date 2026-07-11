@@ -41,8 +41,14 @@ API：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) |
 - 价格变化/涨跌幅→query_price
 - 成交量/持仓/多空比/资金费率→query_derivatives
 - 量化/买入卖出→analyze_quantitative
-- 预测性问题（"会怎样/走势会怎样/后市如何/接下来怎么走/会涨会跌/未来趋势"等）→analyze_comprehensive（需要综合 K线+衍生品+新闻）
-- 单纯查"X 走势/X 趋势"（不带预测性问句）→query_trend
+- 含"分析/详细/深度"等动词（"分析一下走势/分析 ETH 走势/详细分析"）→analyze_comprehensive（无论是否带币种，都要综合 K线+衍生品+新闻）
+- 预测性问题（"会怎样/走势会怎样/后市如何/接下来怎么走/会涨会跌/未来趋势"等）→analyze_comprehensive
+- 单纯查"X 走势/X 趋势"（不带分析动词、不带预测问句）→query_trend
+示例：
+- "分析一下走势" → analyze_comprehensive
+- "分析一下 BTC 走势" → analyze_comprehensive
+- "BTC 走势" → query_trend
+- "BTC 走势会怎样" → analyze_comprehensive
 只选需要的API。只输出JSON："""
 
     async def analyze(self, question: str, history_questions: list = None) -> IntentInfo:
