@@ -447,8 +447,8 @@ async def get_best_signal(
                 return (0, wr_f, sc, gp, confidence)
             except (TypeError, ValueError):
                 pass
-        # 无历史回退（mode=confidence 也走这）
-        return (1, confidence, gp, sc, 0.0)
+        # 无历史回退（mode=confidence 也走这）— grade 优先于 confidence
+        return (1, gp, confidence, sc, 0.0)
 
     best = max(signals, key=_score)
 
