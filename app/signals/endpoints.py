@@ -391,8 +391,15 @@ async def detailed_backtest(
 @router.get("/simple/best")
 async def get_best_signal(
     refresh: bool = Query(False, description="强制重新扫描全市场（耗时长，慎用）"),
+    mode: str = Query("accuracy", description="selection mode: accuracy=历史胜率优先 / confidence=置信度+等级"),
 ):
-    """返回当前等级+置信度最高的一个币种信号（响应格式同 /simple/{coin}）"""
+    """返回当前最优的一个币种信号（响应格式同 /simple/{coin}）
+
+    mode=accuracy（默认，推荐）：优先按历史胜率排序，回测证明高 conf ≠ 高胜率
+        - 有历史（sample≥10）: 按 win_rate × grade_mult 排序
+        - 无历史: 回退到 (grade, confidence)
+    mode=confidence: 旧行为，纯按 (grade, confidence) 排序
+    """
     from app.signals.settlement import get_latest_scan
     loop = asyncio.get_running_loop()
 
@@ -413,10 +420,36 @@ async def get_best_signal(
         return {"status": "no_signal", "message": "当前无信号卡数据，请稍后重试"}
 
     grade_priority = {"S": 3, "A": 2, "B": 1, "C": 0}
-    best = max(signals, key=lambda s: (
-        grade_priority.get(s.get("grade", "C"), 0),
-        float(s.get("confidence") or 0),
-    ))
+    # accuracy 模式下 S 级轻微加权（共振质量 bonus）
+    grade_mult = {"S": 1.05, "A": 1.0, "B": 0.95, "C": 0.85}
+    MIN_HISTORY = 10  # 至少 10 张历史卡才信胜率
+
+    def _score(s):
+        grade = s.get("grade", "C")
+        confidence = float(s.get("confidence") or 0)
+        wr = s.get("win_rate")
+        sc = int(s.get("sample_count") or 0)
+        gp = grade_priority.get(grade, 0)
+        if mode == "accuracy" and wr is not None and sc >= MIN_HISTORY:
+            try:
+                wr_f = float(wr) * grade_mult.get(grade, 1.0)
+                return (1, wr_f, sc, gp, confidence)
+            except (TypeError, ValueError):
+                pass
+        # 回退：纯 (grade, confidence)
+        return (0, confidence, gp, sc, 0.0)
+
+    best = max(signals, key=_score)
+
+    # 选卡原因 — 便于前端展示
+    wr = best.get("win_rate")
+    sc = int(best.get("sample_count") or 0)
+    if mode == "accuracy" and wr is not None and sc >= MIN_HISTORY:
+        reason = f"历史胜率 {wr}%（{sc} 张样本）× grade {best.get('grade')}"
+    elif mode == "accuracy":
+        reason = f"无足够历史（sample={sc}），回退到 grade+confidence"
+    else:
+        reason = f"grade {best.get('grade')} + confidence {best.get('confidence')}"
 
     cp = best.get("current_price")
     try:
@@ -433,6 +466,7 @@ async def get_best_signal(
         "created_at": best.get("created_at"),
         "win_rate": best.get("win_rate"),
         "sample_count": best.get("sample_count"),
+        "selection_reason": reason,
     }
 
 
