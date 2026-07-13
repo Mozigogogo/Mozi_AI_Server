@@ -610,13 +610,16 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
         if not relaxed:
             return None
 
-    # ── 信号等级（v3 阈值回滚：S 严格需 math_confirms / A 路径 conf≥65 / 2源 A 路径 conf≥50）──
-    math_confirms = math_result and math_result.math_score_adjustment > 15
-    if len(sources) >= 3 and consistent_count >= 3 and confidence >= 65 and math_confirms:
+    # ── 信号等级（v6 阈值：共振强度 + 置信度 二维独立判定，打破 A 级通胀）──
+    # S：3源全共振 + conf≥60（去掉 math_confirms 强制要求，让 S 级更容易出）
+    # A：3源全共振 + conf≥50（新增：纯共振路径，中等 conf + 强共振 = 高质量 A）
+    # A：2源共振 + conf≥70（提高阈值，原 50 → 70，让低 conf 2源卡落到 B）
+    # B：2源共振 + conf≥35（不变 — 让 B 级真正出现）
+    if len(sources) >= 3 and consistent_count >= 3 and confidence >= 60:
         grade = SignalGrade.S
-    elif len(sources) >= 3 and consistent_count >= 3 and confidence >= 65:
+    elif len(sources) >= 3 and consistent_count >= 3 and confidence >= 50:
         grade = SignalGrade.A
-    elif consistent_count >= 2 and confidence >= 50:
+    elif consistent_count >= 2 and confidence >= 70:
         grade = SignalGrade.A
     elif consistent_count >= 2 and confidence >= 35:
         grade = SignalGrade.B
