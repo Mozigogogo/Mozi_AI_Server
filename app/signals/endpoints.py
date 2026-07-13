@@ -395,9 +395,10 @@ async def get_best_signal(
 ):
     """返回当前最优的一个币种信号（响应格式同 /simple/{coin}）
 
-    mode=accuracy（默认，推荐）：优先按历史胜率排序，回测证明高 conf ≠ 高胜率
-        - 有历史（sample≥10）: 按 win_rate × grade_mult 排序
-        - 无历史: 回退到 (grade, confidence)
+    mode=accuracy（默认，推荐）：优先按历史胜率排序
+        - trusted (sample≥10 AND win_rate≥40%): 按 win_rate × grade_mult 排序
+        - unknown (无足够历史): 回退到 (grade, confidence)
+        - bad (win_rate<40%): 永远不优先（赔率负期望）
     mode=confidence: 旧行为，纯按 (grade, confidence) 排序
     """
     from app.signals.settlement import get_latest_scan
@@ -422,9 +423,16 @@ async def get_best_signal(
     grade_priority = {"S": 3, "A": 2, "B": 1, "C": 0}
     # accuracy 模式下 S 级轻微加权（共振质量 bonus）
     grade_mult = {"S": 1.05, "A": 1.0, "B": 0.95, "C": 0.85}
-    MIN_HISTORY = 10  # 至少 10 张历史卡才信胜率
+    MIN_HISTORY = 10    # 至少 10 张历史卡才信胜率
+    MIN_WIN_RATE = 40.0 # rr=1:2 平衡线 33.3%，留 6.7% 安全垫
 
     def _score(s):
+        """
+        3 档评分：
+          bucket 2 (trusted): 有 ≥10 样本 AND win_rate ≥40% → 信历史，按 win_rate×grade_mult 排
+          bucket 1 (unknown): 无足够历史 → 回退到 (grade, confidence)
+          bucket 0 (bad):    有历史但胜率 <40% → 降级（赔率负期望，永远不优先）
+        """
         grade = s.get("grade", "C")
         confidence = float(s.get("confidence") or 0)
         wr = s.get("win_rate")
@@ -432,20 +440,26 @@ async def get_best_signal(
         gp = grade_priority.get(grade, 0)
         if mode == "accuracy" and wr is not None and sc >= MIN_HISTORY:
             try:
-                wr_f = float(wr) * grade_mult.get(grade, 1.0)
-                return (1, wr_f, sc, gp, confidence)
+                wr_f = float(wr)
+                if wr_f >= MIN_WIN_RATE:
+                    return (2, wr_f * grade_mult.get(grade, 1.0), sc, gp, confidence)
+                # 历史差 → bucket 0（即使 confidence 高也压下去）
+                return (0, wr_f, sc, gp, confidence)
             except (TypeError, ValueError):
                 pass
-        # 回退：纯 (grade, confidence)
-        return (0, confidence, gp, sc, 0.0)
+        # 无历史回退（mode=confidence 也走这）
+        return (1, confidence, gp, sc, 0.0)
 
     best = max(signals, key=_score)
 
     # 选卡原因 — 便于前端展示
     wr = best.get("win_rate")
     sc = int(best.get("sample_count") or 0)
-    if mode == "accuracy" and wr is not None and sc >= MIN_HISTORY:
-        reason = f"历史胜率 {wr}%（{sc} 张样本）× grade {best.get('grade')}"
+    best_bucket = _score(best)[0]
+    if mode == "accuracy" and best_bucket == 2:
+        reason = f"历史胜率 {wr}%（{sc} 张样本）× grade {best.get('grade')}（trusted）"
+    elif mode == "accuracy" and best_bucket == 0:
+        reason = f"⚠️ 历史胜率仅 {wr}%，所有候选均不达标（无 trusted / 无 unknown）"
     elif mode == "accuracy":
         reason = f"无足够历史（sample={sc}），回退到 grade+confidence"
     else:
