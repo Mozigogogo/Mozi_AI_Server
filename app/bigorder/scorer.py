@@ -15,6 +15,12 @@ from app.utils.logger import get_logger
 logger = get_logger("app.bigorder.scorer")
 
 
+# 1h kline 价格变化缓存（避免多交易所循环重复拉取）
+# 结构: {coin: (change_pct, start_price, end_price, expires_at)}
+_PRICE_CHANGE_CACHE: Dict[str, tuple] = {}
+_PRICE_CHANGE_TTL = 60  # 秒
+
+
 class AnomalyScorer:
     """四维打分 + 信号生成 + 结果写入 Redis"""
 
@@ -45,7 +51,7 @@ class AnomalyScorer:
         return buy_vol / total if total > 0 else 0.5
 
     def calc_price_change(self, ticks: List[TickData]) -> Tuple[float, float, float]:
-        """价格变化率 = (latest - earliest) / earliest * 100"""
+        """价格变化率 = (latest - earliest) / earliest * 100（基于大单 tick）"""
         if not ticks:
             return 0.0, 0.0, 0.0
         sorted_ticks = sorted(ticks, key=lambda t: t.deal_timestamp)
@@ -56,6 +62,44 @@ class AnomalyScorer:
             return 0.0, 0.0, 0.0
         change_pct = ((last_price - first_price) / first_price) if first_price > 0 else 0.0
         return change_pct, first_price, last_price
+
+    def _compute_market_price_change(self, coin: str) -> Tuple[float, float, float]:
+        """
+        拉真实市场价格变化（基于 1h K线上一根 close → 当前价）。
+
+        修复 bug：之前用 tick first/last 算的"价格变动"只反映窗口内大单间的价差，
+        当大单间隔很近时就接近 0，跟实际市场涨跌幅脱节（用户反馈 ETH 显示 +0.04%
+        但实际跌幅明显）。
+
+        缓存 60s（多交易所循环同币种共享）。
+
+        Returns:
+            (change_pct, prev_close, current_price) — 失败返回 (0.0, 0.0, 0.0)
+        """
+        now = time.time()
+        cached = _PRICE_CHANGE_CACHE.get(coin)
+        if cached and cached[3] > now:
+            return cached[0], cached[1], cached[2]
+
+        try:
+            from app.services.data_service import get_kline_data_for_period
+            data = get_kline_data_for_period(coin, 1)  # 1=小时线
+            values = data.get("values") or []
+            if len(values) < 2:
+                return 0.0, 0.0, 0.0
+            # values 项格式: [open, close, low, high]
+            prev = values[-2]
+            curr = values[-1]
+            prev_close = float(prev[1]) if len(prev) > 1 else 0.0
+            curr_close = float(curr[1]) if len(curr) > 1 else 0.0
+            if prev_close <= 0:
+                return 0.0, 0.0, 0.0
+            change_pct = (curr_close - prev_close) / prev_close
+            _PRICE_CHANGE_CACHE[coin] = (change_pct, prev_close, curr_close, now + _PRICE_CHANGE_TTL)
+            return change_pct, prev_close, curr_close
+        except Exception as e:
+            logger.warning(f"拉取 {coin} 1h kline 失败，回退到 tick 计算: {e}")
+            return 0.0, 0.0, 0.0
 
     # ================================================================
     # 打分逻辑
@@ -107,7 +151,10 @@ class AnomalyScorer:
         net_flow = self.calc_net_flow(buy_ticks, sell_ticks)
         density = self.calc_density(all_ticks)
         ratio = self.calc_ratio(buy_ticks, sell_ticks)
-        price_change, price_start, price_end = self.calc_price_change(all_ticks)
+        # 价格变化优先用真实 1h kline；失败时回退到 tick 计算（兼容老逻辑）
+        price_change, price_start, price_end = self._compute_market_price_change(coin)
+        if price_start == 0.0 and price_end == 0.0:
+            price_change, price_start, price_end = self.calc_price_change(all_ticks)
 
         nf_mean, nf_std = self.history.get_baseline(exchange, coin, "net_flow")
         den_mean, den_std = self.history.get_baseline(exchange, coin, "density")

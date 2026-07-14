@@ -74,7 +74,7 @@ Keep under 200 words. Do not mention other coins. Do not fabricate data."""
                 "net_flow": f"{signal.net_flow:,.2f} USD (score: {s.net_flow.score})",
                 "large_order_density": f"{signal.buy_count + signal.sell_count} trades (score: {s.density.score})",
                 "buy_sell_ratio": f"{s.ratio.raw_value:.4f} (score: {s.ratio.score})",
-                "price_change": f"{signal.price_change_pct:+.2f}% (score: {s.price_change.score})",
+                "price_change_1h": f"{signal.price_change_pct:+.2f}% (score: {s.price_change.score})",
                 "buy_amount": f"{signal.buy_amount:,.2f}",
                 "sell_amount": f"{signal.sell_amount:,.2f}",
                 "Top5_large_orders": [
@@ -92,7 +92,7 @@ Keep under 200 words. Do not mention other coins. Do not fabricate data."""
                 "净资金流": f"{signal.net_flow:,.2f} USD (得分{s.net_flow.score})",
                 "大单密度": f"{signal.buy_count + signal.sell_count}笔 (得分{s.density.score})",
                 "买卖比": f"{s.ratio.raw_value:.4f} (得分{s.ratio.score})",
-                "价格变化": f"{signal.price_change_pct:+.2f}% (得分{s.price_change.score})",
+                "近1h价格变化": f"{signal.price_change_pct:+.2f}% (得分{s.price_change.score})",
                 "买入金额": f"{signal.buy_amount:,.2f}",
                 "卖出金额": f"{signal.sell_amount:,.2f}",
                 "Top5大单": [
