@@ -420,11 +420,34 @@ async def get_best_signal(
     if not signals:
         return {"status": "no_signal", "message": "当前无信号卡数据，请稍后重试"}
 
+    # ── accuracy 模式：实时拉 DB 真实胜率（覆盖 strategy_state 没数据的币） ──
+    db_winrates: dict = {}
+    if mode == "accuracy":
+        try:
+            from app.signals.backtest import batch_query_winrates
+            coin_dirs = [(s.get("coin", ""), s.get("direction", "")) for s in signals]
+            db_winrates = await loop.run_in_executor(
+                None, lambda: batch_query_winrates(coin_dirs, lookback_days=90, min_sample=1)
+            )
+        except Exception as e:
+            # DB 查询失败不阻塞，走 strategy_state fallback
+            db_winrates = {}
+
     grade_priority = {"S": 3, "A": 2, "B": 1, "C": 0}
     # accuracy 模式下 S 级轻微加权（共振质量 bonus）
     grade_mult = {"S": 1.05, "A": 1.0, "B": 0.95, "C": 0.85}
     MIN_HISTORY = 10    # 至少 10 张历史卡才信胜率
     MIN_WIN_RATE = 40.0 # rr=1:2 平衡线 33.3%，留 6.7% 安全垫
+
+    def _resolve_stats(s):
+        """合并 DB 真实数据 + strategy_state 数据，DB 优先"""
+        key = (s.get("coin", "").upper(), s.get("direction", "").lower())
+        db = db_winrates.get(key)
+        if db:
+            return db["win_rate"], db["sample_count"], "db"
+        wr = s.get("win_rate")
+        sc = int(s.get("sample_count") or 0)
+        return wr, sc, "state"
 
     def _score(s):
         """
@@ -435,8 +458,7 @@ async def get_best_signal(
         """
         grade = s.get("grade", "C")
         confidence = float(s.get("confidence") or 0)
-        wr = s.get("win_rate")
-        sc = int(s.get("sample_count") or 0)
+        wr, sc, _src = _resolve_stats(s)
         gp = grade_priority.get(grade, 0)
         if mode == "accuracy" and wr is not None and sc >= MIN_HISTORY:
             try:
@@ -453,13 +475,12 @@ async def get_best_signal(
     best = max(signals, key=_score)
 
     # 选卡原因 — 便于前端展示
-    wr = best.get("win_rate")
-    sc = int(best.get("sample_count") or 0)
+    wr, sc, src = _resolve_stats(best)
     best_bucket = _score(best)[0]
     if mode == "accuracy" and best_bucket == 2:
-        reason = f"历史胜率 {wr}%（{sc} 张样本）× grade {best.get('grade')}（trusted）"
+        reason = f"历史胜率 {wr}%（{sc} 张样本，src={src}）× grade {best.get('grade')}（trusted）"
     elif mode == "accuracy" and best_bucket == 0:
-        reason = f"⚠️ 历史胜率仅 {wr}%，所有候选均不达标（无 trusted / 无 unknown）"
+        reason = f"⚠️ 历史胜率仅 {wr}%（src={src}），所有候选均不达标"
     elif mode == "accuracy":
         reason = f"无足够历史（sample={sc}），回退到 grade+confidence"
     else:
@@ -478,8 +499,9 @@ async def get_best_signal(
         "confidence": best.get("confidence"),
         "current_price": cp,
         "created_at": best.get("created_at"),
-        "win_rate": best.get("win_rate"),
-        "sample_count": best.get("sample_count"),
+        "win_rate": wr,
+        "sample_count": sc,
+        "win_rate_source": src,
         "selection_reason": reason,
     }
 

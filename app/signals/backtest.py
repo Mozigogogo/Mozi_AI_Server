@@ -11,7 +11,8 @@
 统计指标：胜率 / 夏普 / 索提诺 / 最大回撤 / 统计显著性
 """
 import os
-from typing import Optional, Dict, Any, List
+import time as _time
+from typing import Optional, Dict, Any, List, Tuple
 from config.settings import settings
 from app.utils.logger import get_logger
 
@@ -148,6 +149,92 @@ def _query_settled_cards(conn, coin: str, direction: str, grade: Optional[str], 
     rows = cursor.fetchall()
     cursor.close()
     return rows
+
+
+# ── 批量胜率查询（/simple/best 实时选卡用） ─────────────────────────────────
+
+_WINRATE_CACHE_TTL = 600  # 10 分钟（信号卡 24h 才结算，胜率变化慢）
+_winrate_cache: Dict[str, Any] = {"data": None, "expires_at": 0.0}
+
+
+def batch_query_winrates(
+    coin_directions: List[Tuple[str, str]],
+    lookback_days: int = 90,
+    min_sample: int = 1,
+) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    """
+    一次性查所有 (coin, direction) 在 lookback_days 内的真实结算胜率。
+
+    用单次 GROUP BY 拿全市场，再在内存里过滤候选列表，避免 N 次 DB round-trip。
+    结果缓存 10 分钟（_WINRATE_CACHE_TTL），因为 signal_card 24h 才结算。
+
+    Args:
+        coin_directions: 候选列表 [(coin, direction), ...]，仅用于过滤
+        lookback_days: 回看窗口（默认 90 天）
+        min_sample: 最小样本数过滤
+
+    Returns:
+        {(coin, direction): {"win_rate": float, "sample_count": int, "avg_pnl_pct": float}}
+        找不到的 pair 不在 dict 里
+    """
+    now = _time.time()
+    cache = _winrate_cache["data"]
+    if cache is None or now > _winrate_cache["expires_at"]:
+        conn = None
+        try:
+            conn = _get_connection()
+            import pymysql.cursors
+            cursor = conn.cursor(pymysql.cursors.DictCursor)
+            cursor.execute(
+                f"""SELECT
+                        UPPER(coin) AS coin,
+                        direction,
+                        COUNT(*) AS total,
+                        SUM(status='hit_tp') AS wins,
+                        ROUND(AVG(pnl_pct), 3) AS avg_pnl
+                    FROM signal_card_history
+                    WHERE status IN ('hit_tp', 'hit_sl', 'expired')
+                      AND created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)
+                    GROUP BY UPPER(coin), direction
+                 """,
+                (lookback_days,),
+            )
+            rows = cursor.fetchall()
+            cursor.close()
+            cache = {}
+            for r in rows:
+                total = int(r["total"] or 0)
+                if total < 1:
+                    continue
+                wins = int(r["wins"] or 0)
+                cache[(r["coin"], r["direction"])] = {
+                    "win_rate": round(wins / total * 100, 1),
+                    "sample_count": total,
+                    "avg_pnl_pct": float(r["avg_pnl"] or 0.0),
+                }
+            _winrate_cache["data"] = cache
+            _winrate_cache["expires_at"] = now + _WINRATE_CACHE_TTL
+        except Exception as e:
+            logger.error(f"batch_query_winrates 失败: {e}")
+            return {}
+        finally:
+            if conn:
+                conn.close()
+
+    # 过滤候选
+    result = {}
+    for coin, direction in coin_directions:
+        key = (coin.upper(), direction.lower())
+        stats = cache.get(key)
+        if stats and stats["sample_count"] >= min_sample:
+            result[key] = stats
+    return result
+
+
+def invalidate_winrate_cache() -> None:
+    """强制清缓存（测试用 / 关键节点后立即刷新）"""
+    _winrate_cache["data"] = None
+    _winrate_cache["expires_at"] = 0.0
 
 
 def _build_result(cards: List[dict], confidence_level: str, grade_filter: Optional[str]) -> Dict[str, Any]:
