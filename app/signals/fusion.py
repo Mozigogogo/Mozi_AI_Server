@@ -740,6 +740,20 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
         else: return 12
     prec = _prec(price)
 
+    # ── 反过度交易护栏：检查冷却期（最近 24h 内连续 3 次 hit_sl → 不出卡） ──
+    try:
+        from app.signals.backtest import is_direction_in_cooldown
+        in_cooldown, cooldown_ctx = is_direction_in_cooldown(coin, direction.value)
+        if in_cooldown:
+            from app.utils.logger import get_logger as _gl
+            _gl("app.signals.fusion").info(
+                f"⛔ 冷却期拦截: {coin}/{direction.value} 最近 24h 连续 {cooldown_ctx.get('recent_sl_count') if cooldown_ctx else 3} 次 hit_sl"
+                f" (last_sl={cooldown_ctx.get('last_sl_at') if cooldown_ctx else '?'})"
+            )
+            return None
+    except Exception:
+        pass  # 查询失败不阻塞信号生成（fail-open）
+
     # ── 生成信号卡 ────────────────────────────────────────────
     engine.increment_generated()
 

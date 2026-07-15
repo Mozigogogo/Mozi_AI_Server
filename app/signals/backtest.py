@@ -237,6 +237,97 @@ def invalidate_winrate_cache() -> None:
     _winrate_cache["expires_at"] = 0.0
 
 
+# ── 反过度交易护栏（防止 TST 类灾难：4h 内连出 7 张 short 全打止损） ────────
+
+_COOLDOWN_CACHE_TTL = 300  # 5 分钟（结算状态变化慢，5min 足够）
+_cooldown_cache: Dict[str, Any] = {}
+
+
+def is_direction_in_cooldown(
+    coin: str,
+    direction: str,
+    consecutive_sl_threshold: int = 3,
+    window_hours: int = 24,
+) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """
+    判断 (coin, direction) 是否处于"连续止损冷却期"。
+
+    触发条件：window_hours 内最近 consecutive_sl_threshold 张卡全部 hit_sl。
+    命中后自动冷却到 window_hours 内最早一张 hit_sl 卡的 created_at + window_hours。
+
+    5 分钟缓存（避免扫描时 96 币 × 2 方向 = 192 次重复查询）。
+
+    Returns:
+        (in_cooldown: bool, context: {recent_sl_count, last_sl_at, sample_card_created_at} | None)
+    """
+    cache_key = f"{coin.upper()}|{direction.lower()}"
+    now = _time.time()
+    cached = _cooldown_cache.get(cache_key)
+    if cached and cached["expires_at"] > now:
+        return cached["in_cooldown"], cached["context"]
+
+    conn = None
+    in_cooldown = False
+    context: Optional[Dict[str, Any]] = None
+    try:
+        conn = _get_connection()
+        import pymysql.cursors
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        # 拉 window_hours 内最近 N 张同币同向的已结算卡（任意状态，按时间倒序）
+        cursor.execute(
+            """SELECT id, status, created_at, settled_at, pnl_pct
+               FROM signal_card_history
+               WHERE coin = %s AND direction = %s
+                 AND status IN ('hit_tp', 'hit_sl', 'expired')
+                 AND created_at >= DATE_SUB(NOW(), INTERVAL %s HOUR)
+               ORDER BY created_at DESC
+               LIMIT %s""",
+            (coin.upper(), direction.lower(), window_hours, consecutive_sl_threshold),
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+
+        if len(rows) >= consecutive_sl_threshold and all(r["status"] == "hit_sl" for r in rows):
+            in_cooldown = True
+            context = {
+                "recent_sl_count": len(rows),
+                "last_sl_at": str(rows[0]["created_at"]),
+                "first_sl_at": str(rows[-1]["created_at"]),
+                "window_hours": window_hours,
+                "coin": coin.upper(),
+                "direction": direction.lower(),
+            }
+    except Exception as e:
+        logger.error(f"is_direction_in_cooldown 查询失败 ({coin}/{direction}): {e}")
+        # 查询失败不阻塞信号生成（fail-open）
+        return False, None
+    finally:
+        if conn:
+            conn.close()
+
+    _cooldown_cache[cache_key] = {
+        "in_cooldown": in_cooldown,
+        "context": context,
+        "expires_at": now + _COOLDOWN_CACHE_TTL,
+    }
+    return in_cooldown, context
+
+
+def invalidate_cooldown_cache(coin: Optional[str] = None, direction: Optional[str] = None) -> None:
+    """清冷却期缓存。不传参则清全部。"""
+    if not coin:
+        _cooldown_cache.clear()
+        return
+    key = f"{coin.upper()}|{(direction or '').lower()}"
+    if direction:
+        _cooldown_cache.pop(key, None)
+    else:
+        # 清该币所有 direction
+        keys_to_del = [k for k in _cooldown_cache if k.startswith(f"{coin.upper()}|")]
+        for k in keys_to_del:
+            _cooldown_cache.pop(k, None)
+
+
 def _build_result(cards: List[dict], confidence_level: str, grade_filter: Optional[str]) -> Dict[str, Any]:
     """从已结算卡列表构建回测结果"""
     hit_tp = [c for c in cards if c["status"] == "hit_tp"]
