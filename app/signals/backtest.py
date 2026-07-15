@@ -273,16 +273,17 @@ def is_direction_in_cooldown(
         conn = _get_connection()
         import pymysql.cursors
         cursor = conn.cursor(pymysql.cursors.DictCursor)
-        # 拉 window_hours 内最近 N 张同币同向的已结算卡（任意状态，按时间倒序）
+        # 注意：INTERVAL 和 LIMIT 用 f-string 拼接整数（参数化会被引号包裹成字符串报错）
+        # window_hours / consecutive_sl_threshold 都是模块级 int 字面量，不存在 SQL 注入风险
         cursor.execute(
-            """SELECT id, status, created_at, settled_at, pnl_pct
+            f"""SELECT id, status, created_at, settled_at, pnl_pct
                FROM signal_card_history
                WHERE coin = %s AND direction = %s
                  AND status IN ('hit_tp', 'hit_sl', 'expired')
-                 AND created_at >= DATE_SUB(NOW(), INTERVAL %s HOUR)
+                 AND created_at >= DATE_SUB(NOW(), INTERVAL {int(window_hours)} HOUR)
                ORDER BY created_at DESC
-               LIMIT %s""",
-            (coin.upper(), direction.lower(), window_hours, consecutive_sl_threshold),
+               LIMIT {int(consecutive_sl_threshold)}""",
+            (coin.upper(), direction.lower()),
         )
         rows = cursor.fetchall()
         cursor.close()
