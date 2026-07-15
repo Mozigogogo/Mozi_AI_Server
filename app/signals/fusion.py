@@ -744,15 +744,15 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
     try:
         from app.signals.backtest import is_direction_in_cooldown
         in_cooldown, cooldown_ctx = is_direction_in_cooldown(coin, direction.value)
+        logger.info(f" cooldown_check {coin}/{direction.value} → in_cooldown={in_cooldown} ctx={cooldown_ctx}")
         if in_cooldown:
-            from app.utils.logger import get_logger as _gl
-            _gl("app.signals.fusion").info(
+            logger.info(
                 f"⛔ 冷却期拦截: {coin}/{direction.value} 最近 24h 连续 {cooldown_ctx.get('recent_sl_count') if cooldown_ctx else 3} 次 hit_sl"
                 f" (last_sl={cooldown_ctx.get('last_sl_at') if cooldown_ctx else '?'})"
             )
             return None
-    except Exception:
-        pass  # 查询失败不阻塞信号生成（fail-open）
+    except Exception as _e:
+        logger.warning(f"冷却期检查异常 {coin}/{direction.value}: {type(_e).__name__}: {_e}")
 
     # ── 生成信号卡 ────────────────────────────────────────────
     engine.increment_generated()
