@@ -851,13 +851,20 @@ def generate_card_for_chat(coin: str, tier: str = "pro", always: bool = False, l
 
 
 def _build_card_event(signal_card: SignalCard, bt_result: dict, tier: str) -> dict:
-    """构建前端渲染用的 signal_card 事件数据（价格字段已格式化为字符串）"""
+    """构建前端渲染用的 signal_card 事件数据（价格字段已格式化为字符串）
+
+    win_rate/sample_count/avg_profit_pct 直接挂在 card 顶层（和 direction 对齐），
+    前端不需要再下钻到 event.backtest。event.backtest 保留用于 sharpe 等扩展指标。
+    """
     from app.utils.formatters import format_price_change
     card = {
         "coin": signal_card.coin,
         "direction": signal_card.direction.value,
         "grade": signal_card.grade.value,
         "confidence": signal_card.confidence,
+        "win_rate": signal_card.win_rate,
+        "sample_count": signal_card.sample_count,
+        "avg_profit_pct": signal_card.avg_profit_pct,
         "current_price": format_price_change(signal_card.current_price),
         "entry_zone": [format_price_change(signal_card.entry_low), format_price_change(signal_card.entry_high)],
         "stop_loss": format_price_change(signal_card.stop_loss),
