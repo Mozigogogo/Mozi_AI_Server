@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import os
 import time
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
@@ -19,7 +20,14 @@ from app.signals.fusion import fuse_signals
 from app.signals.backtest import backtest_signal
 from app.signals.models import SignalSource, SignalDirection
 from config.settings import settings as app_settings
+from app.utils.logger import get_logger
 import app.bigorder.deps as bigorder_deps
+
+logger = get_logger(__name__)
+
+BTC_GUARDRAIL_THRESHOLD = float(os.getenv("BTC_GUARDRAIL_THRESHOLD", "3.0"))
+BTC_GUARDRAIL_CACHE_TTL = int(os.getenv("BTC_GUARDRAIL_CACHE_TTL", "3600"))
+_btc_24h_cache: Dict[str, Any] = {"value": None, "ts": 0.0}
 
 
 @dataclass
@@ -391,7 +399,35 @@ def detect_accumulation_pattern(coin: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _scan_single(coin: str) -> ScanResult:
+def _get_btc_24h_change() -> Optional[float]:
+    """获取 BTC 24h 涨跌幅（百分比）。失败返回 None。1 小时缓存。"""
+    now = time.time()
+    if (
+        _btc_24h_cache["value"] is not None
+        and now - _btc_24h_cache["ts"] < BTC_GUARDRAIL_CACHE_TTL
+    ):
+        return _btc_24h_cache["value"]
+    try:
+        from app.services.data_service import get_kline_data_for_period
+        from app.skills.analysis_skills.quantitative import _parse_kline
+        kline = get_kline_data_for_period("BTC", 2)
+        ohlcv = _parse_kline(kline, None)
+        closes = ohlcv.get("closes", []) if ohlcv else []
+        if len(closes) < 2:
+            return None
+        last, prev = closes[-1], closes[-2]
+        if not prev or prev <= 0:
+            return None
+        val = (last - prev) / prev * 100
+        _btc_24h_cache["value"] = val
+        _btc_24h_cache["ts"] = now
+        return val
+    except Exception as e:
+        logger.warning(f"获取 BTC 24h 变化失败: {type(e).__name__}: {e}")
+        return None
+
+
+def _scan_single(coin: str, btc_24h_change: Optional[float] = None) -> ScanResult:
     """扫描单个币种（同步，在线程池中执行）"""
     t0 = time.time()
     try:
@@ -447,6 +483,25 @@ def _scan_single(coin: str) -> ScanResult:
         if not card:
             return ScanResult(coin=coin, elapsed=time.time() - t0)
 
+        # Phase 0 BTC 大盘双向护栏：BTC 24h 跌≥3% 跳过 long；涨≥3% 跳过 short
+        if btc_24h_change is not None and os.getenv("BTC_GUARDRAIL_ENABLED", "1") == "1":
+            if card.direction == SignalDirection.LONG and btc_24h_change <= -BTC_GUARDRAIL_THRESHOLD:
+                logger.info(
+                    f"🛑 BTC 护栏跳过 {coin}/long: BTC 24h={btc_24h_change:+.2f}% ≤ -{BTC_GUARDRAIL_THRESHOLD}%"
+                )
+                return ScanResult(
+                    coin=coin, elapsed=time.time() - t0,
+                    error=f"btc_guardrail_skip:long:BTC24h={btc_24h_change:+.2f}%",
+                )
+            if card.direction == SignalDirection.SHORT and btc_24h_change >= BTC_GUARDRAIL_THRESHOLD:
+                logger.info(
+                    f"🛑 BTC 护栏跳过 {coin}/short: BTC 24h={btc_24h_change:+.2f}% ≥ +{BTC_GUARDRAIL_THRESHOLD}%"
+                )
+                return ScanResult(
+                    coin=coin, elapsed=time.time() - t0,
+                    error=f"btc_guardrail_skip:short:BTC24h={btc_24h_change:+.2f}%",
+                )
+
         bt = None
         try:
             # 只读本地 strategy_state.json（秒返回，避免远程 DB 连接拖慢扫描）
@@ -486,13 +541,22 @@ async def scan_all_coins(
     if not coins:
         return []
 
+    # Phase 0: 计算 BTC 24h 变化一次，传给所有 _scan_single（1h 缓存）
+    btc_24h_change = (
+        _get_btc_24h_change()
+        if os.getenv("BTC_GUARDRAIL_ENABLED", "1") == "1"
+        else None
+    )
+    if btc_24h_change is not None:
+        logger.info(f"BTC 大盘护栏启用: 24h={btc_24h_change:+.2f}% (阈值±{BTC_GUARDRAIL_THRESHOLD}%)")
+
     semaphore = asyncio.Semaphore(concurrency)
     loop = asyncio.get_running_loop()
     results: List[ScanResult] = []
 
     async def _scan_with_limit(coin: str):
         async with semaphore:
-            result = await loop.run_in_executor(None, _scan_single, coin)
+            result = await loop.run_in_executor(None, _scan_single, coin, btc_24h_change)
             results.append(result)
 
     tasks = [asyncio.create_task(_scan_with_limit(coin)) for coin in coins]

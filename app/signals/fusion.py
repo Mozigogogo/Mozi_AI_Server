@@ -8,6 +8,7 @@
 4. 市场状态感知的策略参数
 """
 import math
+import os
 from typing import Optional, List
 from datetime import datetime
 
@@ -610,21 +611,45 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
         if not relaxed:
             return None
 
-    # ── 信号等级（v6 阈值：共振强度 + 置信度 二维独立判定，打破 A 级通胀）──
-    # S：3源全共振 + conf≥60（去掉 math_confirms 强制要求，让 S 级更容易出）
-    # A：3源全共振 + conf≥50（新增：纯共振路径，中等 conf + 强共振 = 高质量 A）
-    # A：2源共振 + conf≥70（提高阈值，原 50 → 70，让低 conf 2源卡落到 B）
-    # B：2源共振 + conf≥35（不变 — 让 B 级真正出现）
-    if len(sources) >= 3 and consistent_count >= 3 and confidence >= 60:
+    # ── 信号等级 v7：收紧阈值修复 v6 通胀（v6 注释"让 S 级更容易出"导致 A 级 wr 塌方）──
+    # 30d 回测：long A/S wr ~30%；S/short 90% 金矿不能动
+    # S：3源共振 + conf≥70（原 60）
+    # A：3源共振 + conf≥60（原 50）；2源共振 + conf≥75（原 70）
+    if len(sources) >= 3 and consistent_count >= 3 and confidence >= 70:
         grade = SignalGrade.S
-    elif len(sources) >= 3 and consistent_count >= 3 and confidence >= 50:
+    elif len(sources) >= 3 and consistent_count >= 3 and confidence >= 60:
         grade = SignalGrade.A
-    elif consistent_count >= 2 and confidence >= 70:
+    elif consistent_count >= 2 and confidence >= 75:
         grade = SignalGrade.A
     elif consistent_count >= 2 and confidence >= 35:
         grade = SignalGrade.B
     else:
         grade = SignalGrade.C if relaxed else SignalGrade.B
+
+    # ── ev_guardrail: 方向无关统计护栏（Phase 0）──
+    # 命中 guardrail → relaxed 降级 C，严格模式 return None
+    # 命中 reward → confidence ×1.1
+    ev_guardrail_hit = None
+    try:
+        from app.signals.ev_guardrail import check_signal, check_reward
+        tfa_str = (dual_tf_info.get("tf_agreement") if dual_tf_info else None) or ""
+        blocked, block_rule = check_signal(regime, tfa_str, direction.value)
+        if blocked:
+            ev_guardrail_hit = {"action": "block", **block_rule}
+            if not relaxed:
+                logger.info(
+                    f"⛔ ev_guardrail 拦截 {coin}/{direction.value} regime={regime} tfa={tfa_str} "
+                    f"wr={block_rule.get('wr')} n={block_rule.get('n')} expires={block_rule.get('expires_at')}"
+                )
+                return None
+            grade = SignalGrade.C
+        else:
+            rewarded, mult, reward_rule = check_reward(regime, tfa_str, direction.value)
+            if rewarded and mult != 1.0:
+                confidence = min(95, confidence * mult)
+                ev_guardrail_hit = {"action": "reward", **reward_rule}
+    except Exception as e:
+        logger.warning(f"ev_guardrail 检查异常 {coin}/{direction.value}: {type(e).__name__}: {e}")
 
     # ── 价格计算 ──────────────────────────────────────────────
     ohlcv_close = ohlcv.get("closes", [-1])[-1] if ohlcv.get("closes") else 0
@@ -720,6 +745,8 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
             hourly_composite=dual_tf_info.get("hourly_composite") if dual_tf_info else None,
             tf_agreement=dual_tf_info.get("tf_agreement") if dual_tf_info else None,
             fused_composite=dual_tf_info.get("fused_composite") if dual_tf_info else None,
+            grade_version=os.getenv("GRADE_VERSION", "v7"),
+            ev_guardrail=ev_guardrail_hit,
         )
 
     # ── 策略元数据 ────────────────────────────────────────────

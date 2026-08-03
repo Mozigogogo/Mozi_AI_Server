@@ -68,6 +68,9 @@ class MathDerivationSummary(BaseModel):
     fused_composite: Optional[float] = None
     # 来源标记（v4 起）：scan 扫描生成 / query 用户询问生成
     origin: str = "scan"
+    grade_version: str = "v6"
+    ev_guardrail: Optional[Dict[str, Any]] = None
+    market_breadth: str = ""
 
 
 class StrategyMeta(BaseModel):
