@@ -298,6 +298,35 @@ def is_direction_in_cooldown(
                 "coin": coin.upper(),
                 "direction": direction.lower(),
             }
+        elif os.getenv("COOLDOWN_7D_WR_ENABLED", "1") == "1":
+            # Phase 5-3: 7d wr<25% 触发（连续亏但没到 3 连，仍需冷却）
+            cursor = conn.cursor(pymysql.cursors.DictCursor)
+            cursor.execute(
+                """SELECT COUNT(*) AS n,
+                          SUM(status='hit_tp' OR (status='expired' AND pnl_pct > 0)) AS wins
+                   FROM signal_card_history
+                   WHERE coin = %s AND direction = %s
+                     AND status IN ('hit_tp','hit_sl','expired')
+                     AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)""",
+                (coin.upper(), direction.lower()),
+            )
+            wr_row = cursor.fetchone() or {}
+            cursor.close()
+            n_7d = int(wr_row.get("n") or 0)
+            wins_7d = int(wr_row.get("wins") or 0)
+            if n_7d >= 4:
+                wr_7d = wins_7d / n_7d
+                if wr_7d < 0.25:
+                    in_cooldown = True
+                    context = {
+                        "trigger": "low_7d_wr",
+                        "wr_7d": round(wr_7d, 3),
+                        "n_7d": n_7d,
+                        "wins_7d": wins_7d,
+                        "window_hours": 24 * 7,
+                        "coin": coin.upper(),
+                        "direction": direction.lower(),
+                    }
     except Exception as e:
         logger.error(f"is_direction_in_cooldown 查询失败 ({coin}/{direction}): {e}")
         # 查询失败不阻塞信号生成（fail-open）

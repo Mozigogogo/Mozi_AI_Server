@@ -651,6 +651,51 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
     except Exception as e:
         logger.warning(f"ev_guardrail 检查异常 {coin}/{direction.value}: {type(e).__name__}: {e}")
 
+    # ── market_breadth: BTC 大盘共振层（Phase 1）──
+    # 方向无关的双向对称规则：
+    #   方向与大盘一致（long+bullish / short+risk_off）→ confidence ×1.1
+    #   方向与大盘相反（long+risk_off / short+bullish）→ confidence ×0.6, grade 降一档
+    market_breadth_info = None
+    try:
+        from app.signals.market_context import get_btc_trend
+        btc_trend = get_btc_trend()
+        breadth = btc_trend.get("market_breadth", "neutral")
+        if breadth != "neutral":
+            is_favorable = (
+                (direction == SignalDirection.LONG and breadth == "bullish")
+                or (direction == SignalDirection.SHORT and breadth == "risk_off")
+            )
+            is_adverse = (
+                (direction == SignalDirection.LONG and breadth == "risk_off")
+                or (direction == SignalDirection.SHORT and breadth == "bullish")
+            )
+            base_info = {
+                "breadth": breadth,
+                "change_24h": btc_trend.get("change_24h"),
+                "change_7d": btc_trend.get("change_7d"),
+                "dist_from_ma20": btc_trend.get("dist_from_ma20"),
+                "hourly_trend": btc_trend.get("hourly_trend"),
+                "daily_trend": btc_trend.get("daily_trend"),
+            }
+            if is_favorable:
+                confidence = min(95, confidence * 1.1)
+                market_breadth_info = {**base_info, "action": "favorable"}
+            elif is_adverse:
+                confidence *= 0.6
+                downgrade = {
+                    SignalGrade.S: SignalGrade.A,
+                    SignalGrade.A: SignalGrade.B,
+                    SignalGrade.B: SignalGrade.C,
+                }
+                grade = downgrade.get(grade, grade)
+                market_breadth_info = {**base_info, "action": "adverse"}
+                logger.info(
+                    f"📉 market_breadth 降级 {coin}/{direction.value} breadth={breadth} "
+                    f"change_24h={base_info['change_24h']}% → grade {grade.value}, conf×0.6"
+                )
+    except Exception as e:
+        logger.warning(f"market_breadth 检查异常 {coin}/{direction.value}: {type(e).__name__}: {e}")
+
     # ── 价格计算 ──────────────────────────────────────────────
     ohlcv_close = ohlcv.get("closes", [-1])[-1] if ohlcv.get("closes") else 0
     price = realtime_price or ohlcv_close
@@ -682,6 +727,11 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
     # 使用自适应策略参数
     sl_mult = regime_params.get("stop_loss_atr_mult", 1.5)
     tp_mult = regime_params.get("tp_atr_mult", 3.0)
+
+    # Phase 1: market_breadth=risk_off 时收紧参数（双向对称，对 long/short 一视同仁）
+    if market_breadth_info and market_breadth_info.get("breadth") == "risk_off":
+        sl_mult *= 1.2  # 止损放宽 20%（避免被震荡洗出）
+        tp_mult *= 0.8  # 止盈收紧 20%（快进快出）
 
     if direction == SignalDirection.LONG:
         entry_low = max(price * 0.995, price - 0.3 * atr_v)
@@ -722,6 +772,12 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
     elif kelly_adj == 0 and math_result:
         position_pct = max(1.0, base_position * 0.5)
 
+    # Phase 5: market_breadth 双向缩放仓位（与方向一致加仓、相反减仓）
+    if market_breadth_info and market_breadth_info.get("action") == "favorable":
+        position_pct = min(10.0, position_pct * 1.2)
+    elif market_breadth_info and market_breadth_info.get("action") == "adverse":
+        position_pct = max(0.5, position_pct * 0.5)
+
     # ── 构建数学推导摘要 ──────────────────────────────────────
     math_summary = None
     if math_result:
@@ -747,6 +803,7 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
             fused_composite=dual_tf_info.get("fused_composite") if dual_tf_info else None,
             grade_version=os.getenv("GRADE_VERSION", "v7"),
             ev_guardrail=ev_guardrail_hit,
+            market_breadth=market_breadth_info,
         )
 
     # ── 策略元数据 ────────────────────────────────────────────

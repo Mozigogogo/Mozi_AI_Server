@@ -70,7 +70,7 @@ class MathDerivationSummary(BaseModel):
     origin: str = "scan"
     grade_version: str = "v6"
     ev_guardrail: Optional[Dict[str, Any]] = None
-    market_breadth: str = ""
+    market_breadth: Optional[Dict[str, Any]] = None
 
 
 class StrategyMeta(BaseModel):

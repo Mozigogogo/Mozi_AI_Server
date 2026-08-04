@@ -27,7 +27,13 @@ logger = get_logger(__name__)
 
 BTC_GUARDRAIL_THRESHOLD = float(os.getenv("BTC_GUARDRAIL_THRESHOLD", "3.0"))
 BTC_GUARDRAIL_CACHE_TTL = int(os.getenv("BTC_GUARDRAIL_CACHE_TTL", "3600"))
+
+CONCURRENCY_PENDING_MAX = int(os.getenv("SCAN_CONCURRENCY_PENDING_MAX", "3"))
+CONCURRENCY_24H_MAX = int(os.getenv("SCAN_CONCURRENCY_24H_MAX", "5"))
+
 _btc_24h_cache: Dict[str, Any] = {"value": None, "ts": 0.0}
+_concurrency_cache: Dict[str, Any] = {"data": None, "ts": 0.0}
+_CONCURRENCY_CACHE_TTL = 300  # 5min（pending/24h 状态变化慢）
 
 
 @dataclass
@@ -399,6 +405,44 @@ def detect_accumulation_pattern(coin: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _get_concurrency_stats() -> Dict[str, Dict[str, int]]:
+    """批量查所有币的 pending 卡数 + 24h 卡数，5min 缓存。返回 {coin: {pending: n, h24: n}}。"""
+    now = time.time()
+    if (
+        _concurrency_cache["data"] is not None
+        and now - _concurrency_cache["ts"] < _CONCURRENCY_CACHE_TTL
+    ):
+        return _concurrency_cache["data"]
+
+    stats: Dict[str, Dict[str, int]] = {}
+    try:
+        from app.signals.settlement import _get_conn
+        import pymysql.cursors
+        conn = _get_conn()
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            cur.execute(
+                "SELECT coin, COUNT(*) AS n FROM signal_card_history "
+                "WHERE status='pending' GROUP BY coin"
+            )
+            for r in cur.fetchall():
+                stats.setdefault(r["coin"].upper(), {})["pending"] = int(r["n"])
+
+            cur.execute(
+                "SELECT coin, COUNT(*) AS n FROM signal_card_history "
+                "WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) GROUP BY coin"
+            )
+            for r in cur.fetchall():
+                stats.setdefault(r["coin"].upper(), {})["h24"] = int(r["n"])
+        conn.close()
+    except Exception as e:
+        logger.warning(f"_get_concurrency_stats 查询失败: {type(e).__name__}: {e}")
+        return stats  # 空字典，不阻塞扫描（fail-open）
+
+    _concurrency_cache["data"] = stats
+    _concurrency_cache["ts"] = now
+    return stats
+
+
 def _get_btc_24h_change() -> Optional[float]:
     """获取 BTC 24h 涨跌幅（百分比）。失败返回 None。1 小时缓存。"""
     now = time.time()
@@ -427,9 +471,29 @@ def _get_btc_24h_change() -> Optional[float]:
         return None
 
 
-def _scan_single(coin: str, btc_24h_change: Optional[float] = None) -> ScanResult:
+def _scan_single(
+    coin: str,
+    btc_24h_change: Optional[float] = None,
+    concurrency_stats: Optional[Dict[str, Dict[str, int]]] = None,
+) -> ScanResult:
     """扫描单个币种（同步，在线程池中执行）"""
     t0 = time.time()
+
+    # Phase 5: 单币并发护栏（防止同币多卡同质化风险）
+    if concurrency_stats and os.getenv("SCAN_CONCURRENCY_GUARDRAIL_ENABLED", "1") == "1":
+        stat = concurrency_stats.get(coin.upper(), {})
+        pending = stat.get("pending", 0)
+        h24 = stat.get("h24", 0)
+        if pending >= CONCURRENCY_PENDING_MAX:
+            return ScanResult(
+                coin=coin, elapsed=time.time() - t0,
+                error=f"concurrency_skip:pending={pending}>={CONCURRENCY_PENDING_MAX}",
+            )
+        if h24 >= CONCURRENCY_24H_MAX:
+            return ScanResult(
+                coin=coin, elapsed=time.time() - t0,
+                error=f"concurrency_skip:h24={h24}>={CONCURRENCY_24H_MAX}",
+            )
     try:
         from app.services.data_service import (
             get_header_data,
@@ -550,13 +614,18 @@ async def scan_all_coins(
     if btc_24h_change is not None:
         logger.info(f"BTC 大盘护栏启用: 24h={btc_24h_change:+.2f}% (阈值±{BTC_GUARDRAIL_THRESHOLD}%)")
 
+    # Phase 5: 批量查并发护栏数据一次，传给所有 _scan_single（5min 缓存）
+    concurrency_stats = _get_concurrency_stats() if os.getenv("SCAN_CONCURRENCY_GUARDRAIL_ENABLED", "1") == "1" else None
+
     semaphore = asyncio.Semaphore(concurrency)
     loop = asyncio.get_running_loop()
     results: List[ScanResult] = []
 
     async def _scan_with_limit(coin: str):
         async with semaphore:
-            result = await loop.run_in_executor(None, _scan_single, coin, btc_24h_change)
+            result = await loop.run_in_executor(
+                None, _scan_single, coin, btc_24h_change, concurrency_stats
+            )
             results.append(result)
 
     tasks = [asyncio.create_task(_scan_with_limit(coin)) for coin in coins]
