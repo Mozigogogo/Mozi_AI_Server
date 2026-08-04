@@ -263,6 +263,21 @@ async def recompute_thresholds():
         return {"status": "error", "message": f"{type(e).__name__}: {e}"}
 
 
+@router.get("/backtest_v7")
+async def backtest_v7_compare(days: int = Query(30, description="回测窗口天数")):
+    """Phase 6: v6 vs v7 静态对比回测。
+
+    返回 v6 实际 wr/sum_pnl vs v7 模拟（grade+quality_gate+ev_guardrail 三重过滤）。
+    用已结算的 signal_card_history 数据评估 v7 上线后的理论效果。
+    """
+    try:
+        from app.signals.backtest_v7_compare import compare_v6_v7
+        result = compare_v6_v7(days=days)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": f"{type(e).__name__}: {e}"}
+
+
 @router.post("/strategy/evolve")
 async def strategy_evolve(coin: str = Query("BTC", description="用于市场状态检测的币种")):
     """
