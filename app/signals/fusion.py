@@ -611,17 +611,27 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
         if not relaxed:
             return None
 
-    # ── 信号等级 v7：收紧阈值修复 v6 通胀（v6 注释"让 S 级更容易出"导致 A 级 wr 塌方）──
-    # 30d 回测：long A/S wr ~30%；S/short 90% 金矿不能动
-    # S：3源共振 + conf≥70（原 60）
-    # A：3源共振 + conf≥60（原 50）；2源共振 + conf≥75（原 70）
-    if len(sources) >= 3 and consistent_count >= 3 and confidence >= 70:
+    # ── 信号等级 v7：收紧阈值修复 v6 通胀 ──
+    # Phase 3: 阈值从 grade_calibrator 读取（自适应，每日根据 7d wr 校准）
+    # 默认 v7：S=70, A_3src=60, A_2src=75, B=35
+    try:
+        from app.signals.grade_calibrator import get_effective_thresholds
+        eff = get_effective_thresholds()
+        s_conf = eff["S_min_conf"]
+        a3_conf = eff["A_3src_min_conf"]
+        a2_conf = eff["A_2src_min_conf"]
+        b_conf = eff["B_min_conf"]
+    except Exception as _e:
+        logger.warning(f"grade_calibrator 读取失败，回退默认 v7: {type(_e).__name__}")
+        s_conf, a3_conf, a2_conf, b_conf = 70, 60, 75, 35
+
+    if len(sources) >= 3 and consistent_count >= 3 and confidence >= s_conf:
         grade = SignalGrade.S
-    elif len(sources) >= 3 and consistent_count >= 3 and confidence >= 60:
+    elif len(sources) >= 3 and consistent_count >= 3 and confidence >= a3_conf:
         grade = SignalGrade.A
-    elif consistent_count >= 2 and confidence >= 75:
+    elif consistent_count >= 2 and confidence >= a2_conf:
         grade = SignalGrade.A
-    elif consistent_count >= 2 and confidence >= 35:
+    elif consistent_count >= 2 and confidence >= b_conf:
         grade = SignalGrade.B
     else:
         grade = SignalGrade.C if relaxed else SignalGrade.B

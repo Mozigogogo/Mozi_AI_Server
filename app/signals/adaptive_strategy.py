@@ -153,6 +153,8 @@ class StrategyState:
     last_evolution_at: float = 0.0
     # 按币种累加的胜率 {coin: {win_rate, sample_count, wins, total_pnl, last_updated}}
     coin_winrates: Dict[str, dict] = field(default_factory=dict)
+    # Phase 3: 自适应 grade 阈值校准结果（dict，含 conf 偏移和下次重审时间）
+    calibrated_thresholds: Dict[str, Any] = field(default_factory=dict)
 
     def get_factor_perf(self, name: str) -> FactorPerformance:
         if name not in self.factor_performances:

@@ -81,12 +81,25 @@ class SignificanceResult:
 @dataclass
 class RegimeResult:
     """市场状态检测结果"""
-    regime: str              # trending_up / trending_down / mean_reverting / volatile / quiet
+    regime: str              # trending_up_breakout / trending_up_extended / trending_up /
+                             # trending_down_breakdown / trending_down_extended / trending_down /
+                             # mean_reverting / volatile / quiet
     confidence: float        # 状态判断置信度
     hurst_regime: str        # Hurst 判断
     vol_regime: str          # 波动率判断
     auto_corr: float         # 自相关系数
     interpretation: str
+
+
+@dataclass
+class FlagPattern:
+    """旗形/形态识别结果（Phase 2）"""
+    pattern: str                        # bull_flag / bear_flag / sym_triangle /
+                                        # box_breakout / box_breakdown / none
+    stage: str                          # forming / breakout / failed
+    breakout_level: Optional[float] = None  # 突破/触发价位
+    invalidation_level: Optional[float] = None  # 失效价位（止损参考）
+    confidence: float = 0.0             # 0-1，形态清晰度
 
 
 @dataclass
@@ -553,6 +566,117 @@ def statistical_significance(
     )
 
 
+def detect_flag_pattern(
+    closes: list[float],
+    highs: list[float] = None,
+    lows: list[float] = None,
+) -> FlagPattern:
+    """
+    旗形/形态识别（Phase 2）— 双向对称，不预设方向。
+
+    识别 5 种形态：
+    - bull_flag:       前期急涨 + 最近回调/盘整（高点下移但守在前低之上）
+    - bear_flag:       前期急跌 + 最近反弹/盘整（低点上移但守在前高之下）
+    - sym_triangle:    最近区间相对前期收缩 ≥40%（高低点收敛）
+    - box_breakout:    前期窄幅箱体 + 最近向上突破
+    - box_breakdown:   前期窄幅箱体 + 最近向下突破
+
+    Args:
+        closes: 收盘价序列
+        highs:  最高价（缺省=closes）
+        lows:   最低价（缺省=closes）
+
+    Returns:
+        FlagPattern(pattern, stage, breakout_level, invalidation_level, confidence)
+    """
+    n = len(closes)
+    if n < 20:
+        return FlagPattern(pattern="none", stage="forming", confidence=0.0)
+
+    highs = list(highs) if highs else list(closes)
+    lows = list(lows) if lows else list(closes)
+
+    last = closes[-1]
+
+    # 把最近 20 天分为"前期"（10-20 天前）和"近期"（最近 10 天）
+    prior_closes = closes[-20:-10]
+    recent_closes = closes[-10:]
+    prior_high = max(highs[-20:-10])
+    prior_low = min(lows[-20:-10])
+    recent_high = max(highs[-10:])
+    recent_low = min(lows[-10:])
+
+    if not prior_closes or prior_closes[0] <= 0:
+        return FlagPattern(pattern="none", stage="forming", confidence=0.0)
+
+    prior_change = (prior_closes[-1] - prior_closes[0]) / prior_closes[0] * 100
+
+    prior_range = prior_high - prior_low
+    recent_range = recent_high - recent_low
+    contraction = recent_range / prior_range if prior_range > 0 else 1.0
+
+    # ── bull_flag: 前期急涨 + 最近回调/盘整 ──
+    if prior_change > 5 and recent_high <= prior_high * 1.005:
+        if last > prior_high:
+            return FlagPattern(
+                pattern="bull_flag", stage="breakout",
+                breakout_level=prior_high,
+                invalidation_level=recent_low,
+                confidence=min(1.0, prior_change / 10),
+            )
+        return FlagPattern(
+            pattern="bull_flag", stage="forming",
+            breakout_level=prior_high,
+            invalidation_level=prior_low,
+            confidence=min(1.0, prior_change / 12),
+        )
+
+    # ── bear_flag: 前期急跌 + 最近反弹/盘整 ──
+    if prior_change < -5 and recent_low >= prior_low * 0.995:
+        if last < prior_low:
+            return FlagPattern(
+                pattern="bear_flag", stage="breakout",
+                breakout_level=prior_low,
+                invalidation_level=recent_high,
+                confidence=min(1.0, abs(prior_change) / 10),
+            )
+        return FlagPattern(
+            pattern="bear_flag", stage="forming",
+            breakout_level=prior_low,
+            invalidation_level=prior_high,
+            confidence=min(1.0, abs(prior_change) / 12),
+        )
+
+    # ── sym_triangle: 最近区间相对前期收缩 ≥40% ──
+    if contraction < 0.6 and prior_range > 0:
+        return FlagPattern(
+            pattern="sym_triangle", stage="forming",
+            breakout_level=recent_high,
+            invalidation_level=recent_low,
+            confidence=min(1.0, (1 - contraction) * 2),
+        )
+
+    # ── box_breakout / box_breakdown: 前期窄幅箱体（<8%）+ 最近突破 ──
+    box_range_pct = prior_range / prior_closes[0] if prior_closes[0] > 0 else 1.0
+    if 0 < box_range_pct < 0.08:
+        if last > prior_high * 1.01:
+            return FlagPattern(
+                pattern="box_breakout", stage="breakout",
+                breakout_level=prior_high,
+                invalidation_level=prior_low,
+                confidence=0.6,
+            )
+        if last < prior_low * 0.99:
+            return FlagPattern(
+                pattern="box_breakdown", stage="breakout",
+                breakout_level=prior_low,
+                invalidation_level=prior_high,
+                confidence=0.6,
+            )
+
+    return FlagPattern(pattern="none", stage="forming", confidence=0.0)
+
+
 def detect_regime(closes: list[float]) -> RegimeResult:
     """
     市场状态检测 — 多维度判断当前市场运行模式
@@ -628,9 +752,35 @@ def detect_regime(closes: list[float]) -> RegimeResult:
     total_score = sum(scores.values())
     confidence = max_score / total_score if total_score > 0 else 0.3
 
+    # Phase 2: 拆分 trending_up/down 为 breakout/extended（双向对称）
+    # breakout = 距 20 日极值 <2%（突破初期，趋势策略有效）
+    # extended = 距 20 日极值 >8%（顶部/底部区域，追高风险）
+    dist_from_high = 0.0
+    dist_from_low = 0.0
+    if len(closes) >= 20:
+        high_20 = max(closes[-20:])
+        low_20 = min(closes[-20:])
+        dist_from_high = (closes[-1] - high_20) / high_20 * 100 if high_20 > 0 else 0
+        dist_from_low = (closes[-1] - low_20) / low_20 * 100 if low_20 > 0 else 0
+
+    if regime == "trending_up":
+        if dist_from_high > -2:  # 距高点 <2%
+            regime = "trending_up_breakout"
+        elif dist_from_high < -8:  # 距高点 >8%
+            regime = "trending_up_extended"
+    elif regime == "trending_down":
+        if dist_from_low < 2:  # 距低点 <2%
+            regime = "trending_down_breakdown"
+        elif dist_from_low > 8:  # 距低点 >8%
+            regime = "trending_down_extended"
+
     interpretations = {
         "trending_up": f"上升趋势模式(H={hurst_r.hurst:.2f}, 20日涨幅={recent_trend:+.1f}%)，趋势策略有效",
+        "trending_up_breakout": f"突破初期(距20日高点{dist_from_high:+.1f}%)，趋势策略最佳窗口",
+        "trending_up_extended": f"追高风险(距20日高点{dist_from_high:+.1f}%)，禁多 / 等回调",
         "trending_down": f"下降趋势模式(H={hurst_r.hurst:.2f}, 20日跌幅={recent_trend:+.1f}%)，做空或观望",
+        "trending_down_breakdown": f"破位初期(距20日低点{dist_from_low:+.1f}%)，做空最佳窗口",
+        "trending_down_extended": f"逼空风险(距20日低点{dist_from_low:+.1f}%)，禁空 / 等反弹",
         "mean_reverting": f"均值回归模式(H={hurst_r.hurst:.2f}, 自相关={auto_corr:.3f})，反转策略有效",
         "volatile": f"极端波动模式(波动率分位={vol_r.percentile:.0f}%)，降低仓位，宽止损",
         "quiet": f"低波动安静期(波动率分位={vol_r.percentile:.0f}%)，适合建仓",

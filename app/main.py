@@ -425,14 +425,17 @@ async def _weekly_review_task():
 
 
 async def _guardrail_recompute_task():
-    """ev_guardrail 重算任务 — 每 24h 扫 60d 历史，更新 guardrail/reward 表"""
+    """ev_guardrail + grade 阈值校准任务 — 每 24h"""
     while True:
         try:
             await asyncio.sleep(86400)  # 24h
-            from app.signals.ev_guardrail import recompute_guardrails
+            loop = asyncio.get_event_loop()
+
+            # 1. ev_guardrail 重算
             try:
+                from app.signals.ev_guardrail import recompute_guardrails
                 result = await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(None, recompute_guardrails),
+                    loop.run_in_executor(None, recompute_guardrails),
                     timeout=120,
                 )
                 logger.info(
@@ -441,10 +444,24 @@ async def _guardrail_recompute_task():
                 )
             except asyncio.TimeoutError:
                 logger.warning("ev_guardrail 重算超时(120s)，跳过本轮")
+
+            # 2. Phase 3 grade 阈值校准
+            try:
+                from app.signals.grade_calibrator import calibrate_grade_thresholds
+                calib = await asyncio.wait_for(
+                    loop.run_in_executor(None, calibrate_grade_thresholds),
+                    timeout=60,
+                )
+                logger.info(
+                    f"grade 阈值校准完成: A_offset={calib.get('A_conf_offset')} "
+                    f"S_offset={calib.get('S_conf_offset')}"
+                )
+            except asyncio.TimeoutError:
+                logger.warning("grade 阈值校准超时(60s)，跳过本轮")
         except asyncio.CancelledError:
             break
         except Exception as e:
-            logger.error(f"ev_guardrail 重算任务异常: {e}", exc_info=True)
+            logger.error(f"guardrail/grade 重算任务异常: {e}", exc_info=True)
             await asyncio.sleep(3600)
 
 

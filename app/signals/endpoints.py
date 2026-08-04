@@ -237,6 +237,32 @@ async def strategy_performance():
     return {"status": "success", "data": report}
 
 
+@router.get("/thresholds")
+async def grade_thresholds():
+    """
+    Phase 3: 查看 grade 阈值当前状态
+    - effective: 实际生效的阈值（默认 + 校准偏移）
+    - calibration: 校准历史（A/S 偏移、原因、下次重审时间）
+    - defaults: v7 默认值
+    """
+    try:
+        from app.signals.grade_calibrator import list_thresholds
+        return {"status": "success", "data": list_thresholds()}
+    except Exception as e:
+        return {"status": "error", "message": f"{type(e).__name__}: {e}"}
+
+
+@router.post("/thresholds/recompute")
+async def recompute_thresholds():
+    """Phase 3: 手动触发一次 grade 阈值重算（否则等每日 cron）"""
+    try:
+        from app.signals.grade_calibrator import calibrate_grade_thresholds
+        result = calibrate_grade_thresholds()
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": f"{type(e).__name__}: {e}"}
+
+
 @router.post("/strategy/evolve")
 async def strategy_evolve(coin: str = Query("BTC", description="用于市场状态检测的币种")):
     """
