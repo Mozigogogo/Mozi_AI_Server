@@ -71,6 +71,7 @@ class MathDerivationSummary(BaseModel):
     grade_version: str = "v6"
     ev_guardrail: Optional[Dict[str, Any]] = None
     market_breadth: Optional[Dict[str, Any]] = None
+    quality_score: Optional[Dict[str, Any]] = None
 
 
 class StrategyMeta(BaseModel):

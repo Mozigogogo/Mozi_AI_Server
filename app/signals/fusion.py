@@ -574,6 +574,35 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
     if tech_src:
         sources.append(tech_src)
 
+    # ── Phase 4: 对称 alpha 触发器（双向）──
+    # market_breadth 提前取一次（market_context 有 5min LRU，后面 line 689 复用同一次）
+    alpha_breadth = "neutral"
+    try:
+        from app.signals.market_context import get_btc_trend
+        alpha_breadth = (get_btc_trend() or {}).get("market_breadth", "neutral")
+    except Exception:
+        pass
+
+    if os.getenv("ENABLE_ALPHA_BREAKOUT", "1") == "1":
+        try:
+            from app.signals.alpha_breakout_retest import evaluate as eval_breakout
+            brk = eval_breakout(coin, ohlcv, regime, alpha_breadth)
+            if brk:
+                sources.append(brk)
+        except Exception as e:
+            logger.warning(f"alpha_breakout_retest 异常 {coin}: {type(e).__name__}: {e}")
+
+    if os.getenv("ENABLE_ALPHA_MEANREV", "1") == "1":
+        try:
+            from app.signals.alpha_mean_reversion import evaluate as eval_meanrev
+            # 4h K线用于反转确认（entry_ohlcv 通常是 4h/1h）
+            kline_4h = entry_ohlcv if entry_ohlcv and len(entry_ohlcv.get("closes", [])) >= 2 else None
+            mrev = eval_meanrev(coin, ohlcv, regime, alpha_breadth, kline_4h)
+            if mrev:
+                sources.append(mrev)
+        except Exception as e:
+            logger.warning(f"alpha_mean_reversion 异常 {coin}: {type(e).__name__}: {e}")
+
     if len(sources) < 2:
         if not relaxed:
             return None
@@ -660,6 +689,24 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
                 ev_guardrail_hit = {"action": "reward", **reward_rule}
     except Exception as e:
         logger.warning(f"ev_guardrail 检查异常 {coin}/{direction.value}: {type(e).__name__}: {e}")
+
+    # ── quality_gate: 方向无关质量门（Phase 4）──
+    # 总分 < 0.6 → 严格模式 return None，relaxed 模式降级 C
+    quality_score = None
+    try:
+        from app.signals.quality_gate import score_signal, should_drop
+        quality_score = score_signal(sources, math_result, dual_tf_info)
+        if should_drop(quality_score):
+            if not relaxed:
+                logger.info(
+                    f"🚫 quality_gate 拦截 {coin}/{direction.value}: "
+                    f"total={quality_score['total']} sig={quality_score['significance']} "
+                    f"info={quality_score['information']} evid={quality_score['evidence']}"
+                )
+                return None
+            grade = SignalGrade.C
+    except Exception as e:
+        logger.warning(f"quality_gate 检查异常 {coin}/{direction.value}: {type(e).__name__}: {e}")
 
     # ── market_breadth: BTC 大盘共振层（Phase 1）──
     # 方向无关的双向对称规则：
@@ -814,6 +861,7 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
             grade_version=os.getenv("GRADE_VERSION", "v7"),
             ev_guardrail=ev_guardrail_hit,
             market_breadth=market_breadth_info,
+            quality_score=quality_score,
         )
 
     # ── 策略元数据 ────────────────────────────────────────────
