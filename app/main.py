@@ -53,7 +53,12 @@ async def lifespan(app: FastAPI):
     settlement_task = asyncio.create_task(_signal_settlement_task())
     review_task = asyncio.create_task(_weekly_review_task())
     market_scan_task = asyncio.create_task(_market_scan_task())
-    logger.info("Signal Cards: 后台结算(10min) + 周期复盘(每周日) + 全市场扫描(30min) 已启动")
+    guardrail_task = asyncio.create_task(_guardrail_recompute_task())
+    report_task = asyncio.create_task(_daily_report_task())
+    logger.info(
+        "Signal Cards: 后台结算(5min) + 周期复盘(每周日) + 全市场扫描(30min) "
+        "+ ev_guardrail 重算(24h) + 每日报表(6h) 已启动"
+    )
 
     yield
 
@@ -63,6 +68,8 @@ async def lifespan(app: FastAPI):
     settlement_task.cancel()
     review_task.cancel()
     market_scan_task.cancel()
+    guardrail_task.cancel()
+    report_task.cancel()
     logger.info("服务关闭")
 
 
@@ -414,6 +421,50 @@ async def _weekly_review_task():
             break
         except Exception as e:
             logger.error(f"周期复盘任务异常: {e}", exc_info=True)
+            await asyncio.sleep(3600)
+
+
+async def _guardrail_recompute_task():
+    """ev_guardrail 重算任务 — 每 24h 扫 60d 历史，更新 guardrail/reward 表"""
+    while True:
+        try:
+            await asyncio.sleep(86400)  # 24h
+            from app.signals.ev_guardrail import recompute_guardrails
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, recompute_guardrails),
+                    timeout=120,
+                )
+                logger.info(
+                    f"ev_guardrail 重算完成: guardrail={result.get('guardrail_count', 0)} "
+                    f"reward={result.get('reward_count', 0)}"
+                )
+            except asyncio.TimeoutError:
+                logger.warning("ev_guardrail 重算超时(120s)，跳过本轮")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"ev_guardrail 重算任务异常: {e}", exc_info=True)
+            await asyncio.sleep(3600)
+
+
+async def _daily_report_task():
+    """每日报表任务 — 每 6h 跑一次（避免错过窗口）"""
+    while True:
+        try:
+            await asyncio.sleep(21600)  # 6h
+            from app.signals.daily_report import generate_daily_report
+            try:
+                await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, generate_daily_report),
+                    timeout=180,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("daily_report 超时(180s)，跳过本轮")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"daily_report 任务异常: {e}", exc_info=True)
             await asyncio.sleep(3600)
 
 
