@@ -603,6 +603,15 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
         except Exception as e:
             logger.warning(f"alpha_mean_reversion 异常 {coin}: {type(e).__name__}: {e}")
 
+    if os.getenv("ENABLE_ALPHA_FUNDING", "1") == "1":
+        try:
+            from app.signals.alpha_funding_rate import evaluate as eval_funding
+            fund = eval_funding(coin, regime, alpha_breadth)
+            if fund:
+                sources.append(fund)
+        except Exception as e:
+            logger.warning(f"alpha_funding_rate 异常 {coin}: {type(e).__name__}: {e}")
+
     if len(sources) < 2:
         if not relaxed:
             return None

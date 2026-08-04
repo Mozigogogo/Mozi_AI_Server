@@ -153,7 +153,7 @@ def evaluate(
         direction=direction,
         detail=f"mean_reversion regime={regime} breadth={market_breadth} "
                f"rsi={rsi:.1f} reversal={reversal_confirmed} vol_expansion={vol_expansion}",
-        raw={
+        extra={
             "regime": regime, "breadth": market_breadth,
             "rsi": round(rsi, 2),
             "reversal_confirmed": reversal_confirmed,

@@ -124,7 +124,7 @@ def evaluate(
         detail=f"breakout_retest regime={regime} breadth={market_breadth} "
                f"dist_high={dist_from_high:+.1f}% dist_low={dist_from_low:+.1f}% "
                f"vol_contracted={vol_contracted}",
-        raw={
+        extra={
             "regime": regime, "breadth": market_breadth,
             "dist_from_high": round(dist_from_high, 2),
             "dist_from_low": round(dist_from_low, 2),

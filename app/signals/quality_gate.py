@@ -23,8 +23,8 @@ DEFAULT_THRESHOLD = float(os.getenv("QUALITY_GATE_THRESHOLD", "0.6"))
 ENABLED = os.getenv("QUALITY_GATE_ENABLED", "1") == "1"
 
 INDEPENDENT_SOURCE_PREFIXES = (
-    "bigorder", "quant", "technical", "alpha_breakout",
-    "alpha_mean_rev", "alpha_funding",
+    "bigorder", "quant", "technical",
+    "alpha_breakout", "alpha_mean_rev", "alpha_funding",
 )
 
 
