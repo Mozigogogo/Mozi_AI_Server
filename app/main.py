@@ -55,9 +55,10 @@ async def lifespan(app: FastAPI):
     market_scan_task = asyncio.create_task(_market_scan_task())
     guardrail_task = asyncio.create_task(_guardrail_recompute_task())
     report_task = asyncio.create_task(_daily_report_task())
+    drift_task = asyncio.create_task(_regime_drift_task())
     logger.info(
         "Signal Cards: 后台结算(5min) + 周期复盘(每周日) + 全市场扫描(30min) "
-        "+ ev_guardrail 重算(24h) + 每日报表(6h) 已启动"
+        "+ ev_guardrail 重算(24h) + 每日报表(6h) + regime 漂移(7d) 已启动"
     )
 
     yield
@@ -478,10 +479,36 @@ async def _daily_report_task():
                 )
             except asyncio.TimeoutError:
                 logger.warning("daily_report 超时(180s)，跳过本轮")
+            # Phase 6: A/B 桶对照（同日报表一起跑）
+            try:
+                from app.signals.ab_framework import compare_buckets
+                compare_buckets(days=7)
+            except Exception as _e:
+                logger.warning(f"ab_framework compare_buckets 异常: {_e}")
         except asyncio.CancelledError:
             break
         except Exception as e:
             logger.error(f"daily_report 任务异常: {e}", exc_info=True)
+            await asyncio.sleep(3600)
+
+
+async def _regime_drift_task():
+    """regime 漂移监控 — 每周跑一次"""
+    while True:
+        try:
+            await asyncio.sleep(604800)  # 7d
+            from app.signals.regime_drift_monitor import run_weekly_check
+            try:
+                await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, run_weekly_check),
+                    timeout=120,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("regime_drift 超时(120s)，跳过本轮")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"regime_drift 任务异常: {e}", exc_info=True)
             await asyncio.sleep(3600)
 
 

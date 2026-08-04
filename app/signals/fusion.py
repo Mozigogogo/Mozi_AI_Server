@@ -872,6 +872,12 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
             market_breadth=market_breadth_info,
             quality_score=quality_score,
         )
+        # Phase 6: experiment_bucket（A/B 框架，fail-open）
+        try:
+            from app.signals.ab_framework import get_experiment_bucket
+            math_summary.experiment_bucket = get_experiment_bucket(coin)
+        except Exception:
+            math_summary.experiment_bucket = "control"
 
     # ── 策略元数据 ────────────────────────────────────────────
     strategy_meta = StrategyMeta(

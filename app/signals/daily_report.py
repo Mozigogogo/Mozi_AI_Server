@@ -155,6 +155,58 @@ def _guardrail_hits(days: int = 1) -> Dict[str, int]:
     return {str(r.get("action") or "unknown"): _safe_int(r.get("n")) for r in rows}
 
 
+def _alpha_breakdown(days: int = 7) -> List[Dict[str, Any]]:
+    """Phase 4 各 alpha 的独立 wr / sum_pnl（哪个 alpha 在印钞/失血）。
+
+    sources_json 形如 [{"name":"alpha_breakout_retest",...}]，
+    用 LIKE 粗筛 + JSON 解析细筛（兼容 MySQL 5.7 / 8.0）。
+    """
+    rows = _query_df(
+        """
+        SELECT direction, status, pnl_pct, sources_json
+        FROM signal_card_history
+        WHERE status IN ('hit_tp','hit_sl','expired')
+          AND settled_at >= DATE_SUB(NOW(), INTERVAL %s DAY)
+          AND sources_json LIKE '%%alpha_%%'
+        """,
+        (days,),
+    )
+    if not rows:
+        return []
+
+    # 客户端按 source name 聚合（避免依赖 JSON_TABLE）
+    agg: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        try:
+            sources = json.loads(r.get("sources_json") or "[]")
+        except Exception:
+            continue
+        names = {s.get("name") for s in sources if isinstance(s, dict)}
+        alpha_names = {n for n in names if n and n.startswith("alpha_")}
+        if not alpha_names:
+            continue
+        won = r.get("status") == "hit_tp" or (r.get("status") == "expired" and _safe_float(r.get("pnl_pct")) > 0)
+        pnl = _safe_float(r.get("pnl_pct"))
+        for name in alpha_names:
+            d = agg.setdefault(name, {"alpha": name, "n": 0, "wins": 0, "sum_pnl": 0.0})
+            d["n"] += 1
+            if won:
+                d["wins"] += 1
+            d["sum_pnl"] += pnl
+
+    out = []
+    for d in agg.values():
+        n = d["n"]
+        out.append({
+            "alpha": d["alpha"],
+            "n": n,
+            "wr": round(d["wins"] / n * 100, 1) if n else 0,
+            "sum_pnl": round(d["sum_pnl"], 2),
+        })
+    out.sort(key=lambda x: x["sum_pnl"], reverse=True)
+    return out
+
+
 def _top_coins(days: int = 7, limit: int = 5, order_desc: bool = True) -> List[Dict[str, Any]]:
     """Top N 印钞/失血机（按 sum_pnl）"""
     direction = "DESC" if order_desc else "ASC"
@@ -234,6 +286,7 @@ def generate_daily_report() -> Dict[str, Any]:
         "guardrail_hits_24h": _guardrail_hits(days=1),
         "top5_printers_7d": _top_coins(days=7, limit=5, order_desc=True),
         "top5_bleeders_7d": _top_coins(days=7, limit=5, order_desc=False),
+        "alpha_breakdown_7d": _alpha_breakdown(days=7),
     }
 
     # 加 guardrail 表当前状态
