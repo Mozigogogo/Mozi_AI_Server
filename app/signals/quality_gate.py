@@ -19,7 +19,7 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-DEFAULT_THRESHOLD = float(os.getenv("QUALITY_GATE_THRESHOLD", "0.6"))
+DEFAULT_THRESHOLD = float(os.getenv("QUALITY_GATE_THRESHOLD", "0.45"))
 ENABLED = os.getenv("QUALITY_GATE_ENABLED", "1") == "1"
 
 INDEPENDENT_SOURCE_PREFIXES = (
