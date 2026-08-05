@@ -28,8 +28,9 @@ logger = get_logger(__name__)
 BTC_GUARDRAIL_THRESHOLD = float(os.getenv("BTC_GUARDRAIL_THRESHOLD", "3.0"))
 BTC_GUARDRAIL_CACHE_TTL = int(os.getenv("BTC_GUARDRAIL_CACHE_TTL", "3600"))
 
-CONCURRENCY_PENDING_MAX = int(os.getenv("SCAN_CONCURRENCY_PENDING_MAX", "3"))
-CONCURRENCY_24H_MAX = int(os.getenv("SCAN_CONCURRENCY_24H_MAX", "5"))
+# 并发护栏：settle 正常时阈值，settle 异常时会被 pending 卡灌爆 → 需要 env 调大或关闭
+CONCURRENCY_PENDING_MAX = int(os.getenv("SCAN_CONCURRENCY_PENDING_MAX", "10"))
+CONCURRENCY_24H_MAX = int(os.getenv("SCAN_CONCURRENCY_24H_MAX", "20"))
 
 _btc_24h_cache: Dict[str, Any] = {"value": None, "ts": 0.0}
 _concurrency_cache: Dict[str, Any] = {"data": None, "ts": 0.0}
