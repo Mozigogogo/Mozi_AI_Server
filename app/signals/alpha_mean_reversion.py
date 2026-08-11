@@ -27,7 +27,8 @@ logger = get_logger(__name__)
 RSI_PERIOD = 14
 RSI_OVERSOLD = 30.0      # LONG 触发阈值
 RSI_OVERBOUGHT = 70.0    # SHORT 触发阈值
-BASE_WEIGHT = 0.20
+# 30d 回测：n=222 wr=77% sum_pnl=+1618，印钞机 → 权重上调
+BASE_WEIGHT = 0.30
 
 
 def _compute_rsi(closes: list, period: int = RSI_PERIOD) -> Optional[float]:

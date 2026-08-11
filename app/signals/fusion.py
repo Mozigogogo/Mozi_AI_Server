@@ -583,7 +583,9 @@ def fuse_signals(coin: str, ohlcv: dict, raw_data: dict, relaxed: bool = False, 
     except Exception:
         pass
 
-    if os.getenv("ENABLE_ALPHA_BREAKOUT", "1") == "1":
+    # alpha_breakout_retest 默认禁用（30d 回测 wr=17.9% sum_pnl=-23，需要重设计）
+    # 启用：env ENABLE_ALPHA_BREAKOUT=1
+    if os.getenv("ENABLE_ALPHA_BREAKOUT", "0") == "1":
         try:
             from app.signals.alpha_breakout_retest import evaluate as eval_breakout
             brk = eval_breakout(coin, ohlcv, regime, alpha_breadth)

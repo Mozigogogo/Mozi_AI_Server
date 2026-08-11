@@ -29,6 +29,8 @@ logger = get_logger(__name__)
 WINDOW = 60
 DIST_THRESHOLD = 2.0  # 距极值 <2% 视为"接近突破"
 BASE_WEIGHT = 0.20  # 该 alpha 在 sources 加权中的默认权重
+# 30d 回测：n=28 wr=17.9% sum_pnl=-23，默认禁用直到回测为正
+# 启用方法：env ENABLE_ALPHA_BREAKOUT=1
 
 
 def _safe_ma(values, window):

@@ -21,7 +21,8 @@ logger = get_logger(__name__)
 
 LOOKBACK_DAYS = int(os.getenv("GUARDRAIL_LOOKBACK_DAYS", "60"))
 MIN_SAMPLE = int(os.getenv("GUARDRAIL_MIN_SAMPLE", "30"))
-WR_BAD_THRESHOLD = float(os.getenv("GUARDRAIL_WR_BAD", "0.30"))
+# 30d 数据：long A wr=37.7%（n=3228）整体失血 -857。阈值从 0.30 → 0.40 才能拦住
+WR_BAD_THRESHOLD = float(os.getenv("GUARDRAIL_WR_BAD", "0.40"))
 WR_GOOD_THRESHOLD = float(os.getenv("GUARDRAIL_WR_GOOD", "0.60"))
 TTL_DAYS = int(os.getenv("GUARDRAIL_TTL_DAYS", "30"))
 
