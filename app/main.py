@@ -283,8 +283,10 @@ async def add_process_time_header(request: Request, call_next):
 
 async def _bigorder_background_scan(consumer, scorer, llm_analyzer):
     """BigOrder 后台定时扫描 — 与信号卡共用 discovery 币种列表"""
-    # 增量 LLM：记录上次评分，只在分数或等级变化时才调用 LLM
-    _last_scores: dict = {}  # {coin: (total_score, level)}
+    # LLM 节流：每币 TTL 内复用上次分析结果，不再重调。
+    # 旧逻辑（分数变化 <10 才跳过）形同虚设：sigma 分数 30s 内抖 ±10 是常态，
+    # 曾 24/7 刷出 ~2700 次/天把 DeepSeek 余额烧空（2026-08-16 402）。
+    _llm_cache: dict = {}  # {coin: (monotonic_ts, analysis)}
     while True:
         try:
             await asyncio.sleep(settings.scan_interval)  # 大单侦测：30s
@@ -301,19 +303,24 @@ async def _bigorder_background_scan(consumer, scorer, llm_analyzer):
             except asyncio.TimeoutError:
                 logger.warning("BigOrder 后台扫描: score_all 超时(2min)，跳过本轮")
                 continue
+            now = time.monotonic()
+            blocked = llm_analyzer.blocked_reason()
             for signal in signals:
                 if signal.score.level.value == "none":
                     continue
-                # 增量判断：分数变化 < 10 且等级相同 → 跳过 LLM
                 coin = signal.coin
-                current = (signal.score.total_score, signal.score.level.value)
-                last = _last_scores.get(coin)
-                _last_scores[coin] = current
-                if last and abs(current[0] - last[0]) < 10 and current[1] == last[1]:
-                    continue  # 数据没变，复用上次 LLM 分析
+                ttl = (settings.bigorder_llm_ttl_strong
+                       if signal.score.level.value == "strong"
+                       else settings.bigorder_llm_ttl_medium)
+                cached = _llm_cache.get(coin)
+                if cached and now - cached[0] < ttl:
+                    continue  # TTL 内复用，不打 LLM 也不覆盖 redis
+                if blocked:
+                    continue  # 熔断/超额当日停调，保留 redis 里的旧解读
                 try:
                     signal = await asyncio.wait_for(llm_analyzer.analyze_and_enrich(signal), timeout=30)
-                    if signal.llm_analysis:
+                    if signal.llm_analysis and llm_analyzer.last_call_ok:
+                        _llm_cache[coin] = (now, signal.llm_analysis)
                         coin_key = f"signal:coin:{signal.coin}"
                         consumer.client.hset(coin_key, "llm_analysis", signal.llm_analysis)
                 except asyncio.TimeoutError:

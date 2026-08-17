@@ -87,6 +87,13 @@ class Settings(BaseSettings):
 
     # ── Bigorder LLM（独立模型） ──
     bigorder_deepseek_model: str = "deepseek-v4-flash"
+    # LLM 节流：每币最短重分析间隔（秒）。STRONG 信号变化快，MEDIUM 大多为噪音
+    bigorder_llm_ttl_strong: int = 300    # 5 分钟
+    bigorder_llm_ttl_medium: int = 1800   # 30 分钟
+    # 每日 LLM 调用配额（保险丝，超过后 MEDIUM 停调、STRONG 仍保留）
+    bigorder_llm_daily_max: int = 300
+    # 402/余额耗尽熔断：连续失败 N 次后全局暂停 LLM 调用该时长（秒）
+    bigorder_llm_circuit_cooldown: int = 3600
 
     # ── Bigorder 引擎参数 ──
     scan_interval: int = 30  # BigOrder 大单侦测扫描间隔（秒）

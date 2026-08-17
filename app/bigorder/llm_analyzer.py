@@ -1,6 +1,8 @@
 """LLM 智能分析 - 异动信号解读"""
 import json
 import asyncio
+import time
+from datetime import date
 from typing import Optional
 from openai import AsyncOpenAI
 from app.bigorder.models import AnomalySignal, SignalLevel
@@ -10,14 +12,62 @@ from app.utils.logger import get_logger
 
 logger = get_logger("app.bigorder.llm_analyzer")
 
+_CIRCUIT_FAILS_TO_TRIP = 3
+
 
 class LLMAnalyzer:
-    """调用 DeepSeek 对异动信号生成智能解读"""
+    """调用 DeepSeek 对异动信号生成智能解读
+
+    成本护栏（2026-08-17 加入，背景：后台扫描曾 24/7 刷出 ~2700 次/天把余额烧空）：
+    - 402/鉴权失败连续 3 次 → 熔断 bigorder_llm_circuit_cooldown 秒，期间不再发请求
+    - 每日调用配额 bigorder_llm_daily_max，超配额当日停调
+    - 每次成功调用打 INFO 日志（coin + 耗时 + 当日用量），烧钱可见
+    """
 
     def __init__(self):
         # 使用共享 LLM 客户端，但模型用 bigorder 专属配置
         self.client = get_llm_client()
         self.model = settings.bigorder_deepseek_model
+        self._circuit_open_until = 0.0
+        self._consecutive_fails = 0
+        self._daily_count = 0
+        self._daily_date: Optional[str] = None
+        self.last_call_ok = True
+
+    def blocked_reason(self) -> Optional[str]:
+        """熔断/配额检查。None = 可调用。"""
+        today = date.today().isoformat()
+        if self._daily_date != today:
+            self._daily_date = today
+            self._daily_count = 0
+        now = time.time()
+        if now < self._circuit_open_until:
+            return f"circuit_open {int(self._circuit_open_until - now)}s left"
+        if self._daily_count >= settings.bigorder_llm_daily_max:
+            return f"daily_quota {self._daily_count}/{settings.bigorder_llm_daily_max}"
+        return None
+
+    def _record_success(self, coin: str, level: str, elapsed_ms: float) -> None:
+        self._consecutive_fails = 0
+        self.last_call_ok = True
+        self._daily_count += 1
+        logger.info(
+            f"BigOrder LLM ok: {coin} level={level} {elapsed_ms:.0f}ms "
+            f"(today {self._daily_count}/{settings.bigorder_llm_daily_max})"
+        )
+
+    def _record_failure(self, coin: str, exc: Exception) -> None:
+        self.last_call_ok = False
+        msg = str(exc)
+        if "402" in msg or "Insufficient Balance" in msg or "401" in msg:
+            self._consecutive_fails += 1
+            if self._consecutive_fails >= _CIRCUIT_FAILS_TO_TRIP:
+                self._circuit_open_until = time.time() + settings.bigorder_llm_circuit_cooldown
+                self._consecutive_fails = 0
+                logger.error(
+                    f"BigOrder LLM 熔断 {settings.bigorder_llm_circuit_cooldown}s: "
+                    f"连续 {_CIRCUIT_FAILS_TO_TRIP} 次付费/鉴权失败 ({coin}: {msg[:120]})"
+                )
 
     def _get_prompt(self, lang: str = "zh") -> str:
         if lang == "en":
@@ -62,6 +112,12 @@ Keep under 200 words. Do not mention other coins. Do not fabricate data."""
 
     async def analyze(self, signal: AnomalySignal, lang: str = "zh") -> str:
         """对信号生成 LLM 解读"""
+        blocked = self.blocked_reason()
+        if blocked:
+            if lang == "en":
+                return f"⚠️ LLM analysis paused: {blocked} ({signal.coin} total score: {signal.score.total_score})"
+            return f"⚠️ LLM解读暂停：{blocked}（{signal.coin} 综合得分{signal.score.total_score}）"
+
         s = signal.score
         prompt_template = self._get_prompt(lang)
 
@@ -109,6 +165,7 @@ Keep under 200 words. Do not mention other coins. Do not fabricate data."""
         )
 
         try:
+            started = time.time()
             response = await asyncio.wait_for(
                 self.client.chat.completions.create(
                     model=self.model,
@@ -117,8 +174,10 @@ Keep under 200 words. Do not mention other coins. Do not fabricate data."""
                 ),
                 timeout=30.0
             )
+            self._record_success(signal.coin, s.level.value, (time.time() - started) * 1000)
             return response.choices[0].message.content.strip()
         except Exception as e:
+            self._record_failure(signal.coin, e)
             logger.error(f"LLM 分析失败: {e}")
             if lang == "en":
                 return f"⚠️ LLM analysis unavailable ({signal.coin} total score: {s.total_score})"
