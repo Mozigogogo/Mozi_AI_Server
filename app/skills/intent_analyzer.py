@@ -66,8 +66,9 @@ API：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) |
 
                 response = await self.client.chat.completions.create(
                     model=settings.deepseek_model,
-                    max_tokens=500,
-                    timeout=20.0,
+                    # 推理模型：思考 token 计入 max_tokens，预算太小会返回空 content
+                    max_tokens=2000,
+                    timeout=40.0,
                     messages=[{"role": "user", "content": prompt}]
                 )
 

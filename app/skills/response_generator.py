@@ -258,16 +258,17 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
             )
 
             # 调用 LLM 生成回答（添加超时设置）
-            # 使用配置中的 token 限制
+            # deepseek-v4-flash 是推理模型：思考 token 计入 max_tokens，
+            # 预算不足时思考烧穿额度 → 答案为空或中途截断
             if mode in ("quantitative", "quantitative_chat"):
-                max_tokens = 2500
-                timeout_seconds = 90.0
+                max_tokens = 6000
+                timeout_seconds = 120.0
             elif mode == "think":
-                max_tokens = 1200
-                timeout_seconds = 45.0
+                max_tokens = 4096
+                timeout_seconds = 90.0
             else:
-                max_tokens = 600
-                timeout_seconds = 20.0
+                max_tokens = 2048
+                timeout_seconds = 45.0
 
             response = await self.client.chat.completions.create(
                 model=settings.deepseek_model,
@@ -337,15 +338,17 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
             )
 
             # 设置 token 限制和总超时
+            # deepseek-v4-flash 是推理模型：思考 token 计入 max_tokens，
+            # 预算不足时思考烧穿额度 → 流式无 content chunk / 答案中途截断
             if mode in ("quantitative", "quantitative_chat"):
-                max_tokens = 2500
-                timeout_seconds = 90.0
+                max_tokens = 6000
+                timeout_seconds = 120.0
             elif mode == "think":
-                max_tokens = 1200
-                timeout_seconds = 50.0
+                max_tokens = 4096
+                timeout_seconds = 90.0
             else:
-                max_tokens = 600
-                timeout_seconds = 30.0
+                max_tokens = 2048
+                timeout_seconds = 45.0
 
             # 流式调用 LLM（带空响应重试，最多2次）
             for attempt in range(2):
@@ -362,12 +365,21 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
                     )
 
                     has_content = False
+                    finish_reason = None
                     async for chunk in stream:
-                        if chunk.choices and chunk.choices[0].delta.content:
-                            has_content = True
-                            yield chunk.choices[0].delta.content
+                        if chunk.choices:
+                            choice = chunk.choices[0]
+                            if choice.delta and choice.delta.content:
+                                has_content = True
+                                yield choice.delta.content
+                            if choice.finish_reason:
+                                finish_reason = choice.finish_reason
 
                     if has_content:
+                        if finish_reason == "length":
+                            logger.warning(
+                                f"LLM 回答被 max_tokens={max_tokens} 截断 (finish_reason=length, mode={mode})"
+                            )
                         return
                     elif attempt == 0:
                         logger.info(f"  ⚠️ LLM流式响应为空，重试...")

@@ -74,13 +74,14 @@ class CommandRouter:
             try:
                 response = await self.client.chat.completions.create(
                     model=settings.deepseek_model,
-                    max_tokens=200,
-                    timeout=10.0,
+                    # 推理模型：思考 token 计入 max_tokens，预算太小会返回空 content
+                    max_tokens=1500,
+                    timeout=30.0,
                     messages=[{"role": "user", "content": PROMPT_TEMPLATE.format(question=question)}],
                 )
                 content = response.choices[0].message.content.strip()
 
-                # DeepSeek 偶发返回空 content（非异常但内容为空），重试
+                # 思考 token 烧穿预算时 content 为空，重试
                 if not content:
                     logger.warning(f"LLM 返回空 content (attempt {attempt+1})")
                     if attempt == 0:
