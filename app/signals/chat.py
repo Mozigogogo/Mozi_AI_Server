@@ -498,21 +498,50 @@ async def chat(request: SignalChatRequest):
 
         try:
             with Timer(rid, "step3.llm_stream"):
-                final_resp = await client.chat.completions.create(
-                    model=model,
-                    messages=final_messages,
-                    # 推理模型：思考 token 计入 max_tokens，1000 会被烧穿 → 空回答
-                    max_tokens=4096,
-                    timeout=90.0,
-                    stream=True,
-                )
-                chunk_n = 0
-                async for chunk in final_resp:
-                    delta = chunk.choices[0].delta
-                    if delta.content:
-                        chunk_n += 1
-                        yield render(sse_chat_delta(rid, delta.content))
-            trace(rid, "step3.done", chunks=chunk_n)
+                # httpcore2 流式栈偶发静默断裂（0 content chunk 且无异常），空流重试 + 非流式兜底
+                answer_parts = []
+                for attempt in range(2):
+                    final_resp = await client.chat.completions.create(
+                        model=model,
+                        messages=final_messages,
+                        # 推理模型：思考 token 计入 max_tokens，1000 会被烧穿 → 空回答
+                        max_tokens=4096,
+                        timeout=90.0,
+                        stream=True,
+                    )
+                    chunk_n = 0
+                    try:
+                        async for chunk in final_resp:
+                            delta = chunk.choices[0].delta
+                            if delta.content:
+                                chunk_n += 1
+                                answer_parts.append(delta.content)
+                                yield render(sse_chat_delta(rid, delta.content))
+                    except Exception as stream_err:
+                        trace(rid, "step3.stream_error", attempt=attempt,
+                              error=f"{type(stream_err).__name__}: {stream_err}")
+                        if answer_parts:
+                            break  # 已输出部分内容，不重试避免重复
+                    if chunk_n > 0:
+                        break
+                    if attempt == 0:
+                        trace(rid, "step3.empty_stream_retry")
+
+                if not answer_parts:
+                    fallback = await asyncio.wait_for(
+                        client.chat.completions.create(
+                            model=model,
+                            messages=final_messages,
+                            max_tokens=4096,
+                            timeout=90.0,
+                        ),
+                        timeout=95.0,
+                    )
+                    text = (fallback.choices[0].message.content or "").strip()
+                    if text:
+                        answer_parts.append(text)
+                        yield render(sse_chat_delta(rid, text))
+            trace(rid, "step3.done", chunks=len(answer_parts))
         except Exception as e:
             trace(rid, "step3.error", error=f"{type(e).__name__}: {e}")
             yield render(sse_error(rid, ERR_INTERNAL, str(e)))
