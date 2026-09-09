@@ -370,7 +370,8 @@ async def chat(request: SignalChatRequest):
                         messages=messages,
                         tools=TOOLS,
                         tool_choice="auto",
-                        max_tokens=500,
+                        # 推理模型：思考 token 计入 max_tokens，预算太小选不出 tool
+                        max_tokens=1500,
                     ),
                     timeout=30.0
                 )
@@ -500,7 +501,9 @@ async def chat(request: SignalChatRequest):
                 final_resp = await client.chat.completions.create(
                     model=model,
                     messages=final_messages,
-                    max_tokens=1000,
+                    # 推理模型：思考 token 计入 max_tokens，1000 会被烧穿 → 空回答
+                    max_tokens=4096,
+                    timeout=90.0,
                     stream=True,
                 )
                 chunk_n = 0
