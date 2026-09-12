@@ -26,6 +26,8 @@ _SYMBOL_REFRESH_INTERVAL = 3600  # 币种列表刷新间隔（秒）
 _SYMBOLS_PER_CHANNEL = 50        # 单订阅频道币种数（分块防单帧过大）
 _INVALIDATE_MIN_GAP = 5.0        # 同一 (币种, 数据) 失效节流（秒）
 _HEARTBEAT_INTERVAL = 300        # 存活日志间隔（秒）
+_RECV_TIMEOUT = 60               # 单次 recv 超时（秒），超时后检查推送看门狗
+_STALE_THRESHOLD = 600           # 无 kline 推送阈值（秒），超过强制重连（生产实测服务端订阅会静默失效）
 
 # WS period → data_service kline_type（15m/30m/4h 无对应 REST 缓存，跳过）
 _PERIOD_KLINE_TYPE = {"1h": 1, "1d": 2, "1w": 3, "1M": 4}
@@ -39,16 +41,17 @@ def _invalidate(url: str) -> None:
     invalidate_cache(url)
 
 
-def _on_push(raw: str) -> None:
-    """处理服务端推送。kline 综合包（500ms，无 channelId）→ 失效对应 K线+行情头缓存。"""
+def _on_push(raw: str) -> bool:
+    """处理服务端推送。kline 综合包（500ms，无 channelId）→ 失效对应 K线+行情头缓存。
+    返回是否为有效 kline 推送（供看门狗判断数据流是否存活）。"""
     try:
         msg = json.loads(raw)
         if msg.get("event") != "kline":
-            return
+            return False
         data = msg.get("data") or {}
         symbol = (data.get("headerData") or {}).get("symbol")
         if not symbol:
-            return
+            return False
         _stats["msgs"] += 1
 
         period = ((data.get("klineData") or {}).get("realKlineData") or {}).get("period")
@@ -61,9 +64,10 @@ def _on_push(raw: str) -> None:
         _throttled_invalidate(
             f"{settings.kline_api_base}/detail/header?symbol={symbol}",
             f"{symbol}:hdr")
+        return True
 
     except Exception:
-        pass
+        return False
 
 
 def _throttled_invalidate(url: str, throttle_key: str) -> None:
@@ -103,6 +107,7 @@ class WsKlineManager:
         self._stop = False
         self._symbols: List[str] = []
         self._last_refresh = 0.0
+        self._last_msg = time.monotonic()
 
     async def run(self):
         import websockets
@@ -124,11 +129,22 @@ class WsKlineManager:
                 conn = await websockets.connect(
                     f"{settings.ws_kline_base}/ws", ping_interval=20, close_timeout=5)
                 await self._subscribe(conn)
+                self._last_msg = time.monotonic()
 
                 heartbeat_task = asyncio.create_task(self._heartbeat())
                 try:
-                    async for raw in conn:
-                        _on_push(raw)
+                    while True:
+                        try:
+                            raw = await asyncio.wait_for(conn.recv(), timeout=_RECV_TIMEOUT)
+                        except asyncio.TimeoutError:
+                            stale = time.monotonic() - self._last_msg
+                            if stale > _STALE_THRESHOLD:
+                                logger.warning(
+                                    f"ws_kline: {int(stale)}s 无 kline 推送，强制重连（服务端订阅疑似静默失效）")
+                                break
+                            continue
+                        if _on_push(raw):
+                            self._last_msg = time.monotonic()
                 finally:
                     heartbeat_task.cancel()
             except asyncio.CancelledError:
@@ -177,13 +193,14 @@ class WsKlineManager:
             pass
 
     async def _heartbeat(self):
-        """存活与流量观测日志"""
+        """存活与流量观测日志（last_msg 显示距最近一次 kline 推送的秒数）"""
         while True:
             await asyncio.sleep(_HEARTBEAT_INTERVAL)
             uptime = int(time.time() - _stats["started_at"])
             logger.info(
                 f"ws_kline alive: uptime={uptime}s symbols={len(self._symbols)} "
-                f"msgs={_stats['msgs']} invalidations={_stats['invalidations']}"
+                f"msgs={_stats['msgs']} invalidations={_stats['invalidations']} "
+                f"last_msg={int(time.monotonic() - self._last_msg)}s ago"
             )
 
 
