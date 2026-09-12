@@ -31,11 +31,18 @@ class IntentAnalyzer:
 用户问题：{question}
 
 输出格式：
-{{"language":"zh或en","intent_type":"类型","coin_symbol":"币种","required_apis":["API列表"],"answer_requirements":["要求"],"confidence":0.0}}
+{{"language":"zh或en","intent_type":"类型","asset_class":"crypto或us_stock","coin_symbol":"币种或美股代码","required_apis":["API列表"],"answer_requirements":["要求"],"confidence":0.0}}
 
 意图类型：query_price(价格/市值/涨跌幅) | query_trend(趋势/走势/K线) | query_news(新闻) | query_derivatives(成交量/持仓量/多空比/资金费率) | analyze_technical(技术面) | analyze_comprehensive(综合分析) | analyze_quantitative(量化分析) | analyze_signal(信号卡/能否买入/卖出建议/交易信号/操盘建议) | simple_chat(闲聊)
 
-API：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) | get_buy_sell_ratio(多空比) | get_open_interest(持仓量) | get_trading_volume(成交量) | get_funding_rate(资金费率)
+API（asset_class=crypto）：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) | get_buy_sell_ratio(多空比) | get_open_interest(持仓量) | get_trading_volume(成交量) | get_funding_rate(资金费率)
+API（asset_class=us_stock）：get_us_quote(实时报价+公司档案) | get_us_kline_data(K线) | get_us_return_investment(区间涨跌) | get_us_session(交易时段)
+
+资产类别判定（asset_class，先判类别再选API）：
+- 美股公司/股票代码（AAPL、TSLA、NVDA、苹果、特斯拉、英伟达、美股、股票）→ asset_class=us_stock
+- 加密货币（BTC、ETH、比特币、以太坊、SOL、meme币、现货币种、合约）→ asset_class=crypto
+- 中文公司名必须转成美股代码：苹果→AAPL、特斯拉→TSLA、英伟达→NVDA、微软→MSFT、谷歌→GOOGL、亚马逊→AMZN、Meta→META，其他知名公司按你的知识转
+- 歧义代码（HOOD 是股票、SOLO 是币）按上下文判断；上下文不明默认 crypto
 
 规则：
 - 价格变化/涨跌幅→query_price
@@ -49,6 +56,9 @@ API：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) |
 - "分析一下 BTC 走势" → analyze_comprehensive
 - "BTC 走势" → query_trend
 - "BTC 走势会怎样" → analyze_comprehensive
+- "苹果股票怎么样" → asset_class=us_stock, coin_symbol=AAPL
+- "NVDA 现在多少钱" → asset_class=us_stock, intent_type=query_price
+- "特斯拉技术面" → asset_class=us_stock, coin_symbol=TSLA
 只选需要的API。只输出JSON："""
 
     async def analyze(self, question: str, history_questions: list = None) -> IntentInfo:
@@ -80,6 +90,7 @@ API：get_header_data(价格) | get_kline_data(K线) | get_recent_news(新闻) |
                     return IntentInfo(
                         language=intent_data.get("language", "zh"),
                         intent_type=intent_data["intent_type"],
+                        asset_class="us_stock" if intent_data.get("asset_class") == "us_stock" else "crypto",
                         coin_symbol=intent_data.get("coin_symbol"),
                         required_apis=intent_data.get("required_apis", []),
                         answer_requirements=intent_data.get("answer_requirements", []),

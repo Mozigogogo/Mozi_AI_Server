@@ -22,6 +22,50 @@ class ResponseGenerator:
             base_url=settings.deepseek_api_base
         )
         self.templates = self._get_prompt_templates()
+        self.us_stock_think_templates = self._get_us_stock_think_templates()
+
+    def _get_us_stock_think_templates(self) -> Dict[str, str]:
+        """美股 think 模板：替换加密版的"衍生品情绪"固定段，避免输出资金费率/多空比等加密概念"""
+        return {
+            "zh": """你是专业美股分析师。严格约束：
+1. 【最高优先级】只分析用户问的这只股票，绝对禁止提及其他任何股票或加密货币。数据中不包含其他标的信息，不要编造。
+2. 只使用下面提供的数据回答，禁止使用训练知识中的旧数据或编造数据
+3. 优先引用"实时数据.当前价格"字段。如果没有实时数据，用日线收盘价并标注"截至X日"。区间涨跌（1日/7日/1月/1年）可补充引用。
+4. 这是美股，不是加密货币。禁止提及资金费率、多空比、爆仓、持仓量、恐惧贪婪指数等加密衍生品概念。
+
+问题：{question}
+时间：{timestamp}
+数据：
+{data}
+要求：{answer_requirements}
+
+格式要求（严格遵守）：
+分3段，每段用###标题+emoji开头。关键数字**加粗**。200-300字。末尾1句风险提示。必须完整不截断。
+
+### 💰 价格与走势
+引用实时价格、日内区间、涨跌幅。日线与区间涨跌（7日/1月/1年）作参考。涨用📈 跌用📉。
+
+### 📊 基本面与量能
+市值、行业、52周高低、成交量/成交额。数据缺失时明确说明，不编造。
+
+### 🎯 综合判断
+1-2句总结 + 风险提示""",
+
+            "en": """You are a professional US stock analyst. Analyze in English. Constraints:
+1. [HIGHEST PRIORITY] Only analyze the stock the user asked about. Absolutely do NOT mention any other stocks or cryptocurrencies. The data does not contain other tickers - do not fabricate.
+2. Only use the data provided below. Never use outdated data from training knowledge or fabricate numbers.
+3. Must cite the real-time price. If missing, use the latest daily close and note "as of [date]". The return windows (1D/7D/1M/1Y) may supplement.
+4. This is a US stock, NOT a cryptocurrency. Do NOT mention funding rates, long/short ratios, liquidations, open interest, or fear & greed index.
+
+Question: {question}
+Time: {timestamp}
+Data:
+{data}
+
+Requirements: {answer_requirements}
+
+200-300 words, 3 sections with ### headers + emoji: price & trend, fundamentals & volume, overall judgment. Bold key numbers. End with 1 risk disclaimer sentence. Must be complete, no truncation."""
+        }
 
     def _get_prompt_templates(self) -> Dict[str, Dict[str, str]]:
         """获取不同语言的 Prompt 模板"""
@@ -232,6 +276,10 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
         try:
             # 获取对应的语言模板
             template = self.templates.get(intent.language, self.templates["zh"])[mode]
+            # 美股 think 用专属模板（无衍生品固定段）
+            if mode == "think" and getattr(intent, "asset_class", "crypto") == "us_stock":
+                template = self.us_stock_think_templates.get(
+                    intent.language, self.us_stock_think_templates["zh"])
 
             # 格式化数据（量化模式用 JSON 序列化，保留完整结构）
             if mode in ("quantitative", "quantitative_chat"):
@@ -239,10 +287,13 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
             else:
                 formatted_data = self._format_data(skill_result.data)
 
-            # 在数据头部注入币种标识，防止 LLM 幻觉其他币种
+            # 在数据头部注入标的标识，防止 LLM 幻觉其他标的
             symbol = intent.coin_symbol or ""
             if symbol:
-                formatted_data = f"【以下数据仅包含 {symbol} 的数据，不包含任何其他币种的数据】\n" + formatted_data
+                if getattr(intent, "asset_class", "crypto") == "us_stock":
+                    formatted_data = f"【以下数据仅包含美股 {symbol}（不是加密货币），不包含任何其他股票/币种的数据】\n" + formatted_data
+                else:
+                    formatted_data = f"【以下数据仅包含 {symbol} 的数据，不包含任何其他币种的数据】\n" + formatted_data
 
             # 格式化回答要求
             answer_requirements = "\n".join(
@@ -312,6 +363,10 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
         try:
             # 获取对应的语言模板
             template = self.templates.get(intent.language, self.templates["zh"])[mode]
+            # 美股 think 用专属模板（无衍生品固定段）
+            if mode == "think" and getattr(intent, "asset_class", "crypto") == "us_stock":
+                template = self.us_stock_think_templates.get(
+                    intent.language, self.us_stock_think_templates["zh"])
 
             # 格式化数据（量化模式用 JSON 序列化，保留完整结构）
             if mode in ("quantitative", "quantitative_chat"):
@@ -319,10 +374,13 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
             else:
                 formatted_data = self._format_data(skill_result.data)
 
-            # 在数据头部注入币种标识，防止 LLM 幻觉其他币种
+            # 在数据头部注入标的标识，防止 LLM 幻觉其他标的
             symbol = intent.coin_symbol or ""
             if symbol:
-                formatted_data = f"【以下数据仅包含 {symbol} 的数据，不包含任何其他币种的数据】\n" + formatted_data
+                if getattr(intent, "asset_class", "crypto") == "us_stock":
+                    formatted_data = f"【以下数据仅包含美股 {symbol}（不是加密货币），不包含任何其他股票/币种的数据】\n" + formatted_data
+                else:
+                    formatted_data = f"【以下数据仅包含 {symbol} 的数据，不包含任何其他币种的数据】\n" + formatted_data
 
             # 格式化回答要求
             answer_requirements = "\n".join(
@@ -565,6 +623,11 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
     # ── 推荐问题模板 ──────────────────────────────────────────
     _SUGGESTION_TEMPLATES = {
         "zh": {
+            "us_stock": [
+                "{coin} 技术面怎么样",
+                "{coin} 近一年涨了多少",
+                "{coin} 综合分析一下",
+            ],
             "query_price": [
                 "{coin}技术面怎么样",
                 "{coin}多空比和资金费率",
@@ -602,6 +665,11 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
             ],
         },
         "en": {
+            "us_stock": [
+                "{coin} technical analysis",
+                "{coin} 1-year performance",
+                "{coin} comprehensive analysis",
+            ],
             "query_price": [
                 "{coin} technical analysis",
                 "{coin} long/short ratio & funding rate",

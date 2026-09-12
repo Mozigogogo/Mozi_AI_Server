@@ -9,7 +9,8 @@ class IntentInfo(BaseModel):
     """意图信息 - LLM 分析结果"""
     language: str = "zh"  # zh 或 en
     intent_type: str  # 意图类型
-    coin_symbol: Optional[str] = None  # 币种符号
+    asset_class: str = "crypto"  # crypto 或 us_stock
+    coin_symbol: Optional[str] = None  # 币种符号 / 美股代码
     required_apis: List[str] = []  # 需要调用的 API 列表
     answer_requirements: List[str] = []  # 回答需要包含的内容
     raw_question: str = ""  # 原始问题

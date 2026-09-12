@@ -12,15 +12,21 @@ import threading
 import time
 from typing import Any, Dict, Optional
 
+from app.core.config import get_settings
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+settings = get_settings()
 
 CACHE_TTL_SEC = 300
 _cache_lock = threading.Lock()
 _cache: Dict[str, Any] = {"value": None, "ts": 0.0}
 
 BREADTH_CHANGE_THRESHOLD = 1.0  # ±1% 软阈值
+
+# 恐惧贪婪情绪辅助（FEAR_GREED_ENABLED=0 可整体关闭回滚）
+FEAR_GREED_EXTREME_FEAR = 25   # ≤25 极度恐惧区
+FEAR_GREED_EXTREME_GREED = 75  # ≥75 极度贪婪区
 
 
 def _compute_trend(closes: list, window: int = 20) -> str:
@@ -48,12 +54,16 @@ def _compute_dist_from_ma(closes: list, window: int = 20) -> Optional[float]:
 
 
 def _classify_breadth(change_24h: float, dist_ma20: Optional[float],
-                      hourly_trend: str, daily_trend: str) -> str:
+                      hourly_trend: str, daily_trend: str,
+                      fear_greed: Optional[int] = None) -> str:
     """
     方向无关的大盘状态分类。
     bullish: 多周期共振向上（风险偏好上升）
     risk_off: 多周期共振向下（避险）
     neutral: 信号不一致 / 震荡
+
+    fear_greed: 恐惧贪婪指数辅助信号（双向对称：极度恐惧→risk_off / 极度贪婪→bullish）。
+    只在价格信号 neutral 时表态，不推翻价格面已有结论，避免影响既有 S/short 表现。
     """
     bullish_signals = 0
     bearish_signals = 0
@@ -84,6 +94,13 @@ def _classify_breadth(change_24h: float, dist_ma20: Optional[float],
         return "bullish"
     if bearish_signals >= 3 and bullish_signals == 0:
         return "risk_off"
+
+    # 情绪辅助：价格面 neutral 且情绪极端时表态，否则维持 neutral
+    if fear_greed is not None:
+        if fear_greed <= FEAR_GREED_EXTREME_FEAR:
+            return "risk_off"
+        if fear_greed >= FEAR_GREED_EXTREME_GREED:
+            return "bullish"
     return "neutral"
 
 
@@ -146,11 +163,26 @@ def get_btc_trend(force_refresh: bool = False) -> Dict[str, Any]:
             result["dist_from_ma20"] = round(_compute_dist_from_ma(d_closes, 20) or 0, 3)
             result["daily_trend"] = _compute_trend(d_closes, window=20)
 
+        # 恐惧贪婪指数（FEAR_GREED_ENABLED=0 关闭，关闭后 breadth 回到纯价格面）
+        fear_greed_value = None
+        if settings.fear_greed_enabled:
+            try:
+                from app.services.data_service import get_fear_greed
+                fg = get_fear_greed()
+                today = (fg or {}).get("today") or {}
+                if today.get("value") is not None:
+                    fear_greed_value = int(today["value"])
+                    result["fear_greed"] = fear_greed_value
+                    result["fear_greed_classification"] = today.get("classification", "")
+            except Exception as e:
+                logger.warning(f"获取恐惧贪婪指数失败（忽略，不影响 breadth）: {e}")
+
         result["market_breadth"] = _classify_breadth(
             result["change_24h"],
             result["dist_from_ma20"],
             result["hourly_trend"],
             result["daily_trend"],
+            fear_greed_value,
         )
         result["source"] = "live"
 

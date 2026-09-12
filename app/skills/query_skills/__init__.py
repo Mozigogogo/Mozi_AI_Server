@@ -3,10 +3,12 @@ from .basic_info import BasicInfoSkill
 from .market_trend import MarketTrendSkill
 from .news import NewsQuerySkill
 from .derivatives import DerivativesQuerySkill
+from .us_stock import UsStockSkill
 
 __all__ = [
     "BasicInfoSkill",
     "MarketTrendSkill",
     "NewsQuerySkill",
-    "DerivativesQuerySkill"
+    "DerivativesQuerySkill",
+    "UsStockSkill",
 ]

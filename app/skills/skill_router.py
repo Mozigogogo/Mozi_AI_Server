@@ -7,7 +7,8 @@ from app.skills.query_skills import (
     BasicInfoSkill,
     MarketTrendSkill,
     NewsQuerySkill,
-    DerivativesQuerySkill
+    DerivativesQuerySkill,
+    UsStockSkill
 )
 from app.skills.analysis_skills import (
     TechnicalAnalysisSkill,
@@ -29,6 +30,9 @@ class SkillRouter:
 
     def _register_skills(self):
         """注册所有 Skills"""
+        # 美股 Skill 必须先注册（match 按 asset_class 抢占，避免加密 skill 误接美股意图）
+        self.skills["us_stock"] = UsStockSkill()
+
         # 查询类 Skills
         self.skills["basic_info"] = BasicInfoSkill()
         self.skills["market_trend"] = MarketTrendSkill()

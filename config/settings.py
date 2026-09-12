@@ -60,6 +60,16 @@ class Settings(BaseSettings):
     api_max_retries: int = 2
     api_retry_delay: float = 0.5
 
+    # ── 市场情绪（恐惧贪婪指数）──
+    fear_greed_api_url: str = "https://api.alternative.me/fng/"
+    # market_context 情绪辅助开关（关掉后综合分析仍展示指数，但不影响信号 breadth）
+    fear_greed_enabled: bool = True
+
+    # ── WebSocket K线旁路刷新 ──
+    ws_kline_enabled: bool = False
+    ws_kline_base: str = "wss://moziinnovations.com"
+    ws_kline_max_symbols: int = 100
+
     # ── Agent LLM 配置 ──
     max_news_items: int = 100
     kline_days_limit: int = 30

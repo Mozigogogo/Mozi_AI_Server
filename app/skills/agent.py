@@ -98,7 +98,24 @@ class CryptoAnalystAgent:
 
                 # 补充 required_apis（LLM 可能返回空列表）
                 if intent.coin_symbol and not intent.required_apis:
-                    intent.required_apis = ["get_header_data", "get_kline_data", "get_buy_sell_ratio", "get_funding_rate"]
+                    if intent.asset_class == "us_stock":
+                        intent.required_apis = ["get_us_quote", "get_us_kline_data", "get_us_return_investment"]
+                    else:
+                        intent.required_apis = ["get_header_data", "get_kline_data", "get_buy_sell_ratio", "get_funding_rate"]
+
+                # 资产类别纠偏：歧义代码（HOOD 是股、SOLO 是币）LLM 判错时用 validate 兜底
+                if intent.coin_symbol and intent.intent_type != "simple_chat":
+                    try:
+                        from app.services.data_service import validate_us_ticker
+                        v = await asyncio.to_thread(validate_us_ticker, intent.coin_symbol)
+                        if v.get("valid") and v.get("type") == "stock" and intent.asset_class != "us_stock":
+                            intent.asset_class = "us_stock"
+                            logger.info(f"  ⚠️ validate 判定 {intent.coin_symbol} 为美股，asset_class → us_stock")
+                        elif v.get("valid") and v.get("type") != "stock" and intent.asset_class == "us_stock":
+                            intent.asset_class = "crypto"
+                            logger.info(f"  ⚠️ validate 判定 {intent.coin_symbol} 非美股，asset_class → crypto")
+                    except Exception:
+                        pass
 
                 logger.info(f"  意图: {intent.intent_type} 币种: {intent.coin_symbol} APIs: {intent.required_apis}")
 
@@ -157,9 +174,17 @@ class CryptoAnalystAgent:
                 # ── 信号卡分支结束 ──────────────────────────────────────
 
                 # 检查数据是否全空（API 可能因币种符号错误而全部失败）
-                if not skill_result.api_calls:
-                    logger.info(f"  ⚠️ 所有 API 调用失败，币种符号可能有误: {intent.coin_symbol}")
-                    if intent.language == "zh":
+                # 恐惧贪婪等全市场 API 对无效币种也会成功，需剔除后再判断
+                _market_wide_apis = {"get_fear_greed", "longshort_global", "longshort_top"}
+                symbol_api_calls = [a for a in skill_result.api_calls if a not in _market_wide_apis]
+                if not symbol_api_calls:
+                    logger.info(f"  ⚠️ 所有 API 调用失败，符号可能有误: {intent.coin_symbol}")
+                    if intent.asset_class == "us_stock":
+                        if intent.language == "zh":
+                            yield f"抱歉，无法获取 {intent.coin_symbol} 的美股数据，请检查股票代码是否正确（如 AAPL、TSLA、NVDA）。"
+                        else:
+                            yield f"Sorry, unable to fetch US stock data for {intent.coin_symbol}. Please verify the ticker (e.g., AAPL, TSLA, NVDA)."
+                    elif intent.language == "zh":
                         yield f"抱歉，无法获取 {intent.coin_symbol} 的市场数据，请检查币种符号是否正确（如 BTC、ETH、SOL）。"
                     else:
                         yield f"Sorry, unable to fetch market data for {intent.coin_symbol}. Please verify the symbol (e.g., BTC, ETH, SOL)."
@@ -229,8 +254,9 @@ class CryptoAnalystAgent:
 
                 # 生成推荐问题（dict 类型，与 str 区分）
                 if intent.coin_symbol and intent.intent_type != "simple_chat":
+                    suggest_key = "us_stock" if intent.asset_class == "us_stock" else intent.intent_type
                     suggestions = self.response_generator.get_suggestions(
-                        intent.intent_type, intent.coin_symbol, intent.language
+                        suggest_key, intent.coin_symbol, intent.language
                     )
                     yield {"type": "suggestions", "suggestions": suggestions}
 

@@ -8,7 +8,10 @@ from app.services.data_service import (
     get_recent_news,
     get_buy_sell_ratio,
     get_open_interest,
-    get_funding_rate
+    get_funding_rate,
+    get_fear_greed,
+    get_longshort_snapshot,
+    get_price_change
 )
 
 
@@ -32,7 +35,8 @@ class ComprehensiveAnalysisSkill(BaseSkill):
             "get_recent_news",
             "get_buy_sell_ratio",
             "get_open_interest",
-            "get_funding_rate"
+            "get_funding_rate",
+            "get_fear_greed"
         ]
 
     async def execute_async(
@@ -48,7 +52,11 @@ class ComprehensiveAnalysisSkill(BaseSkill):
             asyncio.to_thread(get_recent_news, symbol, limit=5),
             asyncio.to_thread(get_buy_sell_ratio, symbol),
             asyncio.to_thread(get_open_interest, symbol),
-            asyncio.to_thread(get_funding_rate, symbol)
+            asyncio.to_thread(get_funding_rate, symbol),
+            asyncio.to_thread(get_fear_greed),
+            asyncio.to_thread(get_longshort_snapshot, symbol, "global_account_ratio"),
+            asyncio.to_thread(get_longshort_snapshot, symbol, "top_account_ratio"),
+            asyncio.to_thread(get_price_change, symbol)
         ]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -63,21 +71,22 @@ class ComprehensiveAnalysisSkill(BaseSkill):
             "get_recent_news",
             "get_buy_sell_ratio",
             "get_open_interest",
-            "get_funding_rate"
+            "get_funding_rate",
+            "get_fear_greed",
+            "longshort_global",
+            "longshort_top",
+            "get_price_change"
         ]
 
         for api_name, result in zip(api_names, results):
-            if not isinstance(result, Exception):
-                # 检查结果是否有效（非空字典/非空列表）
-                if result is None:
-                    logger.info(f"  警告: {api_name} 返回 None（币种可能有误）")
-                elif isinstance(result, dict) and result.get("code") is not None and result.get("code") != 0:
-                    logger.info(f"  警告: {api_name} 返回错误: {result.get('errorMsg')}")
-                else:
-                    data[api_name] = result
-                    api_calls.append(api_name)
-            else:
+            if isinstance(result, Exception):
                 logger.info(f"  警告: {api_name} 调用失败: {str(result)}")
+            elif not self._is_valid_result(result):
+                # 无效币种的 API 常返回空壳结构（空列表/空dict/空交易所），不能算有效调用
+                logger.info(f"  警告: {api_name} 返回空壳数据（币种可能有误）")
+            else:
+                data[api_name] = result
+                api_calls.append(api_name)
 
         # 构建传给LLM的数据（包含摘要+关键原始数据）
         llm_data = self._build_llm_data(data)
@@ -88,6 +97,21 @@ class ComprehensiveAnalysisSkill(BaseSkill):
             timestamp=self._get_timestamp(),
             api_calls=api_calls
         )
+
+    @staticmethod
+    def _is_valid_result(result) -> bool:
+        """空壳判定：None / 空列表 / 空 dict / 空 exchanges（持仓量、资金费率）/ 全所为空（买卖比）"""
+        if result is None:
+            return False
+        if isinstance(result, dict):
+            if result.get("code") is not None and result.get("code") != 0:
+                return False
+            if "exchanges" in result and not result.get("exchanges"):
+                return False
+            if result and all(isinstance(v, dict) and not v for v in result.values()):
+                return False
+            return bool(result)
+        return bool(result)
 
     def _build_llm_data(self, data: dict) -> dict:
         """构建传给LLM的数据：摘要 + 关键原始数据"""
@@ -185,5 +209,17 @@ class ComprehensiveAnalysisSkill(BaseSkill):
             news_list = data["get_recent_news"]
             if isinstance(news_list, list):
                 result["最新新闻"] = news_list[:5]
+
+        # 7. 市场情绪（恐惧贪婪指数，全市场维度而非单币）
+        if "get_fear_greed" in data and data["get_fear_greed"]:
+            result["市场情绪(恐惧贪婪指数,0极度恐惧-100极度贪婪)"] = data["get_fear_greed"]
+
+        # 8. 各所多空比快照（一次拿全 5+ 交易所，最新一轮）
+        if data.get("longshort_global"):
+            result["各所多空比(全球账户,最新)"] = data["longshort_global"]
+        if data.get("longshort_top"):
+            result["各所多空比(大户账户,最新)"] = data["longshort_top"]
+        if data.get("get_price_change"):
+            result["区间涨跌(1日/7日/1月/1年)"] = data["get_price_change"]
 
         return result

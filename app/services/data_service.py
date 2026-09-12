@@ -157,9 +157,20 @@ KLINE_TYPE_META = {
 }
 
 
+def kline_url(symbol: str, kline_type: int) -> str:
+    """K线 REST URL（get_kline_data 与 ws_kline 缓存失效共用，保证 key 一致）"""
+    return f"{settings.kline_api_base}/detail/kline?symbol={symbol}&type={kline_type}"
+
+
+def invalidate_cache(url: str) -> None:
+    """旁路失效指定 URL 的缓存（ws_kline 推送时调用，下次请求立刻拉新）"""
+    with _cache_lock:
+        _api_cache.pop(url, None)
+
+
 def get_kline_data(symbol: str, kline_type: int = 2) -> Dict[str, Any]:
     """获取K线数据，kline_type: 1=小时 2=天 3=周 4=月"""
-    url = f"{settings.kline_api_base}/detail/kline?symbol={symbol}&type={kline_type}"
+    url = kline_url(symbol, kline_type)
     try:
         data = fetch_json_cached(url)
         if data.get("code") == 0:
@@ -234,6 +245,26 @@ def get_header_data(symbol: str) -> Dict[str, Any]:
             raise DataFetchException(f"API返回错误: {data.get('errorMsg', '未知错误')}")
     except Exception as e:
         raise DataFetchException(f"获取基础信息失败: {str(e)}")
+
+
+def get_price_change(symbol: str) -> Dict[str, str]:
+    """获取币种区间涨跌（1日/7日/1月/1年，值为带 % 的字符串）
+
+    GET /easy/getReturnInvestment?symbol={BASE}
+    data 是数组：[{"symbol":"BTC","priceChange1Day":"-1.49%",...}]（与美股版对象形态不同）
+    """
+    url = f"{settings.kline_api_base}/easy/getReturnInvestment?symbol={symbol}"
+    try:
+        data = fetch_json_cached(url)
+        if data.get("code") == 0:
+            items = data.get("data") or []
+            if isinstance(items, list) and items:
+                item = items[0]
+                return {k: v for k, v in item.items() if k != "symbol"}
+        return {}
+    except Exception as e:
+        logger.error(f"获取区间涨跌失败: {str(e)}")
+        return {}
 
 
 def get_news_from_mysql(symbol: str, limit: int = None) -> List[str]:
@@ -388,6 +419,7 @@ def get_buy_sell_ratio(symbol: str) -> Dict[str, Any]:
         futures = {
             executor.submit(get_binance_buy_sell_ratio, symbol): "binance",
             executor.submit(get_kraken_buy_sell_ratio, symbol): "kraken",
+            executor.submit(get_okx_buy_sell_ratio, symbol): "okx",
         }
         for future in concurrent.futures.as_completed(futures, timeout=15):
             exchange = futures[future]
@@ -431,6 +463,229 @@ def get_kraken_buy_sell_ratio(symbol: str) -> Dict[str, Any]:
         data = fetch_json_cached(url)
         if data.get("code") == 0:
             return data.get("data", {})
+        return {}
+    except Exception:
+        return {}
+
+
+def get_okx_buy_sell_ratio(symbol: str) -> Dict[str, Any]:
+    """获取 OKX 交易所的买卖比例"""
+    url = f"{settings.derivatives_api_base}/histratio?coin={symbol}&exchange=OKX&type=but_sell_ratio"
+    try:
+        data = fetch_json_cached(url)
+        if data.get("code") == 0:
+            return data.get("data", {})
+        return {}
+    except Exception:
+        return {}
+
+
+LONGSHORT_RATIO_TYPES = {
+    "global_account_ratio": "全球用户账户",
+    "top_account_ratio": "大户账户",
+    "top_hold_ratio": "大户持仓",
+    "but_sell_ratio": "买卖量比",
+    "global_hold_ratio": "全球持仓",
+}
+
+
+def get_longshort_snapshot(symbol: str, ratio_type: str = "global_account_ratio") -> Dict[str, Dict[str, float]]:
+    """最新一轮各交易所多空比快照（一次请求拿全 5+ 交易所）
+
+    返回 {交易所: {"long": 0.56, "short": 0.44}}，百分数已转小数；失败返回 {}。
+    """
+    url = f"{settings.derivatives_api_base}/longshort?coin={symbol}&type={ratio_type}"
+    try:
+        data = fetch_json_cached(url)
+        if data.get("code") != 0:
+            return {}
+        entries = (data.get("data") or {}).get("list") or []
+        result: Dict[str, Dict[str, float]] = {}
+        for e in entries:
+            name = e.get("name")
+            if not name:
+                continue
+            try:
+                long_v = round(float(str(e.get("long", "")).replace("%", "")) / 100, 4)
+                short_v = round(float(str(e.get("short", "")).replace("%", "")) / 100, 4)
+            except (ValueError, TypeError):
+                continue
+            result[name] = {"long": long_v, "short": short_v}
+        return result
+    except Exception:
+        return {}
+
+
+def get_fear_greed() -> Dict[str, Any]:
+    """获取加密市场恐惧贪婪指数（每日更新一次，缓存10分钟）
+
+    主源：后端 /easy/getFearGreedIndex（MySQL ods_get_fear_index_di，仅最新值）
+    备源：alternative.me（额外含昨日值与变化）
+    返回 {"today": {"value", "classification", "date"[, "change"]}, "yesterday": {...}}，
+    失败返回 {}（调用方跳过即可）。
+    """
+    from datetime import datetime
+
+    # 主源：后端
+    try:
+        data = fetch_json_cached(f"{settings.kline_api_base}/easy/getFearGreedIndex", ttl=600)
+        d = data.get("data") or {}
+        if data.get("code") == 0 and d.get("value") is not None:
+            return {"today": {
+                "value": int(d["value"]),
+                "classification": d.get("category", ""),
+                "date": datetime.now().strftime("%Y-%m-%d"),
+            }, "source": "backend"}
+    except Exception as e:
+        logger.warning(f"后端恐惧贪婪接口失败，回退 alternative.me: {e}")
+
+    # 备源：alternative.me
+    url = f"{settings.fear_greed_api_url}?limit=2"
+    try:
+        data = fetch_json_cached(url, timeout=8, max_retries=2, ttl=600)
+        entries = data.get("data") or []
+        if not entries:
+            return {}
+
+        def _parse(e: Dict[str, Any]) -> Dict[str, Any]:
+            date = ""
+            try:
+                date = datetime.fromtimestamp(int(e.get("timestamp", 0))).strftime("%Y-%m-%d")
+            except (ValueError, OSError, TypeError, OverflowError):
+                pass
+            return {
+                "value": int(e.get("value", 0)),
+                "classification": e.get("value_classification", ""),
+                "date": date,
+            }
+
+        today = _parse(entries[0])
+        result: Dict[str, Any] = {"today": today}
+        if len(entries) > 1:
+            yesterday = _parse(entries[1])
+            result["yesterday"] = yesterday
+            today["change"] = today["value"] - yesterday["value"]
+        result["source"] = "alternative.me"
+        return result
+    except Exception as e:
+        logger.error(f"获取恐惧贪婪指数失败: {e}")
+        return {}
+
+
+# ── 美股数据 ──────────────────────────────────────────────
+
+US_KLINE_INTERVALS = ("1m", "5m", "15m", "1h", "1d", "1w", "1mon")
+
+
+def get_us_quote(symbol: str) -> Dict[str, Any]:
+    """美股实时报价 + 档案（现价/涨跌幅/日内高低/量 + 市值/行业/52周/简介等全套）"""
+    url = f"{settings.kline_api_base}/stock/detail/header?symbol={symbol}"
+    try:
+        data = fetch_json_cached(url)
+        if data.get("code") == 0 and data.get("data"):
+            return data["data"]
+        return {}
+    except Exception:
+        return {}
+
+
+def get_us_price_change(symbol: str) -> Dict[str, Any]:
+    """美股轻量报价（现价 + 涨跌幅 + 量，轻量轮询用）"""
+    url = f"{settings.kline_api_base}/stock/search/lastpricechange?symbol={symbol}"
+    try:
+        data = fetch_json_cached(url)
+        if data.get("code") == 0 and data.get("data"):
+            return data["data"]
+        return {}
+    except Exception:
+        return {}
+
+
+def get_us_kline(symbol: str, kline_type: int = 2) -> Dict[str, Any]:
+    """美股K线 — 历史链路（MySQL）：type 1=小时(24根) 2=日(30) 3=周(52) 4=月(全量)
+
+    返回 {"symbol", "list": [{openPrice, highPrice, lowPrice, closePrice, volume, quoteVolume, dt}]}
+    """
+    url = f"{settings.kline_api_base}/stock/detail/kline?symbol={symbol}&type={kline_type}"
+    try:
+        data = fetch_json_cached(url)
+        if data.get("code") == 0 and data.get("data"):
+            return data["data"]
+        return {}
+    except Exception:
+        return {}
+
+
+def get_us_kline_realtime(symbol: str, interval: str = "15m",
+                          limit: int = None, page: int = 1) -> Dict[str, Any]:
+    """美股K线 — Redis 实时分页链路：interval 1m/5m/15m/1h/1d/1w/1mon（无 4h）
+
+    每页 50 根，page=1 为最新一页；limit 为窗口上限（如 1h≤720、1d≤90）。
+    """
+    if interval not in US_KLINE_INTERVALS:
+        interval = "15m"
+    params = f"symbol={symbol}&interval={interval}&page={page}"
+    if limit:
+        params += f"&limit={int(limit)}"
+    url = f"{settings.kline_api_base}/stock/detail/kline?{params}"
+    try:
+        data = fetch_json_cached(url)
+        if data.get("code") == 0 and data.get("data"):
+            return data["data"]
+        return {}
+    except Exception:
+        return {}
+
+
+def search_us_symbol(keyword: str, limit: int = 10) -> list:
+    """美股 ticker 搜索：symbol 前缀 + 英文名模糊。
+
+    中文关键词暂不支持（后端宽表无中文列）——中文公司名靠意图层 LLM 先转 ticker 再校验。
+    """
+    url = f"{settings.kline_api_base}/stock/search/suggest?keyword={keyword}&limit={limit}"
+    try:
+        data = fetch_json_cached(url)
+        if data.get("code") == 0:
+            d = data.get("data")
+            if isinstance(d, dict):
+                return d.get("list") or []
+            return d or []
+        return []
+    except Exception:
+        return []
+
+
+def validate_us_ticker(symbol: str) -> Dict[str, Any]:
+    """ticker 校验（美股优先、加密兜底）→ {"valid": bool, "type": "stock"|"crypto"|...}"""
+    url = f"{settings.kline_api_base}/search/validate?symbol={symbol}"
+    try:
+        data = fetch_json_cached(url)
+        if data.get("code") == 0 and data.get("data"):
+            return data["data"]
+        return {"valid": False, "type": None}
+    except Exception:
+        return {"valid": False, "type": None}
+
+
+def get_us_session(symbol: str) -> Dict[str, Any]:
+    """美股交易时段（pre_market/regular/post_market 窗口 + 当前 status/nextEventTs）"""
+    url = f"{settings.kline_api_base}/stock/search/session?symbol={symbol}"
+    try:
+        data = fetch_json_cached(url)
+        if data.get("code") == 0 and data.get("data"):
+            return data["data"]
+        return {}
+    except Exception:
+        return {}
+
+
+def get_us_return_investment(symbol: str) -> Dict[str, Any]:
+    """美股区间涨跌（1日/7日/1月/1年）"""
+    url = f"{settings.kline_api_base}/stock/detail/getReturnInvestment?symbol={symbol}"
+    try:
+        data = fetch_json_cached(url)
+        if data.get("code") == 0 and data.get("data"):
+            return data["data"]
         return {}
     except Exception:
         return {}

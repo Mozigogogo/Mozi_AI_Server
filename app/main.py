@@ -61,11 +61,20 @@ async def lifespan(app: FastAPI):
         "+ ev_guardrail 重算(24h) + 每日报表(6h) + regime 漂移(7d) 已启动"
     )
 
+    # WebSocket K线旁路刷新（可选，WS_KLINE_ENABLED=1 开启；断线自动回退 30s TTL 轮询）
+    ws_kline_task = None
+    if settings.ws_kline_enabled:
+        from app.services.ws_kline import ws_kline_manager
+        ws_kline_task = asyncio.create_task(ws_kline_manager.run())
+        logger.info(f"WS Kline: Binance K线旁路刷新已启动（top {settings.ws_kline_max_symbols} 币种）")
+
     yield
 
     # 关闭时
     if scan_task:
         scan_task.cancel()
+    if ws_kline_task:
+        ws_kline_task.cancel()
     settlement_task.cancel()
     review_task.cancel()
     market_scan_task.cancel()
