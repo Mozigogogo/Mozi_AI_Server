@@ -315,7 +315,7 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
                 max_tokens = 6000
                 timeout_seconds = 120.0
             elif mode == "think":
-                max_tokens = 4096
+                max_tokens = 8192
                 timeout_seconds = 90.0
             else:
                 max_tokens = 2048
@@ -402,7 +402,7 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
                 max_tokens = 6000
                 timeout_seconds = 120.0
             elif mode == "think":
-                max_tokens = 4096
+                max_tokens = 8192
                 timeout_seconds = 90.0
             else:
                 max_tokens = 2048
@@ -440,7 +440,7 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
                             )
                         return
                     elif attempt == 0:
-                        logger.info(f"  ⚠️ LLM流式响应为空，重试...")
+                        logger.info(f"  ⚠️ LLM流式响应为空(finish_reason={finish_reason})，重试...")
                 except asyncio.TimeoutError:
                     logger.info(f"  ⚠️ LLM响应超时({timeout_seconds}s)，{'重试...' if attempt == 0 else '切换兜底'}")
 
