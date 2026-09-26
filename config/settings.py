@@ -41,7 +41,10 @@ class Settings(BaseSettings):
     # ── DeepSeek API（共享） ──
     deepseek_api_key: str = ""
     deepseek_api_base: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-v4-pro"
+    deepseek_model: str = "deepseek-v4-flash"
+
+    # ── think 模式思考过程透出（SSE data_type=thinking；旧前端可忽略） ──
+    thinking_stream_enabled: bool = True
 
     # ── 应用配置 ──
     app_name: str = "Crypto Analyst Assistant"

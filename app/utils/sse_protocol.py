@@ -5,6 +5,7 @@
   ----------|-------------|------
   start     | meta        | 流开始，携带 conversation_id
   delta     | chat        | 文字片段，delta 字段携带
+  delta     | thinking    | 思考过程片段（think 模式），delta 字段携带
   delta     | signal_card | 信号卡，payload 字段携带
   delta     | suggestions | 推荐追问，payload 字段携带
   delta     | tool_debug  | 工具中间状态 (thinking/tool_call/tool_result)
@@ -32,6 +33,11 @@ def sse_start(request_id: str, conversation_id: Optional[str] = None) -> dict:
 
 def sse_chat_delta(request_id: str, delta: str) -> dict:
     return {"event": "delta", "data_type": "chat", "request_id": request_id, "delta": delta}
+
+
+def sse_thinking_delta(request_id: str, delta: str) -> dict:
+    """think 模式推理过程片段，先于 chat delta 到达，前端渲染为可折叠思考面板"""
+    return {"event": "delta", "data_type": "thinking", "request_id": request_id, "delta": delta}
 
 
 def sse_signal_card(request_id: str, payload: Any) -> dict:

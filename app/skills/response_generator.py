@@ -427,9 +427,14 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
                     async for chunk in stream:
                         if chunk.choices:
                             choice = chunk.choices[0]
-                            if choice.delta and choice.delta.content:
-                                has_content = True
-                                yield choice.delta.content
+                            if choice.delta:
+                                if mode == "think" and settings.thinking_stream_enabled:
+                                    reasoning = getattr(choice.delta, "reasoning_content", None)
+                                    if reasoning:
+                                        yield {"type": "thinking", "data": reasoning}
+                                if choice.delta.content:
+                                    has_content = True
+                                    yield choice.delta.content
                             if choice.finish_reason:
                                 finish_reason = choice.finish_reason
 
@@ -457,7 +462,12 @@ No factor table or key levels. Only core trade info. For "wait", explain why and
                     ),
                     timeout=timeout_seconds + 5
                 )
-                text = fallback.choices[0].message.content.strip()
+                message = fallback.choices[0].message
+                if mode == "think" and settings.thinking_stream_enabled:
+                    reasoning = (getattr(message, "reasoning_content", None) or "").strip()
+                    if reasoning:
+                        yield {"type": "thinking", "data": reasoning}
+                text = (message.content or "").strip()
                 if text:
                     yield text
                     return

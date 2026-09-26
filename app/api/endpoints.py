@@ -26,7 +26,7 @@ from app.core.exceptions import CryptoAnalystException
 from app.utils.validators import validate_symbol, validate_question, validate_language
 from app.utils.chat_trace import trace, Timer, mask
 from app.utils.sse_protocol import (
-    sse_start, sse_chat_delta, sse_signal_card, sse_suggestions,
+    sse_start, sse_chat_delta, sse_thinking_delta, sse_signal_card, sse_suggestions,
     sse_done, sse_error, render, ERR_INTERNAL,
 )
 
@@ -67,6 +67,8 @@ async def analyze_stream(request: AnalyzeRequest):
                             yield render(sse_signal_card(rid, chunk.get("data", chunk)))
                         elif chunk_type == "suggestions":
                             yield render(sse_suggestions(rid, chunk.get("suggestions", [])))
+                        elif chunk_type == "thinking":
+                            yield render(sse_thinking_delta(rid, chunk.get("data", "")))
                         else:
                             yield render(sse_chat_delta(rid, json.dumps(chunk, ensure_ascii=False)))
                     else:
@@ -109,6 +111,8 @@ async def chat_stream(request: ChatRequest):
                             yield render(sse_signal_card(rid, chunk.get("data", chunk)))
                         elif chunk_type == "suggestions":
                             yield render(sse_suggestions(rid, chunk.get("suggestions", [])))
+                        elif chunk_type == "thinking":
+                            yield render(sse_thinking_delta(rid, chunk.get("data", "")))
                         else:
                             yield render(sse_chat_delta(rid, json.dumps(chunk, ensure_ascii=False)))
                     else:
