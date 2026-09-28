@@ -241,7 +241,8 @@ class CryptoAnalystAgent:
                     full_response.append(chunk)
                     yield chunk  # 立即发送每个chunk
 
-                response = "".join(full_response)
+                # 只拼接 str chunk；thinking/suggestions 等 dict chunk 是流控制帧，不进回答文本
+                response = "".join(c for c in full_response if isinstance(c, str))
                 logger.info(f"生成的回答: {response[:100]}...")
 
                 # 保存会话：只存问题 + 识别到的币种

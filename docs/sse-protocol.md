@@ -1,8 +1,10 @@
 # SSE 协议规范 — 后端统一流式协议
 
-> 最后更新：2026-06-15 | 版本：v1.1
+> 最后更新：2026-09-27 | 版本：v1.2
 >
 > 适用于：`/api/v1/chat/stream`、`/api/v1/analyze/stream`、`/bigorder/v1/chat`、`/signals/v1/chat`
+>
+> **v1.2 变更（2026-09-26 上线）**：新增 `thinking` data_type——深度思考模式的推理过程流式透出（`delta.reasoning_content`），全部先于 chat 帧到达。仅 `/api/v1/analyze/stream` 产生；前端渲染为可折叠思考面板，**前端接入专文档：`docs/THINKING_STREAM_CONTRACT.md`**。旧前端忽略未知 data_type 即安全，无 Breaking Change。
 >
 > **v1.1 变更**：所有 chat 端点不再接受 `coin`/`symbol` 入参。币种一律由 LLM 从用户消息抽取，或通过 `conversation_id` 历史记忆。前端继续传 `coin`/`symbol` 会被 Pydantic 静默忽略，不会 422。
 
@@ -33,7 +35,7 @@ data: <json_string>
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | event | string | 是 | 事件名：`start` / `delta` / `done` / `error` |
-| data_type | string | 是 | 数据类型：`meta` / `chat` / `signal_card` / `suggestions` / `tool_debug` |
+| data_type | string | 是 | 数据类型：`meta` / `chat` / `thinking` / `signal_card` / `suggestions` / `tool_debug` |
 | request_id | string | 是 | 客户端传入，全程透传 |
 
 业务字段（`delta` / `payload` / `code` 等）按 data_type 不同附加在公共字段后。
@@ -46,6 +48,7 @@ data: <json_string>
 |------|-----------|------|---------|
 | `start` | `meta` | 流开始，携带 `conversation_id`（如有） | `conversation_id?: string` |
 | `delta` | `chat` | 文字片段（LLM token 流） | `delta: string` |
+| `delta` | `thinking` | 思考过程片段（v1.2，仅 analyze/stream，全部先于 chat 帧） | `delta: string` |
 | `delta` | `signal_card` | 推送信号卡（完整 payload） | `payload: object` |
 | `delta` | `suggestions` | 推送推荐追问列表 | `payload: string[]` |
 | `delta` | `tool_debug` | 工具调用过程状态 | `stage: "thinking"\|"tool_call"\|"tool_result"`, `payload: object` |
@@ -73,6 +76,15 @@ data: {"event":"delta","data_type":"chat","request_id":"req_abc","delta":"BTC �
 ```
 
 > 前端应将连续的 `delta` 拼接为完整文本。
+
+### 4.2b delta / thinking（思考过程增量，v1.2）
+
+仅 `/api/v1/analyze/stream`（深度思考模式）产生；同一响应内全部 thinking 帧先于第一条 chat 帧，不交错。前端渲染为可折叠思考面板，注意 7000+ 帧量级必须批量刷新（详见 `docs/THINKING_STREAM_CONTRACT.md`）。
+
+```
+event: delta
+data: {"event":"delta","data_type":"thinking","request_id":"req_abc","delta":"用户问的是 BTC，先看价格数据…"}
+```
 
 ### 4.3 delta / signal_card（信号卡）
 
@@ -132,6 +144,16 @@ event: delta       → data: {... chat, delta: "BTC 当前..."}
 event: delta       → data: {... signal_card, payload: {...}}      ← 如果 agent 生成信号卡
 event: delta       → data: {... suggestions, payload: [...]}}     ← 如果有推荐问题
 event: done        → data: {... meta}
+```
+
+### 5.1b 深度思考模式（`/api/v1/analyze/stream`，v1.2）
+
+```
+event: start       → meta
+event: delta × N   → thinking, delta: "..."        ← 推理过程（可达数千帧，全部在前）
+event: delta × M   → chat, delta: "..."            ← 正文
+event: delta       → signal_card / suggestions（如有）
+event: done        → meta
 ```
 
 ### 5.2 Function Calling 端点（`/bigorder/v1/chat`、`/signals/v1/chat`）
@@ -239,7 +261,7 @@ event: error       → meta, code=5001, message="LLM timeout"
 | BigOrder | `app/bigorder/chat.py → chat` | `/bigorder/v1/chat` |
 | Signals | `app/signals/chat.py → chat` | `/signals/v1/chat` |
 
-所有端点统一使用 `sse_start / sse_chat_delta / sse_signal_card / sse_suggestions / sse_tool_debug / sse_done / sse_error` 七个构建函数，再经 `render()` 转为 `EventSourceResponse` 兼容格式。
+所有端点统一使用 `sse_start / sse_chat_delta / sse_thinking_delta / sse_signal_card / sse_suggestions / sse_tool_debug / sse_done / sse_error` 八个构建函数，再经 `render()` 转为 `EventSourceResponse` 兼容格式。
 
 ---
 
@@ -257,6 +279,7 @@ es.addEventListener('delta', e => {
   const frame = JSON.parse(e.data);
   switch (frame.data_type) {
     case 'chat':         appendText(frame.delta); break;
+    case 'thinking':     appendThinking(frame.delta); break;   // v1.2 批量刷新，勿每帧渲染
     case 'signal_card':  renderCard(frame.payload); break;
     case 'suggestions':  renderSuggestions(frame.payload); break;
     case 'tool_debug':   showDebug(frame.stage, frame.payload); break;
@@ -293,6 +316,15 @@ es.addEventListener('error', e => {
 1. 收不到内容（事件名不匹配）
 2. 422 入参校验失败（缺 `request_id` / `user_id`）
 3. 错误静默丢失（不监听 error event）
+
+### v1.2 兼容性（2026-09-26 上线）
+
+| 维度 | v1.1 | v1.2 |
+|------|------|------|
+| thinking 帧 | 无（reasoning_content 后端丢弃） | think 模式流式透出，全部先于 chat 帧 |
+| 旧前端行为 | — | 忽略未知 data_type 即正常，无需强制升级 |
+| 服务端回滚 | — | env `THINKING_STREAM_ENABLED=0` 恢复 v1.1 行为 |
+| 前端接入 | — | 专文档 `docs/THINKING_STREAM_CONTRACT.md`（含性能要求：7000+ 帧须批量刷新） |
 
 ### v1.1 兼容性（2026-06-15）
 

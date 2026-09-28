@@ -368,7 +368,7 @@ def get_derivatives_agg(symbol: str) -> Dict[str, Any]:
     """获取合约持仓、成交、资金费率聚合数据"""
     url = f"{settings.derivatives_api_base}/histUsdAgg/forllm?coin={symbol}"
     try:
-        data = fetch_json_cached(url, timeout=8, max_retries=2)
+        data = fetch_json_cached(url, timeout=8, max_retries=2, ttl=120)
         if data.get("code") == 0:
             return data.get("data", {})
         return {}
@@ -448,7 +448,7 @@ def get_binance_buy_sell_ratio(symbol: str) -> Dict[str, Any]:
     """获取 Binance 交易所的买卖比例"""
     url = f"{settings.derivatives_api_base}/histratio?coin={symbol}&exchange=Binance&type=but_sell_ratio"
     try:
-        data = fetch_json_cached(url)
+        data = fetch_json_cached(url, ttl=120)
         if data.get("code") == 0:
             return data.get("data", {})
         return {}
@@ -460,7 +460,7 @@ def get_kraken_buy_sell_ratio(symbol: str) -> Dict[str, Any]:
     """获取 Kraken 交易所的买卖比例"""
     url = f"{settings.derivatives_api_base}/histratio?coin={symbol}&exchange=Kraken&type=but_sell_ratio"
     try:
-        data = fetch_json_cached(url)
+        data = fetch_json_cached(url, ttl=120)
         if data.get("code") == 0:
             return data.get("data", {})
         return {}
@@ -472,7 +472,7 @@ def get_okx_buy_sell_ratio(symbol: str) -> Dict[str, Any]:
     """获取 OKX 交易所的买卖比例"""
     url = f"{settings.derivatives_api_base}/histratio?coin={symbol}&exchange=OKX&type=but_sell_ratio"
     try:
-        data = fetch_json_cached(url)
+        data = fetch_json_cached(url, ttl=120)
         if data.get("code") == 0:
             return data.get("data", {})
         return {}
@@ -496,7 +496,7 @@ def get_longshort_snapshot(symbol: str, ratio_type: str = "global_account_ratio"
     """
     url = f"{settings.derivatives_api_base}/longshort?coin={symbol}&type={ratio_type}"
     try:
-        data = fetch_json_cached(url)
+        data = fetch_json_cached(url, ttl=120)
         if data.get("code") != 0:
             return {}
         entries = (data.get("data") or {}).get("list") or []
