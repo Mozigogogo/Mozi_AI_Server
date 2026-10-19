@@ -621,9 +621,10 @@ async def chat(request: ChatRequest):
             sys_content = (
                 "You are a cryptocurrency large-trade anomaly analyst.\n"
                 "Based on the data provided, write a clear analysis in English.\n"
-                "Be concise, include key numbers. Use tables when comparing multiple items. Never fabricate data."
+                "Be concise, highlight key numbers. Use tables when comparing multiple items. Never fabricate data.\n"
+                "Do NOT output any XML/tags/tool-call syntax — natural language analysis only."
             )
-            user_suffix = "Write a clear analysis in English."
+            user_suffix = "Write a clear analysis in English (no tags or tool-call syntax)."
         else:
             sys_content = (
                 "你是一名加密货币大单异动分析师。\n"

@@ -64,7 +64,17 @@ Data:
 
 Requirements: {answer_requirements}
 
-200-300 words, 3 sections with ### headers + emoji: price & trend, fundamentals & volume, overall judgment. Bold key numbers. End with 1 risk disclaimer sentence. Must be complete, no truncation."""
+Format requirements (STRICT):
+3 sections, each starting with a ### header + emoji. Key numbers **bold**. 200-300 words. End with 1 risk disclaimer sentence. Must be complete, no truncation.
+
+### 💰 Price & Trend
+Cite real-time price, intraday range, change. Daily K-line and return windows (7D/1M/1Y) as reference. Mark up 📈 down 📉.
+
+### 📊 Fundamentals & Volume
+Market cap, sector, 52-week high/low, volume/turnover. State clearly when data is missing; do not fabricate.
+
+### 🎯 Overall Judgment
+1-2 sentence summary + risk disclaimer"""
         }
 
     def _get_prompt_templates(self) -> Dict[str, Dict[str, str]]:
@@ -180,9 +190,11 @@ Retrieved data:
 Answer requirements:
 {answer_requirements}
 
-Answer directly, within 150 words.
-
-At the end, please briefly mention: The above analysis is for reference only and does not constitute investment advice.""",
+Format requirements (STRICT):
+1. Key numbers MUST be **bold** — prices, percentages, changes
+2. Mark up moves with 📈 and down moves with 📉
+3. Present multiple data points as a line-by-line list, one point per line
+4. Within 150 words; end with one short risk disclaimer sentence (for reference only, not investment advice)""",
 
                 "think": """You are a professional cryptocurrency analyst. Analyze in English. Constraints:
 1. [HIGHEST PRIORITY] Only analyze the coin the user asked about. Absolutely do NOT mention any other coins. The data does not contain other coins - do not fabricate.
@@ -197,7 +209,17 @@ Data:
 
 Requirements: {answer_requirements}
 
-200-300 words concise analysis, 3 sections: price trend, derivatives sentiment, overall judgment. 3-4 sentences per section. End with 1 risk disclaimer sentence. Must be complete, no truncation.""",
+Format requirements (STRICT):
+3 sections, each starting with a ### header + emoji. Key numbers **bold**. 200-300 words. End with 1 risk disclaimer sentence. Must be complete, no truncation.
+
+### 💰 Price Trend
+Cite real-time price and 24h change. K-line trend as reference only. Mark up 📈 down 📉.
+
+### 📊 Derivatives Sentiment
+Mark long/short ratios with 🟢(bullish)/🔴(bearish)/⚪(neutral). Annotate funding-rate signs. List per-exchange data line by line.
+
+### 🎯 Overall Judgment
+1-2 sentence summary + risk disclaimer""",
 
                 "quantitative": """You are a professional quantitative trader. Constraints:
 1. [HIGHEST PRIORITY] Only analyze the coin the user asked about. Do not fabricate data.
@@ -213,10 +235,10 @@ Output format (must be complete, no truncation):
 
 ## 📊 Six-Factor Scores
 | Factor | Score | Signal | Note |
-Fill from "六因子明细". Green for positive, red for negative, white for zero.
+Fill from "六因子明细". Positive score 🟢, negative 🔴, zero ⚪.
 
 ## 🎯 Signal Summary
-Quote "交易信号" directly: direction, strength, score, win rate.
+Quote "交易信号" directly: direction, strength, score, win rate. Long 🟢, short 🔴, neutral ⚪.
 
 ## 💰 Trade Plan
 Extract from "可执行操作":
